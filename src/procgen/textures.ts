@@ -47,6 +47,15 @@ export function bakeSurface(req: BakeRequest): PbrSet {
 /** Bakes many surfaces in parallel on workers, falling back to the main thread. */
 export async function bakeSurfaces(reqs: BakeRequest[]): Promise<PbrSet[]> {
   if (typeof Worker === 'undefined') return reqs.map(bakeSurface);
+  try {
+    return await bakeOnWorkers(reqs);
+  } catch {
+    // Some sandboxes refuse module workers; bake on the main thread instead.
+    return reqs.map(bakeSurface);
+  }
+}
+
+async function bakeOnWorkers(reqs: BakeRequest[]): Promise<PbrSet[]> {
   const poolSize = Math.max(1, Math.min(reqs.length, (navigator.hardwareConcurrency || 4) - 1));
   const workers = Array.from(
     { length: poolSize },
