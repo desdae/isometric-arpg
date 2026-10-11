@@ -221,7 +221,17 @@ function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: num
     // the roof caved in some are simply gone (they lie inside as rubble).
     for (let x = -w / 2; x <= w / 2 + 0.01; x += rafterGap) {
       if (hole(x, 0.5, side) && rng() < damage * 0.8) continue;
-      b.add('wood', new THREE.BoxGeometry(0.1, slope, 0.16), toSlope(x, slope / 2, -0.08), 1.2);
+      // Built in short lengths that follow the sag, so the slates resting on
+      // them never have a rafter poking through.
+      const segs = 6;
+      for (let k = 0; k < segs; k++) {
+        const s0 = (k / segs) * slope;
+        const s1 = ((k + 1) / segs) * slope;
+        const l0 = sagAt(x, s0 / slope);
+        const l1 = sagAt(x, s1 / slope);
+        const tilt = Math.atan2(l1 - l0, s1 - s0);
+        b.add('wood', new THREE.BoxGeometry(0.1, Math.hypot(s1 - s0, l1 - l0) + 0.02, 0.16), toSlope(x, (s0 + s1) / 2, (l0 + l1) / 2 - 0.1).multiply(xf(0, 0, 0, 0, 1, 1, 1, tilt)), 1.2);
+      }
     }
     // Slate courses: strips of tiles, broken off around holes. Each strip
     // samples one random row of the slate texture so individual slates line
@@ -258,7 +268,7 @@ function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: num
           }
         } else if (rng() < 0.25) {
           // Battens left exposed in the hole.
-          b.add('wood', new THREE.BoxGeometry(len, 0.04, 0.05), toSlope(cx, s, 0.0), 1.2);
+          b.add('wood', new THREE.BoxGeometry(len, 0.04, 0.05), toSlope(cx, s, sagAt(cx, t) - 0.01), 1.2);
         }
         x = xe;
       }
