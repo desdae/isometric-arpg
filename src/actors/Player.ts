@@ -15,6 +15,8 @@ export class Player {
   readonly maxSpeed = 4.6;
   private marker: THREE.Mesh;
   private markerAge = 10;
+  /** Pending interaction: walk until within `radius` of `target`, then act. */
+  private pending: { target: THREE.Vector3; radius: number; onReach: () => void } | null = null;
 
   constructor(
     readonly character: Character,
@@ -36,7 +38,17 @@ export class Player {
     this.syncTransform();
   }
 
+  /** Walk up to something (an NPC, a door) and run `onReach` on arrival. */
+  interact(target: THREE.Vector3, radius: number, onReach: () => void) {
+    this.pending = { target, radius, onReach };
+    const d = Math.hypot(target.x - this.position.x, target.z - this.position.z);
+    if (d <= radius) return;
+    const path = this.nav.findPath(new THREE.Vector2(this.position.x, this.position.z), new THREE.Vector2(target.x, target.z));
+    this.path = path ?? [];
+  }
+
   moveTo(target: THREE.Vector3, showMarker = true) {
+    this.pending = null;
     const path = this.nav.findPath(new THREE.Vector2(this.position.x, this.position.z), new THREE.Vector2(target.x, target.z));
     if (!path || path.length === 0) return;
     this.path = path;
@@ -49,6 +61,17 @@ export class Player {
 
   update(dt: number) {
     const pos2 = new THREE.Vector2(this.position.x, this.position.z);
+    if (this.pending) {
+      const t = this.pending.target;
+      if (Math.hypot(t.x - pos2.x, t.z - pos2.y) <= this.pending.radius) {
+        const act = this.pending.onReach;
+        this.pending = null;
+        this.path = [];
+        // Turn to face what we walked up to.
+        this.yaw = Math.atan2(t.x - pos2.x, t.z - pos2.y);
+        act();
+      }
+    }
     let desired = new THREE.Vector2();
     while (this.path.length) {
       const next = this.path[0];
@@ -102,26 +125,55 @@ export class Player {
   }
 }
 
-/** Wires mouse input: click or hold the left button on the ground to move. */
-export function bindClickToMove(dom: HTMLElement, camera: THREE.Camera, ground: THREE.Object3D, player: Player) {
+/**
+ * Wires mouse input: click or hold the left button on the ground to move.
+ * Clicking one of `pickables` calls `onPick` with it instead.
+ */
+export function bindClickToMove(
+  dom: HTMLElement,
+  camera: THREE.Camera,
+  ground: THREE.Object3D,
+  player: Player,
+  pickables: THREE.Object3D[] = [],
+  onPick: (obj: THREE.Object3D) => void = () => {},
+  onMove: () => void = () => {},
+) {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   let held = false;
   let lastIssue = 0;
-  const issue = (e: PointerEvent, marker: boolean) => {
+  const cast = (e: PointerEvent) => {
     const r = dom.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
+  };
+  const issue = (e: PointerEvent, marker: boolean) => {
+    cast(e);
     const hit = ray.intersectObject(ground, false)[0];
-    if (hit) player.moveTo(hit.point, marker);
+    if (hit) {
+      player.moveTo(hit.point, marker);
+      onMove();
+    }
   };
   dom.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    cast(e);
+    const picked = pickables.length ? ray.intersectObjects(pickables, false)[0] : undefined;
+    if (picked) {
+      held = false;
+      onPick(picked.object);
+      return;
+    }
     held = true;
     issue(e, true);
   });
   window.addEventListener('pointerup', () => (held = false));
   dom.addEventListener('pointermove', (e) => {
+    // Pointer cursor over anything talkable.
+    if (pickables.length && !held) {
+      cast(e);
+      dom.style.cursor = ray.intersectObjects(pickables, false).length ? 'pointer' : '';
+    }
     if (!held) return;
     const now = performance.now();
     if (now - lastIssue < 120) return;

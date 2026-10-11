@@ -298,5 +298,56 @@ export function cloth(seed = 9): SurfaceFn {
   };
 }
 
-export const SURFACES = { cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth } as const;
+/** Undyed coarse linen / wool; tinted per garment through material colour. */
+export function linen(seed = 10): SurfaceFn {
+  return (u, v) => {
+    const wu = Math.sin(u * 2 * Math.PI * 80) * 0.5 + 0.5;
+    const wv = Math.sin(v * 2 * Math.PI * 80) * 0.5 + 0.5;
+    const weave = Math.max(wu * (Math.floor(v * 80) % 2), wv * (Math.floor(u * 80) % 2));
+    const dirt = smoothstep(0.0, 0.7, fbm2(u * 3, v * 3, 5, seed, 3));
+    const fine = fbm2(u * 24, v * 24, 3, seed + 2, 24) * 0.5 + 0.5;
+    const t = (0.5 + weave * 0.2 + fine * 0.25) * (1 - dirt * 0.45);
+    return { height: 0.5 + weave * 0.3 + fine * 0.2, r: t * 0.55, g: t * 0.52, b: t * 0.47, rough: 0.95, ao: 1 - dirt * 0.2 };
+  };
+}
+
+/** Grey slate roof tiles in staggered courses, chipped and stained. */
+export function slate(seed = 11): SurfaceFn {
+  const rows = 8;
+  const cols = 6;
+  return (u, v) => {
+    const row = Math.floor(v * rows);
+    const fv = v * rows - row;
+    const cu = u * cols + (row % 2) * 0.5;
+    const col = Math.floor(cu);
+    const fu = cu - col;
+    const id = Math.abs(Math.sin((((col % cols) + cols) % cols) * 17.3 + row * 47.1 + seed) * 43758.5453) % 1;
+    const chip = fbm2(u * 30, v * 30, 3, seed + 3, 30) * 0.08;
+    const edge = Math.min(Math.min(fu, 1 - fu) / cols * 2.2, (1 - fv) / rows) + chip;
+    const tile = smoothstep(0.003, 0.012, edge);
+    // Each tile is thicker at its lower edge, overlapping the course below.
+    const height = clamp01(tile * (0.4 + fv * 0.6) + id * 0.05);
+    const stain = smoothstep(0.1, 0.7, fbm2(u * 2, v * 2, 4, seed + 7, 2));
+    const t = (0.035 + id * 0.035) * (1 - stain * 0.4);
+    const r = mix(0.01, t * 0.95, tile);
+    const g = mix(0.01, t, tile);
+    const b = mix(0.012, t * 1.08, tile);
+    return { height, r, g, b, rough: 0.6 + stain * 0.3, ao: mix(0.4, 1, tile) };
+  };
+}
+
+/** Dirty lime plaster with cracks, for timber-framed panels. */
+export function plaster(seed = 12): SurfaceFn {
+  return (u, v) => {
+    const big = fbm2(u * 3, v * 3, 5, seed, 3) * 0.5 + 0.5;
+    const c = voronoi2(u * 5, v * 5, seed + 2, 5, 1);
+    const crack = 1 - smoothstep(0, 0.025, c.f2 - c.f1 + fbm2(u * 20, v * 20, 2, seed + 4, 20) * 0.02);
+    const fine = fbm2(u * 40, v * 40, 3, seed + 5, 40) * 0.5 + 0.5;
+    const grime = smoothstep(0.3, 1, 1 - v + fbm2(u * 6, v * 2, 3, seed + 9, 6) * 0.5) * 0.6;
+    const t = (0.16 + big * 0.06 + fine * 0.03) * (1 - grime * 0.6) * (1 - crack * 0.6);
+    return { height: clamp01(0.6 + fine * 0.2 - crack * 0.5), r: t, g: t * 0.9, b: t * 0.78, rough: 0.95 };
+  };
+}
+
+export const SURFACES = { cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

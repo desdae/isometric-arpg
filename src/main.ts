@@ -7,6 +7,10 @@ import { buildEnvironment } from './engine/environment';
 import { buildTestScene } from './scenes/testScene';
 import { buildWastelandZone } from './scenes/wastelandZone';
 import { buildCharacterPreview } from './scenes/characterPreview';
+import { buildTown } from './scenes/town';
+import { Dialogue } from './engine/Dialogue';
+import { dressKnight } from './actors/outfits/knight';
+import type { Npc } from './actors/Npc';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { Player, bindClickToMove } from './actors/Player';
@@ -19,9 +23,17 @@ const hud = document.getElementById('hud')!;
 hud.textContent = 'Generating world…';
 
 const t0 = performance.now();
-const sceneName = params.get('scene') ?? 'zone';
+// Artifacts only pass a bare #anchor, so the hash also selects the area.
+const sceneName = params.get('scene') ?? (location.hash.slice(1) || 'town');
 const world: World =
-  sceneName === 'test' ? await buildTestScene() : sceneName === 'character' ? await buildCharacterPreview() : await buildWastelandZone();
+  sceneName === 'test'
+    ? await buildTestScene()
+    : sceneName === 'character'
+      ? await buildCharacterPreview()
+      : sceneName === 'zone'
+        ? await buildWastelandZone()
+        : await buildTown();
+window.addEventListener('hashchange', () => location.reload());
 const { scene, moon } = world;
 const sky = new Sky();
 scene.add(sky.mesh);
@@ -34,6 +46,7 @@ scene.environment = buildEnvironment(renderer.renderer);
 scene.environmentIntensity = 0.45;
 window.addEventListener('resize', () => cam.resize(window.innerWidth / window.innerHeight));
 
+const dialogue = new Dialogue();
 let player: Player | null = null;
 let preview: Character | null = null;
 if (world.spawn) {
@@ -42,7 +55,7 @@ if (world.spawn) {
     { kind: 'cloth', seed: 22, size: 512, normalStrength: 1.5 },
   ]);
   const steel = pbrMaterial(metal, 2);
-  const character = new Character({
+  const character = dressKnight(new Character(), {
     steel,
     darkSteel: pbrMaterial(metal, 2, { color: 0x5a5550 }),
     leather: new THREE.MeshStandardMaterial({ color: 0x1c120c, roughness: 0.75 }),
@@ -58,7 +71,28 @@ if (world.spawn) {
   const heroLight = new THREE.PointLight(0xffd2b0, 9, 9, 1.6);
   heroLight.position.set(0.4, 3.6, -0.6);
   character.root.add(heroLight);
-  if (player) bindClickToMove(renderer.renderer.domElement, cam.camera, world.ground, player);
+  if (player) {
+    const p = player;
+    const npcs = world.npcs ?? [];
+    const talkTo = (npc: Npc) => {
+      dialogue.close();
+      p.interact(npc.position, 1.8, () => {
+        npc.talking = true;
+        dialogue.show(npc.def.name, npc.def.role, npc.nextLine(), () => dialogue.setText(npc.nextLine()), () => (npc.talking = false));
+      });
+    };
+    // Scripted conversation for automated screenshots: ?talk=index
+    if (params.has('talk')) setTimeout(() => talkTo(npcs[Number(params.get('talk'))]), 500);
+    bindClickToMove(
+      renderer.renderer.domElement,
+      cam.camera,
+      world.ground,
+      p,
+      npcs.map((n) => n.hit),
+      (obj) => talkTo(obj.userData.npc as Npc),
+      () => dialogue.close(),
+    );
+  }
   cam.target.copy(world.spawn).add(new THREE.Vector3(0, preview ? 1 : 0, 0));
   cam.update(0);
 }
@@ -124,6 +158,7 @@ function frame() {
   (scene.fog as THREE.FogExp2).density = 0.42 / cam.distance;
   sky.update(t, cam.camera.position);
   mist.update(dt);
+  if (world.npcs) for (const n of world.npcs) n.update(dt, player ? player.position : null);
   world.update(dt, t);
   renderer.render(t);
 
@@ -133,7 +168,9 @@ function frame() {
     const fps = frames / fpsTime;
     frames = 0;
     fpsTime = 0;
-    const controls = player ? 'Click to move · wheel zoom · Q/E rotate' : 'WASD pan · wheel zoom · Q/E rotate';
+    const controls = player
+      ? `Click to move${world.npcs ? ' · click townsfolk to talk' : ''} · wheel zoom · Q/E rotate`
+      : 'WASD pan · wheel zoom · Q/E rotate';
     hud.textContent = `${fps.toFixed(0)} fps · world generated in ${genMs.toFixed(0)} ms\n${controls}`;
   }
   requestAnimationFrame(frame);

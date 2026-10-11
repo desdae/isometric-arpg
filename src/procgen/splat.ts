@@ -82,7 +82,7 @@ export function splatMaterial(a: PbrSet, repeatA: number, b: PbrSet, repeatB: nu
         C.roughnessmap_fragment.replace(
           'vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );',
           `vec4 texelRoughness = mix( texture2D( roughnessMap, vRoughnessMapUv ), texture2D( splatOrm, splatUv ), splatW );
-          texelRoughness.g = mix( texelRoughness.g, 0.18, max( splatWet, splatBlood * 0.8 ) );`,
+          texelRoughness.g = mix( texelRoughness.g, 0.32, max( splatWet, splatBlood * 0.8 ) );`,
         ),
       )
       .replace(
@@ -96,7 +96,10 @@ export function splatMaterial(a: PbrSet, repeatA: number, b: PbrSet, repeatB: nu
         '#include <normal_fragment_maps>',
         C.normal_fragment_maps.replace(
           'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
-          'vec3 mapN = mix( texture2D( normalMap, vNormalMapUv ).xyz, texture2D( splatNormal, splatUv ).xyz, splatW ) * 2.0 - 1.0;',
+          `vec3 mapN = mix( texture2D( normalMap, vNormalMapUv ).xyz, texture2D( splatNormal, splatUv ).xyz, splatW ) * 2.0 - 1.0;
+          // Pooled water and blood fill the cracks, so glossy patches read flat
+          // (and stop sparkling where sharp normals meet a tight highlight).
+          mapN.xy *= 1.0 - max( splatWet, splatBlood ) * 0.75;`,
         ),
       )
       .replace(

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import type { NavGrid } from './NavGrid';
+import type { Npc } from '../actors/Npc';
 
 // What a playable area hands to the game loop.
 export interface World {
@@ -16,6 +17,8 @@ export interface World {
   cameraYaw?: number;
   /** Half-size of the playable square, used to size mist and fog. */
   extent: number;
+  /** Townsfolk the player can click to talk to. */
+  npcs?: Npc[];
   update(dt: number, t: number): void;
 }
 
