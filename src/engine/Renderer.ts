@@ -53,6 +53,7 @@ export class Renderer {
   readonly grade: ShaderPass;
   readonly bloom: UnrealBloomPass;
   readonly ao: GTAOPass;
+  private renderPass: RenderPass;
 
   constructor(
     container: HTMLElement,
@@ -73,7 +74,8 @@ export class Renderer {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
     const composer = new EffectComposer(renderer, rt);
-    composer.addPass(new RenderPass(scene, camera));
+    this.renderPass = new RenderPass(scene, camera);
+    composer.addPass(this.renderPass);
 
     this.ao = new GTAOPass(scene, camera, size.x, size.y);
     this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
@@ -89,6 +91,12 @@ export class Renderer {
     this.composer = composer;
 
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** Switches the rendered scene (travelling between areas). */
+  setScene(scene: THREE.Scene) {
+    this.renderPass.scene = scene;
+    this.ao.scene = scene;
   }
 
   resize() {

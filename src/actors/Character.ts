@@ -72,6 +72,12 @@ export class Character {
   private time = Math.random() * 10;
   /** Head turn toward a point of interest, set by behaviours. */
   lookYaw = 0;
+  /**
+   * One-shot action layered over the gait (attacks, casts, flinches). `fn`
+   * gets progress 0..1 each frame after the gait has posed the rig and may
+   * overwrite any joint.
+   */
+  private action: { t: number; dur: number; fn: (k: number) => void; done?: () => void } | null = null;
 
   constructor(opts: RigOptions = {}) {
     const s = opts.scale ?? 1;
@@ -97,6 +103,17 @@ export class Character {
       const foot = joint(shin, 0, -0.44, 0);
       this.legs.push({ side, thigh, shin, foot });
     }
+  }
+
+  /** Starts a one-shot action, replacing any current one. */
+  play(dur: number, fn: (k: number) => void, done?: () => void) {
+    this.action = { t: 0, dur, fn, done };
+  }
+  get acting() {
+    return this.action !== null;
+  }
+  cancelAction() {
+    this.action = null;
   }
 
   arm(side: number) {
@@ -143,6 +160,16 @@ export class Character {
       arm.upper.rotation.x = Math.sin(ap) * arm.swing * w + 0.03 * breathe * (1 - w) + arm.restUpper;
       arm.fore.rotation.x = -Math.max(0, Math.sin(ap)) * 0.35 * w + arm.restFore;
     }
+    if (this.action) {
+      const a = this.action;
+      a.t += dt;
+      const k = Math.min(1, a.t / a.dur);
+      a.fn(k);
+      if (k >= 1 && this.action === a) {
+        this.action = null;
+        a.done?.();
+      }
+    }
     for (const hook of this.hooks) hook(dt, w, this.time);
   }
 }
@@ -175,6 +202,7 @@ export function clothPanel(
   geo.computeVertexNormals();
   const rest = (p.array as Float32Array).slice();
   const m = mesh(geo, mat, parent, pos.x, pos.y, pos.z);
+  m.userData.dynamic = true; // deformed every frame; keep out of rig baking
   c.hooks.push((_dt, w, time) => {
     for (let i = 0; i < p.count; i++) {
       const x = rest[i * 3];
@@ -189,4 +217,29 @@ export function clothPanel(
     geo.computeVertexNormals();
   });
   return m;
+}
+
+/** Pose keyframe for `animate`: joint name -> rotation values. */
+export type PoseKey = { k: number } & Record<string, number>;
+
+/**
+ * Interpolates between pose keys (eased) and returns the values at progress
+ * `k`. Keys must be sorted by `k` and share the same fields.
+ */
+export function sampleKeys(keys: PoseKey[], k: number): Record<string, number> {
+  let i = 0;
+  while (i < keys.length - 2 && k > keys[i + 1].k) i++;
+  const a = keys[i];
+  const b = keys[Math.min(i + 1, keys.length - 1)];
+  const span = b.k - a.k;
+  let t = span > 0 ? THREE.MathUtils.clamp((k - a.k) / span, 0, 1) : 1;
+  t = t * t * (3 - 2 * t);
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(a)) if (key !== 'k') out[key] = a[key] + (b[key] - a[key]) * t;
+  return out;
+}
+
+/** Weight that eases an action in over `inK` and out over the last `outK` of its run. */
+export function blendWeight(k: number, inK = 0.15, outK = 0.25) {
+  return Math.min(1, k / inK, (1 - k) / outK);
 }

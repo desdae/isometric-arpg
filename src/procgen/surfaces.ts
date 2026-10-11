@@ -349,5 +349,39 @@ export function plaster(seed = 12): SurfaceFn {
   };
 }
 
-export const SURFACES = { cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth, linen, slate, plaster } as const;
+/**
+ * Diseased skin: mottled, wrinkled, with dark veins and sores. Neutral pale
+ * albedo; each creature tints it through the material colour.
+ */
+export function flesh(seed = 13): SurfaceFn {
+  return (u, v) => {
+    const mottle = fbm2(u * 5, v * 5, 5, seed, 5) * 0.5 + 0.5;
+    const pores = fbm2(u * 60, v * 60, 2, seed + 1, 60) * 0.5 + 0.5;
+    const wr = fbm2(u * 9, v * 26, 3, seed + 2, 9) * 0.5 + 0.5; // stretched wrinkles
+    const wrinkle = 1 - Math.abs(wr - 0.5) * 2;
+    const vc = voronoi2(u * 6, v * 6, seed + 3, 6, 1);
+    const vein = 1 - smoothstep(0.0, 0.035, vc.f2 - vc.f1 + (fbm2(u * 30, v * 30, 2, seed + 4, 30)) * 0.03);
+    const sore = smoothstep(0.72, 0.8, fbm2(u * 7, v * 7, 3, seed + 5, 7) * 0.5 + 0.5);
+    const t = (0.5 + mottle * 0.35 + pores * 0.1) * (1 - vein * 0.45) * (1 - wrinkle * 0.15);
+    const r = mix(t * 0.62, 0.22, sore);
+    const g = mix(t * 0.6, 0.03, sore);
+    const b = mix(t * 0.56, 0.025, sore);
+    return { height: 0.5 + pores * 0.1 - wrinkle * 0.2 - vein * 0.12 - sore * 0.2, r, g, b, rough: mix(0.6, 0.3, sore) - vein * 0.1, ao: 1 - wrinkle * 0.2 };
+  };
+}
+
+/** Insect armour: overlapping glossy plates with sutures and pitting. */
+export function chitin(seed = 14): SurfaceFn {
+  return (u, v) => {
+    const c = voronoi2(u * 5, v * 5, seed, 5, 1);
+    const suture = 1 - smoothstep(0.0, 0.05, c.f2 - c.f1);
+    const dome = clamp01(1 - c.f1 * 1.6);
+    const pit = smoothstep(0.65, 0.72, fbm2(u * 40, v * 40, 2, seed + 1, 40) * 0.5 + 0.5);
+    const sheen = fbm2(u * 3, v * 3, 3, seed + 2, 3) * 0.5 + 0.5;
+    const t = (0.35 + dome * 0.3 + sheen * 0.2) * (1 - suture * 0.7) * (1 - pit * 0.4);
+    return { height: dome * 0.6 + 0.3 - suture * 0.3 - pit * 0.1, r: t * 0.6, g: t * 0.55, b: t * 0.55, rough: 0.28 + suture * 0.4 + pit * 0.3, ao: 1 - suture * 0.4 };
+  };
+}
+
+export const SURFACES = { flesh, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

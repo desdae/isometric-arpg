@@ -281,8 +281,10 @@ export async function buildTown(seed = 31): Promise<World> {
   ring(inset, 'x', 1);
   ring(-inset, 'x', -1);
   for (const cx of [-1, 1]) for (const cz of [-1, 1]) spireTower(arch, rng, xf(cx * inset, 0, cz * inset, rng() * 6), 3, wallH + 5, 9 + rng() * 3);
-  // Block the gate passage until travel between areas exists.
-  nav.blockBox(inset, gateZ, 2.5, 6, 0);
+  // The gate passage stays open (walking into it leads to the wasteland);
+  // its flanking towers and the ground beyond the wall are solid.
+  for (const s of [-1, 1]) nav.blockBox(inset, gateZ + s * 5.6, 2.4, 3.4, 0);
+  nav.blockBox(inset + 3.2, gateZ, 1.6, 9, 0);
   // Broken cathedral at the end of the north street.
   arch.addBuilder(
     (() => {
@@ -442,7 +444,7 @@ export async function buildTown(seed = 31): Promise<World> {
       scale: 0.96,
       lines: [
         'The bells of Saint Orsolya stopped three nights ago. Since then the dead have walked the fields beyond the east gate.',
-        'We sealed the gate when the first of them came back. What is left of the watch keeps it shut.',
+        'We sealed the gate when the first of them came back. Ilja will open it for you, and only you.',
         'If you mean to go out there, speak to Mirela for oil and to Brother Anselm for a blessing. You will want both.',
       ],
     },
@@ -506,8 +508,9 @@ export async function buildTown(seed = 31): Promise<World> {
       wander: 0,
       look: { hood: true, longRobe: false, prop: 'lantern' },
       lines: [
-        'The gate stays barred. I have orders, and I have seen what scratches at it after dark.',
-        'You want out? Then you are braver than me, or a fool. Either way, not tonight.',
+        'The gate stays barred for everyone but you. Walk through and I will drop the bar behind you.',
+        'Ghouls in the near fields, crawlers in the dead trees. The hooded ones stand in the blood pools and throw fire that burns red.',
+        'Something big walks the far end of the fields. The others call it Vrask. Do not let it get close.',
       ],
     },
     {
@@ -550,6 +553,14 @@ export async function buildTown(seed = 31): Promise<World> {
     nav,
     npcs,
     spawn: new THREE.Vector3(spawnPt.x, height(spawnPt.x, spawnPt.y), spawnPt.y),
+    title: 'Saint Orsolya',
+    subtitle: 'The bells have fallen silent',
+    exits: [{ pos: new THREE.Vector3(inset - 0.2, 0, gateZ), radius: 1.5, to: 'zone', entry: 'gate', label: 'To the Blighted Fields' }],
+    entries: {
+      start: { pos: new THREE.Vector3(spawnPt.x, 0, spawnPt.y), yaw: -Math.PI / 2 },
+      gate: { pos: new THREE.Vector3(inset - 5, 0, gateZ), yaw: -Math.PI / 2 },
+      square: { pos: new THREE.Vector3(3, 0, 6), yaw: 0 },
+    },
     spawnYaw: -Math.PI / 2,
     cameraYaw: THREE.MathUtils.degToRad(35),
     extent: HALF,

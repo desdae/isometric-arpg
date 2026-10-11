@@ -10,6 +10,7 @@ import { bones, brazier, brokenWagon, grassTuft, stakes } from '../procgen/props
 import { Fire } from '../engine/Fire';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
+import type { MonsterSpawn } from '../actors/Monster';
 
 // The first combat zone: a blighted wasteland outside the spired walls of the
 // town. A cobbled road leaves the gatehouse and peters out into cracked earth
@@ -86,6 +87,11 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     nav.blockCircle(i, HALF - 1, 2);
     nav.blockCircle(HALF - 1, i, 2);
   }
+
+  // The gatehouse towers and the buttresses along the wall are solid; only
+  // the gate arch itself is open (walking into it leads back to town).
+  for (const s of [-1, 1]) nav.blockBox(WALL_X + 0.6, s * 5.6, 2.6, 3.4, 0);
+  for (let z = -HALF; z < HALF; z += 1) if (Math.abs(z) > 8.5) nav.blockBox(WALL_X + 0.4, z, 1.2, 0.6, 0);
 
   // ---- Town walls and skyline ------------------------------------------
   const arch = new MeshBuilder();
@@ -269,6 +275,64 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     });
   }
 
+  // ---- Monsters ----------------------------------------------------------
+  // Danger rises with distance from the gate. Blood priests stand in the
+  // crater pools with ghouls about them; ghoul packs roam the open ground,
+  // crawlers nest among the dead trees, brutes lumber with an escort, and
+  // Vrask the Flayer holds the far end of the fields.
+  const spawns: MonsterSpawn[] = [];
+  let pack = 0;
+  const levelAt = (x: number) => 1 + Math.min(3, Math.floor((x - WALL_X - 10) / 28));
+  const near = (x: number, z: number, r: number) => {
+    for (let i = 0; i < 20; i++) {
+      const a = rng() * Math.PI * 2;
+      const d = rng() * r;
+      const px = x + Math.cos(a) * d;
+      const pz = z + Math.sin(a) * d;
+      if (nav.walkable(px, pz)) return new THREE.Vector3(px, height(px, pz), pz);
+    }
+    const p = nav.nearestWalkable(x, z);
+    return p ? new THREE.Vector3(p.x, height(p.x, p.y), p.y) : null;
+  };
+  const group = (x: number, z: number, list: [MonsterSpawn['kind'], number][], spread: number, elite?: string) => {
+    pack++;
+    for (const [kind, count] of list) {
+      for (let i = 0; i < count; i++) {
+        const p = near(x, z, kind === 'cultist' ? 0.8 : spread);
+        if (p) spawns.push({ kind, pos: p, level: levelAt(x) + (elite ? 1 : 0), pack, wander: kind === 'cultist' ? 0 : 3.5, elite: i === 0 && kind === 'brute' ? elite : undefined });
+      }
+    }
+  };
+  const farFromGate = (x: number, z: number) => Math.hypot(x - (WALL_X + 7), z - roadZ(WALL_X + 7)) > 20;
+  const spot = (minX: number, maxX: number) => {
+    for (let i = 0; i < 60; i++) {
+      const x = range(rng, minX, maxX);
+      const z = range(rng, -HALF + 10, HALF - 10);
+      if (farFromGate(x, z) && nav.walkable(x, z)) return [x, z];
+    }
+    return [range(rng, minX, maxX), range(rng, -20, 20)];
+  };
+  for (const c of craters) if (farFromGate(c.x, c.z)) group(c.x, c.z, [['cultist', 1], ['ghoul', 2 + Math.floor(rng() * 2)]], 4.5);
+  for (let i = 0; i < 6; i++) {
+    const [x, z] = spot(WALL_X + 18, HALF - 10);
+    group(x, z, [['ghoul', 3 + Math.floor(rng() * 3)]], 4);
+  }
+  for (let i = 0; i < 4; i++) {
+    const [x, z] = spot(WALL_X + 25, HALF - 8);
+    group(x, z, [['crawler', 4 + Math.floor(rng() * 3)]], 3);
+  }
+  for (let i = 0; i < 3; i++) {
+    const [x, z] = spot(WALL_X + 35, HALF - 10);
+    group(x, z, [['brute', 1], ['ghoul', 2]], 4);
+  }
+  {
+    const [x, z] = spot(HALF - 24, HALF - 10);
+    group(x, z, [['brute', 1], ['ghoul', 4], ['cultist', 0]], 5, 'Vrask the Flayer');
+    group(x + 4, z + 3, [['cultist', 1]], 1);
+    group(x - 3, z - 4, [['cultist', 1]], 1);
+    spawns.filter((s) => s.pack >= pack - 2).forEach((s) => (s.pack = pack));
+  }
+
   const spawnX = WALL_X + 7;
   return {
     scene,
@@ -278,6 +342,11 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     nav,
     spawn: new THREE.Vector3(spawnX, height(spawnX, roadZ(spawnX)), roadZ(spawnX)),
     spawnYaw: Math.PI / 2,
+    title: 'The Blighted Fields',
+    subtitle: 'Where the dead were buried, they do not rest',
+    exits: [{ pos: new THREE.Vector3(WALL_X + 0.6, 0, 0), radius: 1.5, to: 'town', entry: 'gate', label: 'To Saint Orsolya' }],
+    entries: { gate: { pos: new THREE.Vector3(spawnX, 0, roadZ(spawnX)), yaw: Math.PI / 2 } },
+    monsterSpawns: spawns,
     // Walls on the left of the screen, the wasteland opening out to the right.
     cameraYaw: THREE.MathUtils.degToRad(20),
     extent: HALF,

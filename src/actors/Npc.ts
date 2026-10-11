@@ -41,6 +41,7 @@ export class Npc {
     scene.add(character.root);
     this.hit = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 2, 8).translate(0, 1, 0), new THREE.MeshBasicMaterial({ visible: false }));
     this.hit.userData.npc = this;
+    this.hit.userData.dynamic = true;
     character.root.add(this.hit);
     this.sync();
   }

@@ -2,6 +2,18 @@ import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import type { NavGrid } from './NavGrid';
 import type { Npc } from '../actors/Npc';
+import type { MonsterSpawn } from '../actors/Monster';
+
+export type AreaName = 'town' | 'zone';
+
+/** A way out of an area: walk into it to travel. */
+export interface Exit {
+  pos: THREE.Vector3;
+  radius: number;
+  to: AreaName;
+  entry: string;
+  label: string;
+}
 
 // What a playable area hands to the game loop.
 export interface World {
@@ -19,6 +31,13 @@ export interface World {
   extent: number;
   /** Townsfolk the player can click to talk to. */
   npcs?: Npc[];
+  /** Area name shown on arrival, with a line beneath it. */
+  title?: string;
+  subtitle?: string;
+  exits?: Exit[];
+  /** Named arrival points (other areas' exits lead to these). */
+  entries?: Record<string, { pos: THREE.Vector3; yaw: number }>;
+  monsterSpawns?: MonsterSpawn[];
   update(dt: number, t: number): void;
 }
 

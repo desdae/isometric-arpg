@@ -2,18 +2,21 @@ import * as THREE from 'three';
 import { installHeightFog } from './engine/fog';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
-import { Mist, Sky } from './engine/Atmosphere';
+import { Sky } from './engine/Atmosphere';
 import { buildEnvironment } from './engine/environment';
 import { buildTestScene } from './scenes/testScene';
 import { buildWastelandZone } from './scenes/wastelandZone';
 import { buildCharacterPreview } from './scenes/characterPreview';
 import { buildTown } from './scenes/town';
-import { Dialogue } from './engine/Dialogue';
-import { dressKnight } from './actors/outfits/knight';
-import type { Npc } from './actors/Npc';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
-import { Player, bindClickToMove } from './actors/Player';
+import { dressKnight } from './actors/outfits/knight';
+import { bakeRig } from './actors/bake';
+import { addSilhouette } from './actors/silhouette';
+import { KINDS, type MonsterKind } from './actors/Monster';
+import { monsterMaterials } from './actors/monsters/materials';
+import type { Rig } from './actors/Rig';
+import { Game } from './game/Game';
 import { MOON_OFFSET, type World } from './world/World';
 
 installHeightFog();
@@ -21,84 +24,81 @@ installHeightFog();
 const params = new URLSearchParams(location.search);
 const hud = document.getElementById('hud')!;
 hud.textContent = 'Generating world…';
+if (!params.has('debug')) hud.style.visibility = 'hidden';
 
 const t0 = performance.now();
-// Artifacts only pass a bare #anchor, so the hash also selects the area.
+// Artifacts only pass a bare #anchor, so the hash also picks the starting area.
 const sceneName = params.get('scene') ?? (location.hash.slice(1) || 'town');
-const world: World =
-  sceneName === 'test'
-    ? await buildTestScene()
-    : sceneName === 'character'
-      ? await buildCharacterPreview()
-      : sceneName === 'zone'
-        ? await buildWastelandZone()
-        : await buildTown();
-window.addEventListener('hashchange', () => location.reload());
-const { scene, moon } = world;
-const sky = new Sky();
-scene.add(sky.mesh);
-const mist = new Mist(Math.min(world.extent, 60), world.heightAt, 110);
-scene.add(mist.group);
 
 const cam = new IsoCamera(window.innerWidth / window.innerHeight, document.body);
-const renderer = new Renderer(document.body, scene, cam.camera);
-scene.environment = buildEnvironment(renderer.renderer);
-scene.environmentIntensity = 0.45;
+const renderer = new Renderer(document.body, new THREE.Scene(), cam.camera);
+const environment = buildEnvironment(renderer.renderer);
+const sky = new Sky();
 window.addEventListener('resize', () => cam.resize(window.innerWidth / window.innerHeight));
 
-const dialogue = new Dialogue();
-let player: Player | null = null;
-let preview: Character | null = null;
-if (world.spawn) {
+async function knight(): Promise<Character> {
   const [metal, cloth] = await bakeSurfaces([
     { kind: 'wornMetal', seed: 21, size: 512, normalStrength: 2 },
     { kind: 'cloth', seed: 22, size: 512, normalStrength: 1.5 },
   ]);
-  const steel = pbrMaterial(metal, 2);
-  const character = dressKnight(new Character(), {
-    steel,
+  const c = dressKnight(new Character(), {
+    steel: pbrMaterial(metal, 2),
     darkSteel: pbrMaterial(metal, 2, { color: 0x5a5550 }),
     leather: new THREE.MeshStandardMaterial({ color: 0x1c120c, roughness: 0.75 }),
     cloth: pbrMaterial(cloth, 2),
     dark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
   });
-  if (!world.nav) {
-    // Character preview: animate in place at a fixed speed (?speed=m/s).
-    preview = character;
-    scene.add(character.root);
-  } else player = new Player(character, world.nav, world.heightAt, scene, world.spawn, world.spawnYaw ?? 0);
-  // ARPG "light radius": a soft light that travels with the hero so they always read.
-  const heroLight = new THREE.PointLight(0xffd2b0, 9, 9, 1.6);
-  heroLight.position.set(0.4, 3.6, -0.6);
-  character.root.add(heroLight);
-  if (player) {
-    const p = player;
-    const npcs = world.npcs ?? [];
-    const talkTo = (npc: Npc) => {
-      dialogue.close();
-      p.interact(npc.position, 1.8, () => {
-        npc.talking = true;
-        dialogue.show(npc.def.name, npc.def.role, npc.nextLine(), () => dialogue.setText(npc.nextLine()), () => (npc.talking = false));
-      });
-    };
-    // Scripted conversation for automated screenshots: ?talk=index
-    if (params.has('talk')) setTimeout(() => talkTo(npcs[Number(params.get('talk'))]), 500);
-    bindClickToMove(
-      renderer.renderer.domElement,
-      cam.camera,
-      world.ground,
-      p,
-      npcs.map((n) => n.hit),
-      (obj) => talkTo(obj.userData.npc as Npc),
-      () => dialogue.close(),
-    );
+  bakeRig(c.root);
+  return c;
+}
+
+/** ARPG "light radius": a soft light that travels with the hero so they always read. */
+function heroLight(c: THREE.Object3D) {
+  const l = new THREE.PointLight(0xffd2b0, 9, 9, 1.6);
+  l.position.set(0.4, 3.6, -0.6);
+  c.add(l);
+}
+
+let game: Game | null = null;
+let world: World;
+let preview: Rig | null = null;
+let previewAttack: (() => void) | null = null;
+
+if (sceneName === 'test' || sceneName === 'character') {
+  // Inspection stages: the test scene, or one model animating in place
+  // (?model=knight|ghoul|brute|crawler|cultist, ?speed=m/s, ?anim=attack|die).
+  world = sceneName === 'test' ? await buildTestScene() : await buildCharacterPreview();
+  world.scene.add(sky.mesh);
+  world.scene.environment = environment;
+  world.scene.environmentIntensity = 0.45;
+  renderer.setScene(world.scene);
+  if (world.spawn) {
+    const model = params.get('model') ?? 'knight';
+    if (model in KINDS) {
+      const body = KINDS[model as MonsterKind].build(await monsterMaterials(), Number(params.get('seed') ?? 3), params.has('elite'));
+      preview = body.rig;
+      const anim = params.get('anim');
+      if (anim === 'attack') previewAttack = () => body.attack(() => {});
+      if (anim === 'die') setTimeout(() => body.die(), 300);
+    } else {
+      const c = await knight();
+      preview = c;
+      heroLight(c.root);
+    }
+    world.scene.add(preview.root);
+    cam.target.copy(world.spawn).add(new THREE.Vector3(0, 1, 0));
   }
-  cam.target.copy(world.spawn).add(new THREE.Vector3(0, preview ? 1 : 0, 0));
-  cam.update(0);
+} else {
+  const hero = await knight();
+  heroLight(hero.root);
+  addSilhouette(hero.body);
+  game = new Game({ town: buildTown, zone: buildWastelandZone }, hero, cam, renderer, sky, environment);
+  await game.start(sceneName === 'zone' ? 'zone' : 'town', sceneName === 'zone' ? 'gate' : 'start');
+  world = game.world!;
 }
 const genMs = performance.now() - t0;
+cam.update(0);
 
-if (world.cameraYaw !== undefined) cam.yaw = cam.targetYawValue = world.cameraYaw;
 if (params.has('dist')) {
   cam.distance = Number(params.get('dist'));
   cam.minDistance = Math.min(cam.minDistance, cam.distance);
@@ -106,16 +106,15 @@ if (params.has('dist')) {
 }
 if (params.has('yaw')) cam.yaw = cam.targetYawValue = THREE.MathUtils.degToRad(Number(params.get('yaw')));
 if (params.has('pitch')) cam.pitch = THREE.MathUtils.degToRad(Number(params.get('pitch')));
-if (params.has('x') || params.has('z')) {
-  player = null; // free camera for inspection shots
-  cam.target.set(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0));
-}
-// Scripted walk for automated screenshots: ?walk=x,z
-if (params.has('walk') && world.nav && world.spawn) {
+const freeCam = params.has('x') || params.has('z');
+if (freeCam) cam.target.set(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0));
+// Scripting hooks for automated screenshots.
+(window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
+(window as unknown as { __THREE: typeof THREE }).__THREE = THREE;
+if (params.has('walk') && game) {
   const [wx, wz] = params.get('walk')!.split(',').map(Number);
-  setTimeout(() => (window as unknown as { __player: Player }).__player?.moveTo(new THREE.Vector3(wx, 0, wz)), 500);
+  setTimeout(() => game!.player.moveTo(new THREE.Vector3(wx, 0, wz)), 500);
 }
-(window as unknown as { __player: Player | null }).__player = player;
 
 const shadowBasis = new THREE.Matrix4();
 const shadowInv = new THREE.Matrix4();
@@ -125,17 +124,27 @@ const UP = new THREE.Vector3(0, 1, 0);
 const clock = new THREE.Clock();
 let frames = 0;
 let fpsTime = 0;
+let attackTimer = 0;
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
-  // Fixed step keeps preview poses deterministic even on slow machines.
-  if (preview) preview.update(1 / 30, Number(params.get('speed') ?? 0));
-  if (player) {
-    player.update(dt);
-    cam.target.copy(player.position);
+  if (game) {
+    world = game.world!;
+    game.update(dt, t);
+    if (!freeCam) cam.target.copy(game.player.position);
+  } else {
+    // Fixed step keeps preview poses deterministic even on slow machines.
+    if (preview) preview.update(1 / 30, Number(params.get('speed') ?? 0));
+    if (previewAttack && (attackTimer -= 1 / 30) <= 0) {
+      attackTimer = 2;
+      previewAttack();
+    }
+    world.update(dt, t);
   }
   cam.update(dt);
+  if (game) cam.camera.position.add(game.shake());
+  const moon = world.moon;
   // Keep the shadow frustum centred on what the camera sees, sized to the zoom.
   const half = Math.ceil(cam.distance * 1.25);
   const sc = moon.shadow.camera;
@@ -155,11 +164,8 @@ function frame() {
   shadowFocus.applyMatrix4(shadowBasis);
   moon.target.position.copy(shadowFocus);
   moon.position.copy(shadowFocus).add(MOON_OFFSET);
-  (scene.fog as THREE.FogExp2).density = 0.42 / cam.distance;
+  (world.scene.fog as THREE.FogExp2).density = 0.42 / cam.distance;
   sky.update(t, cam.camera.position);
-  mist.update(dt);
-  if (world.npcs) for (const n of world.npcs) n.update(dt, player ? player.position : null);
-  world.update(dt, t);
   renderer.render(t);
 
   frames++;
@@ -168,10 +174,7 @@ function frame() {
     const fps = frames / fpsTime;
     frames = 0;
     fpsTime = 0;
-    const controls = player
-      ? `Click to move${world.npcs ? ' · click townsfolk to talk' : ''} · wheel zoom · Q/E rotate`
-      : 'WASD pan · wheel zoom · Q/E rotate';
-    hud.textContent = `${fps.toFixed(0)} fps · world generated in ${genMs.toFixed(0)} ms\n${controls}`;
+    hud.textContent = `${fps.toFixed(0)} fps · world generated in ${genMs.toFixed(0)} ms`;
   }
   requestAnimationFrame(frame);
 }

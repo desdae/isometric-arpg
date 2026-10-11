@@ -10,15 +10,10 @@
       html, body { margin: 0; height: 100%; background: #0a0405; overflow: hidden; }
       canvas { display: block; }
       #hud { position: fixed; left: 12px; bottom: 10px; color: #c9a9a0; font: 12px/1.4 monospace; opacity: .7; pointer-events: none; white-space: pre; }
-      #areas { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px; display: flex; gap: 6px; z-index: 5; }
-      #areas a { font: 600 12px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; color: #e8d0b0; text-decoration: none;
-        background: rgba(30,12,10,.8); border: 1px solid #6a3424; padding: 7px 10px; }
-      #areas a:hover { border-color: #a85a3a; }
     </style>
   </head>
   <body>
     <div id="hud"></div>
-    <nav id="areas"><a href="#town">Town</a><a href="#zone">Wasteland</a></nav>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
