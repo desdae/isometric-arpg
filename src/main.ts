@@ -10,7 +10,7 @@ import { buildCharacterPreview } from './scenes/characterPreview';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { Player, bindClickToMove } from './actors/Player';
-import type { World } from './world/World';
+import { MOON_OFFSET, type World } from './world/World';
 
 installHeightFog();
 
@@ -25,7 +25,7 @@ const world: World =
 const { scene, moon } = world;
 const sky = new Sky();
 scene.add(sky.mesh);
-const mist = new Mist(Math.min(world.extent, 60), 110);
+const mist = new Mist(Math.min(world.extent, 60), world.heightAt, 110);
 scene.add(mist.group);
 
 const cam = new IsoCamera(window.innerWidth / window.innerHeight, document.body);
@@ -83,6 +83,11 @@ if (params.has('walk') && world.nav && world.spawn) {
 }
 (window as unknown as { __player: Player | null }).__player = player;
 
+const shadowBasis = new THREE.Matrix4();
+const shadowInv = new THREE.Matrix4();
+const shadowFocus = new THREE.Vector3();
+const ORIGIN = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 const clock = new THREE.Clock();
 let frames = 0;
 let fpsTime = 0;
@@ -98,15 +103,24 @@ function frame() {
   }
   cam.update(dt);
   // Keep the shadow frustum centred on what the camera sees, sized to the zoom.
-  moon.target.position.copy(cam.target);
-  moon.position.copy(cam.target).add(new THREE.Vector3(-30, 45, 20));
-  const half = cam.distance * 1.25;
+  const half = Math.ceil(cam.distance * 1.25);
   const sc = moon.shadow.camera;
   if (sc.right !== half) {
     sc.left = sc.bottom = -half;
     sc.right = sc.top = half;
     sc.updateProjectionMatrix();
   }
+  // Snap the shadow focus to whole shadow-map texels in light space so shadow
+  // edges stay put instead of crawling as the camera moves.
+  const texel = (2 * half) / moon.shadow.mapSize.x;
+  shadowBasis.lookAt(MOON_OFFSET, ORIGIN, UP);
+  shadowInv.copy(shadowBasis).invert();
+  shadowFocus.copy(cam.target).applyMatrix4(shadowInv);
+  shadowFocus.x = Math.round(shadowFocus.x / texel) * texel;
+  shadowFocus.y = Math.round(shadowFocus.y / texel) * texel;
+  shadowFocus.applyMatrix4(shadowBasis);
+  moon.target.position.copy(shadowFocus);
+  moon.position.copy(shadowFocus).add(MOON_OFFSET);
   (scene.fog as THREE.FogExp2).density = 0.42 / cam.distance;
   sky.update(t, cam.camera.position);
   mist.update(dt);

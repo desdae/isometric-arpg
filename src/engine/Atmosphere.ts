@@ -62,10 +62,11 @@ export class Sky {
 /** Large soft cards lying near the ground, slowly drifting and turning. */
 export class Mist {
   readonly group = new THREE.Group();
-  private cards: { mesh: THREE.Mesh; vel: THREE.Vector2; spin: number; base: THREE.Vector3 }[] = [];
+  private cards: { mesh: THREE.Mesh; vel: THREE.Vector2; spin: number; lift: number; half: number }[] = [];
 
   constructor(
     private extent: number,
+    private heightAt: (x: number, z: number) => number = () => 0,
     count = 70,
     color = new THREE.Color(0.3, 0.07, 0.06),
     seed = 9,
@@ -85,23 +86,38 @@ export class Mist {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(s, s), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.rotation.z = rng() * Math.PI * 2;
-      const base = new THREE.Vector3(range(rng, -extent, extent), range(rng, 0.3, 1.6), range(rng, -extent, extent));
-      mesh.position.copy(base);
+      mesh.position.set(range(rng, -extent, extent), 0, range(rng, -extent, extent));
       mesh.renderOrder = 10;
       this.group.add(mesh);
-      this.cards.push({ mesh, vel: new THREE.Vector2(range(rng, 0.2, 0.6), range(rng, -0.15, 0.15)), spin: range(rng, -0.03, 0.03), base });
+      this.cards.push({ mesh, vel: new THREE.Vector2(range(rng, 0.2, 0.6), range(rng, -0.15, 0.15)), spin: range(rng, -0.03, 0.03), lift: range(rng, 0.3, 1.4), half: s / 2 });
     }
   }
 
   update(dt: number) {
     const e = this.extent;
     for (const c of this.cards) {
-      c.mesh.position.x += c.vel.x * dt;
-      c.mesh.position.z += c.vel.y * dt;
-      if (c.mesh.position.x > e) c.mesh.position.x -= 2 * e;
-      if (c.mesh.position.z > e) c.mesh.position.z -= 2 * e;
-      if (c.mesh.position.z < -e) c.mesh.position.z += 2 * e;
+      const p = c.mesh.position;
+      p.x += c.vel.x * dt;
+      p.z += c.vel.y * dt;
+      if (p.x > e) p.x -= 2 * e;
+      if (p.z > e) p.z -= 2 * e;
+      if (p.z < -e) p.z += 2 * e;
       c.mesh.rotation.z += c.spin * dt;
+      // Ride above the highest ground under the card so it never slices into
+      // the terrain (which shows as hard, drifting lines).
+      const h = c.half;
+      const top = Math.max(
+        this.heightAt(p.x, p.z),
+        this.heightAt(p.x - h, p.z - h),
+        this.heightAt(p.x + h, p.z - h),
+        this.heightAt(p.x - h, p.z + h),
+        this.heightAt(p.x + h, p.z + h),
+        this.heightAt(p.x - h, p.z),
+        this.heightAt(p.x + h, p.z),
+        this.heightAt(p.x, p.z - h),
+        this.heightAt(p.x, p.z + h),
+      );
+      p.y = p.y === 0 ? top + c.lift : p.y + (top + c.lift - p.y) * Math.min(1, dt * 2);
     }
   }
 }

@@ -114,12 +114,16 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       }
     }
   }
-  // Cathedral spires and tall roofs rising behind the wall.
+  scene.add(arch.build(mats));
+
+  // Cathedral spires and tall roofs rising behind the wall. They are backdrop
+  // only, so they skip shadow casting (their shadows would streak the field).
+  const skyline = new MeshBuilder();
   for (let i = 0; i < 9; i++) {
     const z = range(rng, -HALF, HALF);
     const x = WALL_X - range(rng, 9, 26);
     const big = i < 3;
-    spireTower(arch, rng, xf(x, 0, z, rng() * 6), big ? 3.6 : 2.4, big ? 22 : range(rng, 12, 17), big ? 18 : range(rng, 8, 12));
+    spireTower(skyline, rng, xf(x, 0, z, rng() * 6), big ? 3.6 : 2.4, big ? 22 : range(rng, 12, 17), big ? 18 : range(rng, 8, 12));
   }
   for (let i = 0; i < 16; i++) {
     const z = range(rng, -HALF, HALF);
@@ -128,13 +132,13 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     const d = range(rng, 6, 10);
     const h = range(rng, 8, 13);
     const m = xf(x, 0, z, Math.round(rng() * 4) * (Math.PI / 2));
-    arch.add('stone', new THREE.BoxGeometry(w, h, d), m.clone().multiply(xf(0, h / 2, 0)));
+    skyline.add('stone', new THREE.BoxGeometry(w, h, d), m.clone().multiply(xf(0, h / 2, 0)));
     const roof = new THREE.CylinderGeometry(0, w * 0.62, d, 4, 1);
     roof.rotateY(Math.PI / 4);
     roof.rotateX(Math.PI / 2);
-    arch.add('trim', roof, m.clone().multiply(xf(0, h + w * 0.42, 0, 0, 1, 1.25, 1)));
+    skyline.add('trim', roof, m.clone().multiply(xf(0, h + w * 0.42, 0, 0, 1, 1.25, 1)));
   }
-  scene.add(arch.build(mats));
+  scene.add(skyline.build(mats, false));
 
   // ---- Fires -----------------------------------------------------------
   const fires: Fire[] = [];
