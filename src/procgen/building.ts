@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { MeshBuilder, xf } from './builder';
-import { fbm2, range, type Rng } from './noise';
+import { clamp01, fbm2, range, type Rng } from './noise';
 
 // Ruined town houses: a coursed stone ground floor with door and window
 // openings, an optional jettied timber-framed upper storey with plaster
 // panels, and a slate gable roof whose tiles, battens and rafters fall away
 // where the house has collapsed. Material keys:
-//   stone, trim, wood, plaster, slate, glow, dark
+//   stone, trim, wood, plaster, slate (+ slateMoss, slateDark, slateLight),
+//   glass, glassLit, iron, glow, dark
 
 export interface HouseSpec {
   w: number; // along X (the street front faces +Z)
@@ -16,6 +17,8 @@ export interface HouseSpec {
   damage: number;
   /** Lit windows (someone still lives here). */
   lit: boolean;
+  /** Burnt out: sooted stone, charcoal timbers, embers still glowing in the rubble. */
+  charred?: boolean;
 }
 
 interface Opening {
@@ -24,6 +27,36 @@ interface Opening {
   y: number; // sill height
   h: number;
   door?: boolean;
+}
+
+/** A pane of leaded glass, w x h, facing +Z, with diamonds at a constant size. */
+function glazing(b: MeshBuilder, key: string, w: number, h: number, m: THREE.Matrix4) {
+  const g = new THREE.PlaneGeometry(w, h);
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / 0.6, (uv.getY(i) * h) / 0.6);
+  b.add(key, g, m, 0);
+}
+
+/**
+ * Plank door hung on its left edge, `open` radians ajar (swinging inward).
+ * Frame origin: bottom centre of the doorway, +Z outward.
+ */
+function plankDoor(b: MeshBuilder, rng: Rng, frame: THREE.Matrix4, w: number, h: number, open: number) {
+  const hinge = frame.clone().multiply(xf(-w / 2 + 0.03, 0, 0, -open));
+  const n = Math.max(3, Math.round(w / 0.22));
+  const pw = (w - 0.06) / n;
+  for (let i = 0; i < n; i++) {
+    const ph = h - 0.03 - rng() * 0.05;
+    // Planks run vertically: map the wood grain along their length.
+    const plank = new THREE.BoxGeometry(pw * 0.96, ph, 0.06).rotateZ(Math.PI / 2);
+    b.add('wood', plank, hinge.clone().multiply(xf(pw * (i + 0.5), ph / 2, range(rng, -0.005, 0.005), 0, 1, 1, 1, 0, -Math.PI / 2)), 0.9);
+  }
+  // Ledges and a brace on the back, iron straps and a ring on the face.
+  for (const y of [0.35, h - 0.4]) {
+    b.add('wood', new THREE.BoxGeometry(w - 0.12, 0.14, 0.05), hinge.clone().multiply(xf(w / 2 - 0.03, y, -0.055)), 0.9);
+    b.add('iron', new THREE.BoxGeometry(w * 0.8, 0.06, 0.015), hinge.clone().multiply(xf(w * 0.4, y, 0.038)), 0);
+  }
+  b.add('iron', new THREE.TorusGeometry(0.06, 0.012, 6, 14), hinge.clone().multiply(xf(w - 0.2, h * 0.48, 0.05)), 0);
 }
 
 /**
@@ -40,7 +73,8 @@ function masonryWall(
   openings: Opening[],
   damage: number,
   seed: number,
-) {
+  fill?: (o: Opening, frame: THREE.Matrix4) => void,
+): (x: number) => number {
   const course = 0.36;
   const rows = Math.ceil(height / course);
   const inOpening = (x0: number, x1: number, y0: number, y1: number) =>
@@ -72,9 +106,11 @@ function masonryWall(
   // Openings: timber lintels, stone sills, dark or lit reveals.
   for (const o of openings) {
     if (o.y + o.h > profile(o.x) + 0.2) continue; // lintel fell with the wall
+    fill?.(o, m.clone().multiply(xf(o.x, o.y, 0)));
     b.add('wood', new THREE.BoxGeometry(o.w + 0.4, 0.2, thick + 0.04), m.clone().multiply(xf(o.x, o.y + o.h + 0.1, 0)), 1.2);
     if (!o.door) b.add('trim', new THREE.BoxGeometry(o.w + 0.15, 0.08, thick + 0.12), m.clone().multiply(xf(o.x, o.y - 0.04, 0.03)));
   }
+  return profile;
 }
 
 /** Timber-framed storey along +X: sill and head beams, posts, braces, plaster infill. */
@@ -103,7 +139,8 @@ function timberStorey(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, length: number
         const wy1 = height * 0.8;
         b.add('plaster', new THREE.BoxGeometry(bay - t, wy0 - t, 0.08), m.clone().multiply(xf(x0 + bay / 2, t + (wy0 - t) / 2, -0.02)));
         b.add('plaster', new THREE.BoxGeometry(bay - t, height - wy1 - t, 0.08), m.clone().multiply(xf(x0 + bay / 2, wy1 + (height - wy1 - t) / 2, -0.02)));
-        b.add(lit && rng() < 0.7 ? 'glow' : 'dark', new THREE.PlaneGeometry(bay - t, wy1 - wy0), m.clone().multiply(xf(x0 + bay / 2, (wy0 + wy1) / 2, -0.05)), 0);
+        if (rng() > damage * 0.8) glazing(b, lit && rng() < 0.75 ? 'glassLit' : 'glass', bay - t, wy1 - wy0, m.clone().multiply(xf(x0 + bay / 2, (wy0 + wy1) / 2, -0.03)));
+        else b.add('dark', new THREE.PlaneGeometry(bay - t, wy1 - wy0), m.clone().multiply(xf(x0 + bay / 2, (wy0 + wy1) / 2, -0.06)), 0);
         b.add('wood', new THREE.BoxGeometry(0.06, wy1 - wy0, 0.06), m.clone().multiply(xf(x0 + bay / 2, (wy0 + wy1) / 2, 0)), 1.2);
       } else {
         b.add('plaster', new THREE.BoxGeometry(bay - t, height - 2 * t, 0.08), m.clone().multiply(xf(x0 + bay / 2, height / 2, -0.02)));
@@ -121,6 +158,20 @@ function timberStorey(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, length: number
   }
 }
 
+/** One course strip of slates, UV-mapped to a random row of the slate texture. */
+function slateStrip(rng: Rng, len: number, course: number): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(len, course, 0.025);
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  const rows = 8; // matches the slate surface generator
+  const row = Math.floor(rng() * rows);
+  const u0 = rng() * 4;
+  const uSpan = len / 1.8; // six slates per texture width, ~0.3 m each
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, u0 + uv.getX(i) * uSpan, (row + 0.04 + uv.getY(i) * 0.92) / rows);
+  }
+  return g;
+}
+
 /** Slate gable roof over a w x d footprint (ridge along X) starting at height y. */
 function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: number, y: number, damage: number, seed: number) {
   const pitch = THREE.MathUtils.degToRad(range(rng, 48, 56));
@@ -133,6 +184,21 @@ function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: num
   const hole = (x: number, t: number, side: number) => {
     const n = fbm2(x * 0.35 + side * 13, t * 1.6 + seed, 3, seed + side) * 0.5 + 0.5;
     return n + (1 - t) * 0.12 < damage * 1.05;
+  };
+  // Weathering. Old roofs sag between the gables and halfway down each slope.
+  const sag = range(rng, 0.03, 0.09) + damage * 0.18;
+  const sagAt = (x: number, t: number) => -sag * Math.sin(Math.PI * clamp01(x / w + 0.5)) * Math.sin(Math.PI * t);
+  // Which slate material a strip gets: moss creeps up from the damp eaves and
+  // gathers in patches, soot and rain streak down the slope, and odd slates
+  // are replacements of a different colour.
+  const mossy = range(rng, -0.3, 0.2);
+  const weatherKey = (x: number, t: number, side: number) => {
+    const moss = fbm2(x * 0.7 + side * 7, t * 2.5 + seed * 0.1, 3, seed + 11) * 0.5 + 0.5 + (1 - t) * 0.25 + mossy + damage * 0.2;
+    if (moss > 0.9) return 'slateMoss';
+    const streak = fbm2(x * 3.2 + side * 3, t * 0.6 + seed, 2, seed + 21) * 0.5 + 0.5;
+    if (streak > 0.68) return 'slateDark';
+    if (rng() < 0.03) return 'slateLight';
+    return 'slate';
   };
   const rafterGap = 0.6;
   for (const side of [-1, 1]) {
@@ -151,36 +217,55 @@ function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: num
           -side * (Math.PI / 2 - pitch),
         ),
       );
-    // Rafters: some snapped part way up where the roof caved in.
+    // Rafters run eave to ridge so every one is carried at both ends; where
+    // the roof caved in some are simply gone (they lie inside as rubble).
     for (let x = -w / 2; x <= w / 2 + 0.01; x += rafterGap) {
-      const t0 = hole(x, 0.5, side) ? range(rng, 0.2, 0.6) : 1;
-      if (hole(x, 0.2, side) && rng() < damage * 0.6) continue;
-      const len = slope * t0;
-      b.add('wood', new THREE.BoxGeometry(0.1, len, 0.16), toSlope(x, len / 2, -0.08), 1.2);
+      if (hole(x, 0.5, side) && rng() < damage * 0.8) continue;
+      b.add('wood', new THREE.BoxGeometry(0.1, slope, 0.16), toSlope(x, slope / 2, -0.08), 1.2);
     }
-    // Slate courses: strips of tiles, broken off around holes.
+    // Slate courses: strips of tiles, broken off around holes. Each strip
+    // samples one random row of the slate texture so individual slates line
+    // up with the course they sit in.
     const course = 0.32;
     for (let s = 0.05; s < slope - 0.05; s += course * 0.82) {
       const t = s / slope;
-      let x = -w / 2 - 0.2 + rng() * 0.2;
-      while (x < w / 2 + 0.2) {
-        const seg = range(rng, 0.5, 1.1);
-        const xe = Math.min(x + seg, w / 2 + 0.25);
+      // Both verges are straight: every course starts and ends on the same
+      // line, and only the joints between strips are staggered.
+      const edge = w / 2 + 0.25;
+      let x = -edge;
+      while (x < edge - 0.01) {
+        let xe = Math.min(x + range(rng, 0.5, 1.1), edge);
+        if (edge - xe < 0.3) xe = edge; // no sliver at the end
         const cx = (x + xe) / 2;
+        const len = xe - x;
         if (!hole(cx, t, side)) {
-          const tile = new THREE.BoxGeometry(xe - x - 0.01, course, 0.025);
-          // Slight outward tilt so each course's lower edge stands proud of the one below.
-          b.add('slate', tile, toSlope(cx, s + course / 2, 0.03).multiply(xf(0, 0, 0, 0, 1, 1, 1, -side * (0.06 + range(rng, -0.02, 0.02)))), 0);
+          if (rng() < 0.03 + damage * 0.12) {
+            // A slate or two slipped out, leaving a dark gap over the battens.
+            if (rng() < 0.5) b.add('wood', new THREE.BoxGeometry(len, 0.04, 0.05), toSlope(cx, s, sagAt(cx, t)), 1.2);
+          } else {
+            const tile = slateStrip(rng, len - 0.01, course);
+            const slip = rng() < 0.04 ? range(rng, 0.04, 0.12) : 0; // slid down the slope a little
+            b.add(
+              weatherKey(cx, t, side),
+              tile,
+              toSlope(cx, s + course / 2 - slip, 0.03 + sagAt(cx, t) + range(rng, -0.006, 0.006)).multiply(
+                // Outward tilt so each course's lower edge stands proud of the
+                // one below, plus a slight twist so courses don't read as ruled lines.
+                xf(0, 0, 0, 0, 1, 1, 1, -side * (0.06 + range(rng, -0.025, 0.025)), range(rng, -0.012, 0.012) + slip * 0.6 * (rng() < 0.5 ? -1 : 1)),
+              ),
+              0,
+            );
+          }
         } else if (rng() < 0.25) {
           // Battens left exposed in the hole.
-          b.add('wood', new THREE.BoxGeometry(xe - x, 0.04, 0.05), toSlope(cx, s, 0.0), 1.2);
+          b.add('wood', new THREE.BoxGeometry(len, 0.04, 0.05), toSlope(cx, s, 0.0), 1.2);
         }
         x = xe;
       }
     }
   }
   // Ridge beam and ridge tiles.
-  if (damage < 0.85) {
+  {
     b.add('wood', new THREE.BoxGeometry(w + 0.4, 0.2, 0.2), m.clone().multiply(xf(0, eaveY + rise - 0.05, 0)), 1.2);
     b.add('slate', new THREE.CylinderGeometry(0.14, 0.14, w + 0.5, 6, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), m.clone().multiply(xf(0, eaveY + rise + 0.03, 0)), 1);
   }
@@ -190,7 +275,7 @@ function gableRoof(b: MeshBuilder, rng: Rng, m: THREE.Matrix4, w: number, d: num
 /** Builds one house in local space: footprint centred on the origin, front facing +Z. */
 export function ruinedHouse(rng: Rng, spec: HouseSpec): MeshBuilder {
   const b = new MeshBuilder();
-  const { w, d, floors, damage, lit } = spec;
+  const { w, d, floors, damage, lit, charred = false } = spec;
   const seed = Math.floor(rng() * 1000);
   const thick = 0.5;
   const groundH = range(rng, 2.8, 3.3);
@@ -209,12 +294,42 @@ export function ruinedHouse(rng: Rng, spec: HouseSpec): MeshBuilder {
     [xf(w / 2 - thick / 2, 0, d / 2, Math.PI / 2), d, sideOpen(d)],
     [xf(-w / 2 + thick / 2, 0, -d / 2, -Math.PI / 2), d, sideOpen(d)],
   ];
-  walls.forEach(([m, len, open], i) => masonryWall(b, rng, m, len, groundH, thick, open, Math.min(1, damage * (i === 0 ? 0.8 : 1.1)), seed + i * 7));
+  // Two kinds of ruin: a standing house keeps full-height walls that carry its
+  // upper storey and (holed) roof; a gutted one has lost everything above the
+  // ground floor and its walls have crumbled. Nothing is left in mid-air.
+  const standing = damage < 0.5;
+  // Doors and windows: plank doors (ajar where someone is home, hanging off
+  // or gone in ruins) and leaded glass, lit from inside or murky and dark.
+  const fill = (o: Opening, frame: THREE.Matrix4) => {
+    if (o.door) {
+      if (!standing && rng() < 0.5) return;
+      const open = standing ? (lit ? range(rng, 0.5, 0.9) : range(rng, 0, 0.06)) : range(rng, 1.0, 1.5);
+      plankDoor(b, rng, frame.clone().multiply(xf(0, 0, -thick / 2 + 0.12)), o.w, o.h, open);
+      return;
+    }
+    const inner = frame.clone().multiply(xf(0, 0, -0.05));
+    // Frame and mullion.
+    b.add('wood', new THREE.BoxGeometry(o.w, 0.07, 0.1), inner.clone().multiply(xf(0, 0.035, 0)), 1.2);
+    b.add('wood', new THREE.BoxGeometry(o.w, 0.07, 0.1), inner.clone().multiply(xf(0, o.h - 0.035, 0)), 1.2);
+    b.add('wood', new THREE.BoxGeometry(0.06, o.h, 0.1), inner.clone().multiply(xf(0, o.h / 2, 0)), 1.2);
+    if (standing && rng() > damage * 0.7) glazing(b, lit && rng() < 0.8 ? 'glassLit' : 'glass', o.w, o.h, inner.clone().multiply(xf(0, o.h / 2, 0)));
+    else b.add('dark', new THREE.PlaneGeometry(o.w, o.h), inner.clone().multiply(xf(0, o.h / 2, -0.12)), 0);
+    // A shutter, sometimes hanging by one hinge.
+    if (rng() < 0.35) {
+      const hang = !standing || rng() < 0.3 ? range(rng, 0.4, 0.9) : 0;
+      const sw = o.w / 2;
+      const sm = frame.clone().multiply(xf(o.w / 2 + 0.02, o.h, thick / 2 + 0.03, range(rng, 1.2, 1.6), 1, 1, 1, 0, 0));
+      b.add('wood', new THREE.BoxGeometry(sw, o.h - 0.05, 0.04), sm.multiply(xf(sw / 2, 0, 0, 0, 1, 1, 1, 0, hang)).multiply(xf(0, -(o.h - 0.05) / 2, 0)), 0.9);
+    }
+  };
+  const profiles = walls.map(([m, len, open], i) =>
+    masonryWall(b, rng, m, len, groundH, thick, open, standing ? 0 : Math.min(1, damage * (i === 0 ? 0.8 : 1.1)), seed + i * 7, fill),
+  );
   // Lit doorway: warm light spilling from inside.
   if (lit) b.add('glow', new THREE.PlaneGeometry(1.0, 2.05), xf(-w / 2 + doorX, 1.03, d / 2 - thick - 0.05), 0);
 
   let top = groundH;
-  if (floors === 2 && damage < 0.9) {
+  if (floors === 2 && standing) {
     // Floor joists (seen from above through holes in the roof).
     for (let x = -w / 2 + 0.3; x < w / 2; x += 0.5) {
       if (rng() < damage * 0.5) continue;
@@ -227,15 +342,15 @@ export function ruinedHouse(rng: Rng, spec: HouseSpec): MeshBuilder {
       [xf(w / 2 - 0.1, groundH + 0.18, d / 2 + jetty, Math.PI / 2), d + jetty],
       [xf(-w / 2 + 0.1, groundH + 0.18, -d / 2, -Math.PI / 2), d + jetty],
     ];
-    upperWalls.forEach(([m, len], i) => timberStorey(b, rng, m, len, upperH, Math.min(1, damage * (0.7 + i * 0.15)), lit, seed + 31 + i));
+    upperWalls.forEach(([m, len], i) => timberStorey(b, rng, m, len, upperH, damage * (0.7 + i * 0.15), lit, seed + 31 + i));
     top = groundH + 0.18 + upperH;
   }
 
-  if (damage < 0.92) {
+  if (standing) {
     const roofZ = floors === 2 ? 0.15 : 0;
     const { rise, eaveY } = gableRoof(b, rng, xf(0, 0, roofZ), w, d + (floors === 2 ? 0.3 : 0), top, damage, seed + 50);
     // Gable end triangles (plaster over timber), crumbled when badly damaged.
-    if (damage < 0.6) {
+    if (damage < 0.35) {
       for (const sx of [-1, 1]) {
         const tri = new THREE.Shape();
         const half = d / 2 + (floors === 2 ? 0.15 : 0);
@@ -264,9 +379,56 @@ export function ruinedHouse(rng: Rng, spec: HouseSpec): MeshBuilder {
     const s = range(rng, 0.2, 0.45);
     b.add('stone', new THREE.BoxGeometry(s * 1.5, s, s * 1.1), xf(range(rng, -w / 2 + 0.6, w / 2 - 0.6), s * 0.35, range(rng, -d / 2 + 0.6, d / 2 - 0.6), rng() * 3, 1, 1, 1, range(rng, -0.4, 0.4), range(rng, -0.4, 0.4)));
   }
+  // Fallen beams lying on the floor, one end propped on rubble.
   for (let i = 0; i < Math.round(damage * 5); i++) {
-    const len = range(rng, 2, Math.min(w, d));
-    b.add('wood', new THREE.BoxGeometry(len, 0.18, 0.18), xf(range(rng, -w / 4, w / 4), range(rng, 0.3, 1.1), range(rng, -d / 4, d / 4), rng() * 3, 1, 1, 1, 0, range(rng, 0.2, 0.6)), 1.2);
+    const len = range(rng, 2, Math.min(w, d) - 1);
+    const tilt = range(rng, 0.02, 0.12);
+    b.add('wood', new THREE.BoxGeometry(len, 0.18, 0.18), xf(range(rng, -w / 5, w / 5), 0.09 + Math.sin(tilt) * len * 0.5, range(rng, -d / 5, d / 5), rng() * 3, 1, 1, 1, 0, tilt), 1.2);
+  }
+  // In gutted houses, a few roof timbers still lean from a wall top down to the floor.
+  if (!standing) {
+    for (let i = 0; i < 3; i++) {
+      const wi = Math.floor(rng() * 4);
+      const [m, len] = walls[wi];
+      const ax = range(rng, 0.6, len - 0.6);
+      const topY = profiles[wi](ax) - 0.1;
+      if (topY < 1.2) continue;
+      // Wall-top point (just inside the wall) and a floor point further in.
+      const pTop = new THREE.Vector3(ax, topY, -thick / 2 - 0.05).applyMatrix4(m);
+      const reach = range(rng, 1.4, 2.6);
+      const pFloor = new THREE.Vector3(ax + range(rng, -0.8, 0.8), 0.09, -thick / 2 - reach).applyMatrix4(m);
+      pFloor.y = 0.09;
+      const dir = pFloor.clone().sub(pTop);
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, dir.length(), 0.16));
+      beam.position.copy(pTop).addScaledVector(dir, 0.5);
+      beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+      beam.updateMatrix();
+      b.add('wood', beam.geometry, beam.matrix, 1.2);
+    }
+  }
+  if (charred) {
+    // Heaps of ash with embers still glowing in them, and burnt stumps of
+    // timber poking out.
+    for (let i = 0; i < 5; i++) {
+      const hx = range(rng, -w / 2 + 1.2, w / 2 - 1.2);
+      const hz = range(rng, -d / 2 + 1.2, d / 2 - 1.2);
+      const r = range(rng, 0.7, 1.3);
+      b.add('ash', new THREE.SphereGeometry(r, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2), xf(hx, -0.05, hz, rng() * 3, 1, range(rng, 0.25, 0.4), range(rng, 0.7, 1.1)), 1);
+      for (let k = 0; k < 7; k++) {
+        const a = rng() * Math.PI * 2;
+        const rr = Math.sqrt(rng()) * r * 0.8;
+        const es = range(rng, 0.05, 0.12);
+        const ember = new THREE.DodecahedronGeometry(es, 0);
+        // Mostly buried in the ash, only their tops showing.
+        const y = Math.max(0.0, (1 - (rr / r) ** 2) * r * 0.32 - es * 0.6);
+        b.add(rng() < 0.15 ? 'emberHot' : 'ember', ember, xf(hx + Math.cos(a) * rr, y, hz + Math.sin(a) * rr, rng() * 3, 1, 0.7, 1.2, rng(), rng()), 0);
+      }
+      for (let k = 0; k < 2; k++) {
+        const len = range(rng, 0.8, 1.8);
+        b.add('wood', new THREE.BoxGeometry(0.16, len, 0.16), xf(hx + range(rng, -0.5, 0.5), len * 0.35, hz + range(rng, -0.5, 0.5), rng() * 3, 1, 1, 1, range(rng, -0.6, 0.6), range(rng, -0.6, 0.6)), 1.2);
+      }
+    }
+    b.remap((k) => (k === 'stone' || k === 'trim' ? 'stoneBurnt' : k === 'wood' || k === 'plaster' ? 'charcoal' : k));
   }
   return b;
 }
@@ -330,13 +492,39 @@ export function well(): MeshBuilder {
   wall.rotateX(-Math.PI / 2);
   b.add('stone', wall, new THREE.Matrix4(), 1.2);
   b.add('dark', new THREE.CircleGeometry(0.8, 20).rotateX(-Math.PI / 2), xf(0, 0.4, 0), 0);
-  for (const sx of [-1, 1]) b.add('wood', new THREE.BoxGeometry(0.14, 2.3, 0.14), xf(sx * 1.0, 1.15, 0), 1.5);
-  b.add('wood', new THREE.CylinderGeometry(0.08, 0.08, 2.1, 8).rotateZ(Math.PI / 2), xf(0, 1.7, 0), 1.5);
-  b.add('iron', new THREE.CylinderGeometry(0.01, 0.01, 0.9, 4), xf(0, 1.2, 0), 0);
-  b.add('wood', new THREE.CylinderGeometry(0.12, 0.1, 0.22, 10), xf(0, 0.72, 0), 1.5);
-  const roof = new THREE.CylinderGeometry(0, 1.6, 2.6, 4, 1);
-  roof.rotateY(Math.PI / 4);
-  roof.rotateX(Math.PI / 2);
-  b.add('slate', roof, xf(0, 2.75, 0, Math.PI / 2, 1, 0.55, 1), 1);
+  // Two posts carry a ridge beam and a small pitched roof (ridge along X).
+  const postH = 2.35;
+  for (const sx of [-1, 1]) {
+    b.add('wood', new THREE.BoxGeometry(0.16, postH, 0.16), xf(sx * 1.0, postH / 2, 0), 1.5);
+    // Knee braces up to the ridge.
+    b.add('wood', new THREE.BoxGeometry(0.08, 0.6, 0.08), xf(sx * 0.82, postH - 0.25, 0, 0, 1, 1, 1, 0, sx * 0.7), 1.5);
+  }
+  b.add('wood', new THREE.BoxGeometry(2.5, 0.16, 0.16), xf(0, postH + 0.08, 0), 1.5);
+  const pitch = Math.PI / 4;
+  const slope = 1.15;
+  for (const side of [-1, 1]) {
+    // Slope frame: origin at the ridge, local Y running down the slope toward +Z*side.
+    const down = (x: number, sd: number, lift: number) =>
+      xf(x, postH + 0.16 - Math.sin(pitch) * sd + Math.cos(pitch) * lift, side * (Math.cos(pitch) * sd + Math.sin(pitch) * lift), 0, 1, 1, 1, -side * (Math.PI / 2 - pitch));
+    // Boarding, then overlapping slate courses.
+    b.add('wood', new THREE.BoxGeometry(2.7, slope, 0.04), down(0, slope / 2, 0), 1.2);
+    for (let sd = 0.12; sd < slope; sd += 0.24) {
+      let x = -1.4;
+      while (x < 1.39) {
+        const xe = Math.min(x + 0.45 + (Math.abs(Math.sin(x * 91.7 + sd * 37.1 + side)) * 0.4), 1.4);
+        b.add('slate', slateStrip(Math.random, xe - x - 0.01, 0.28), down((x + xe) / 2, sd, 0.04).multiply(xf(0, 0, 0, -side * 0.07)), 0);
+        x = xe;
+      }
+    }
+  }
+  b.add('slate', new THREE.CylinderGeometry(0.1, 0.1, 2.8, 6, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), xf(0, postH + 0.26, 0), 1);
+  // Winch drum with a crank, rope and bucket.
+  b.add('wood', new THREE.CylinderGeometry(0.1, 0.1, 1.8, 10).rotateZ(Math.PI / 2), xf(0, 1.55, 0), 1.5);
+  b.add('iron', new THREE.CylinderGeometry(0.02, 0.02, 0.35, 5).rotateZ(Math.PI / 2), xf(1.17, 1.55, 0), 0);
+  b.add('iron', new THREE.BoxGeometry(0.03, 0.32, 0.03), xf(1.32, 1.43, 0), 0);
+  b.add('wood', new THREE.CylinderGeometry(0.03, 0.03, 0.18, 6).rotateZ(Math.PI / 2), xf(1.4, 1.3, 0), 1.5);
+  b.add('iron', new THREE.CylinderGeometry(0.012, 0.012, 0.75, 4), xf(0.15, 1.12, 0.1), 0);
+  b.add('wood', new THREE.CylinderGeometry(0.15, 0.12, 0.26, 10, 1, true), xf(0.15, 0.62, 0.1), 1.5);
+  b.add('iron', new THREE.TorusGeometry(0.15, 0.01, 4, 16, Math.PI), xf(0.15, 0.75, 0.1), 0);
   return b;
 }

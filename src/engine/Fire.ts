@@ -94,6 +94,88 @@ const emberMaterial = new THREE.ShaderMaterial({
   `,
 });
 
+// Smoke: soft dark puffs that rise from smouldering ruins, swell, drift
+// downwind and thin out. Each point's whole life is computed from time in the
+// shader, so a column costs nothing on the CPU.
+const smokeMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  fog: false,
+  uniforms: { time: { value: 0 }, pixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+  vertexShader: /* glsl */ `
+    uniform float time, pixelRatio;
+    attribute vec4 rnd;
+    attribute float height;
+    varying float vLife;
+    varying float vSeed;
+    varying float vRot;
+    void main() {
+      float life = fract(time * (0.045 + rnd.x * 0.03) + rnd.y);
+      vLife = life;
+      vSeed = rnd.z;
+      vRot = rnd.w * 6.283 + life * (rnd.z - 0.5) * 2.0;
+      vec3 p = position;
+      float h = height * (0.5 + rnd.z * 0.5);
+      p.y += pow(life, 0.8) * h;
+      // Wind leans the column, with a slow meander.
+      p.x += life * life * h * 0.55 + sin(life * 4.0 + rnd.w * 9.0) * 0.6 * life;
+      p.z += life * life * h * 0.2 + cos(life * 3.0 + rnd.x * 9.0) * 0.6 * life;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+      float size = 2.0 + life * (6.5 + rnd.w * 3.0);
+      gl_PointSize = size * pixelRatio * (520.0 / -mv.z);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    varying float vLife;
+    varying float vSeed;
+    varying float vRot;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.0), f.x), f.y);
+    }
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float cs = cos(vRot), sn = sin(vRot);
+      c = mat2(cs, -sn, sn, cs) * c;
+      float n = vnoise(c * 5.0 + vSeed * 17.0) * 0.6 + vnoise(c * 11.0 - vSeed * 9.0) * 0.4;
+      float d = length(c) + (n - 0.5) * 0.35;
+      float a = smoothstep(0.5, 0.1, d);
+      // Fade in quickly near the embers, thin out as it climbs.
+      a *= smoothstep(0.0, 0.08, vLife) * pow(1.0 - vLife, 1.4) * 0.8;
+      if (a < 0.004) discard;
+      // Ember glow lights the base of the column from below.
+      vec3 col = mix(vec3(0.75, 0.22, 0.08), vec3(0.17, 0.14, 0.135), smoothstep(0.0, 0.18, vLife));
+      gl_FragColor = vec4(col * (0.8 + n * 0.4), a);
+    }
+  `,
+});
+
+export class Smoke {
+  readonly points: THREE.Points;
+  /** Column of `count` puffs from a w x d patch, rising roughly `height` metres. */
+  constructor(w: number, d: number, height = 12, count = 40) {
+    const pos = new Float32Array(count * 3);
+    const rnd = new Float32Array(count * 4);
+    const hgt = new Float32Array(count).fill(height);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * w;
+      pos[i * 3 + 1] = 0.3;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * d;
+      for (let k = 0; k < 4; k++) rnd[i * 4 + k] = Math.random();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('rnd', new THREE.BufferAttribute(rnd, 4));
+    g.setAttribute('height', new THREE.BufferAttribute(hgt, 1));
+    this.points = new THREE.Points(g, smokeMaterial);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 22;
+  }
+}
+
 export class Fire {
   readonly group = new THREE.Group();
   readonly light: THREE.PointLight;
@@ -148,5 +230,6 @@ export class Fire {
   static tick(t: number) {
     flameMaterial.uniforms.time.value = t;
     emberMaterial.uniforms.time.value = t;
+    smokeMaterial.uniforms.time.value = t;
   }
 }

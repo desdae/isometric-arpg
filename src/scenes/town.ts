@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bakeSurfaces, pbrMaterial } from '../procgen/textures';
+import { bakeSurfaces, leadedGlassTextures, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
 import { fbm2, mulberry32, range, smoothstep } from '../procgen/noise';
 import { barrel, brokenFence, crate, deadTree, lanternPost, type Lantern } from '../procgen/geometry';
@@ -8,7 +8,7 @@ import { MeshBuilder, xf } from '../procgen/builder';
 import { curtainWall, gatehouse, spireTower } from '../procgen/gothic';
 import { marketStall, ruinedHouse, well } from '../procgen/building';
 import { brazier, brokenWagon, grassTuft } from '../procgen/props';
-import { Fire } from '../engine/Fire';
+import { Fire, Smoke } from '../engine/Fire';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import { Character } from '../actors/Character';
@@ -50,12 +50,24 @@ export async function buildTown(seed = 31): Promise<World> {
   const [stoneSet, trimSet, woodSet, plasterSet, slateSet, earthSet, cobbleSet, linenSet, barkSet] = sets;
   const glow = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(2.0, 0.8, 0.28), roughness: 1 });
   const linenMat = pbrMaterial(linenSet, 2);
+  const glassTex = leadedGlassTextures();
   const mats: Record<string, THREE.Material> = {
     stone: pbrMaterial(stoneSet, 1),
     trim: pbrMaterial(trimSet, 1, { color: 0x9a9090 }),
     wood: pbrMaterial(woodSet, 1),
     plaster: pbrMaterial(plasterSet, 1),
     slate: pbrMaterial(slateSet, 1, { color: new THREE.Color(1.35, 1.2, 1.2) }),
+    // Weathered slate variants share the slate textures.
+    slateMoss: pbrMaterial(slateSet, 1, { color: new THREE.Color(0.9, 1.0, 0.62) }),
+    slateDark: pbrMaterial(slateSet, 1, { color: new THREE.Color(0.7, 0.62, 0.6) }),
+    slateLight: pbrMaterial(slateSet, 1, { color: new THREE.Color(1.65, 1.5, 1.4) }),
+    stoneBurnt: pbrMaterial(stoneSet, 1, { color: new THREE.Color(0.32, 0.27, 0.25) }),
+    charcoal: pbrMaterial(barkSet, 1, { color: new THREE.Color(0.16, 0.13, 0.12) }),
+    ash: new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 1 }),
+    ember: new THREE.MeshStandardMaterial({ color: 0x0a0604, emissive: new THREE.Color(0.7, 0.09, 0.015), roughness: 1 }),
+    emberHot: new THREE.MeshStandardMaterial({ color: 0x0a0604, emissive: new THREE.Color(1.5, 0.3, 0.04), roughness: 1 }),
+    glass: new THREE.MeshStandardMaterial({ map: glassTex.map, transparent: true, roughness: 0.2, metalness: 0, side: THREE.DoubleSide }),
+    glassLit: new THREE.MeshStandardMaterial({ map: glassTex.map, emissiveMap: glassTex.emissive, emissive: new THREE.Color(2.2, 1.5, 1.0), roughness: 0.3 }),
     bark: pbrMaterial(barkSet, 1),
     iron: new THREE.MeshStandardMaterial({ color: 0x2a2522, roughness: 0.45, metalness: 0.9 }),
     glow,
@@ -121,19 +133,75 @@ export async function buildTown(seed = 31): Promise<World> {
   const lights: { update: (t: number) => void }[] = [];
   const fires: Fire[] = [];
 
+  // Wall ring, gate and cathedral positions (built further down, but houses
+  // need to keep clear of them).
+  const wallH = 8;
+  const inset = HALF - 3;
+  const gateZ = streetAt(streets[0], inset).p.y;
+  const north = streetAt(streets[2], HALF - 14).p;
+
   // ---- Houses -----------------------------------------------------------
   const houses = new MeshBuilder();
+  let charredCount = 0;
   const placeHouse = (x: number, z: number, faceYaw: number, w: number, d: number) => {
     const damage = Math.pow(rng(), 1.7);
     const lit = damage < 0.5 && rng() < 0.75;
-    const b = ruinedHouse(rng, { w, d, floors: rng() < 0.6 ? 2 : 1, damage, lit });
+    // A few gutted houses burnt recently and are still smouldering.
+    const charred = damage >= 0.5 && charredCount < 4 && rng() < 0.6;
+    const b = ruinedHouse(rng, { w, d, floors: rng() < 0.6 ? 2 : 1, damage, lit, charred });
+    if (charred) {
+      charredCount++;
+      const y = height(x, z);
+      const smoke = new Smoke(w * 0.6, d * 0.6, range(rng, 10, 16), 70);
+      smoke.points.position.set(x, y, z);
+      smoke.points.rotation.y = faceYaw;
+      scene.add(smoke.points);
+      // Low red glow from the embers, breathing slowly.
+      const glowLight = new THREE.PointLight(0xff4a14, 14, 9, 2);
+      glowLight.position.set(x, y + 0.6, z);
+      scene.add(glowLight);
+      const phase = rng() * 100;
+      lights.push({ update: (t) => (glowLight.intensity = 14 * (0.7 + 0.3 * perlin2(t * 1.3 + phase, phase) + 0.08 * perlin2(t * 9, phase))) });
+      // Sometimes a last tongue of flame still licks at the timbers.
+      if (rng() < 0.6) {
+        const f = new Fire(0.5, 8, 6);
+        f.group.position.set(x + range(rng, -w / 4, w / 4), y + 0.15, z + range(rng, -d / 4, d / 4));
+        scene.add(f.group);
+        fires.push(f);
+      }
+    }
     houses.addBuilder(b, xf(x, height(x, z), z, faceYaw));
     nav.blockBox(x, z, w / 2 + 0.1, d / 2 + 0.1, faceYaw);
     return { damage, lit };
   };
-  const occupied: { x: number; z: number; r: number }[] = [];
-  const clear = (x: number, z: number, r: number) =>
-    occupied.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + r) && Math.max(Math.abs(x), Math.abs(z)) < HALF - 7 - r * 0.5;
+  // Footprints as axis-aligned boxes [minX, minZ, maxX, maxZ]. Houses test
+  // their rotated corners against these (and the inner face of the town
+  // wall) so nothing ends up poking through stone.
+  type Box = [number, number, number, number];
+  const occupied: Box[] = [
+    // Gatehouse on the east wall, with its flanking towers.
+    [inset - 3.5, gateZ - 8.5, inset + 3.5, gateZ + 8.5],
+    // Cathedral front and its towers.
+    [north.x - 10, north.y - 3.6, north.x + 10, north.y + 3.6],
+    // Corner spire towers.
+    ...[-1, 1].flatMap((cx) => [-1, 1].map((cz): Box => [cx * inset - 3.4, cz * inset - 3.4, cx * inset + 3.4, cz * inset + 3.4])),
+  ];
+  const wallInner = inset - 1.5; // inner face of the curtain wall plus a gap
+  const footprint = (x: number, z: number, yaw: number, w: number, d: number, pad: number): Box => {
+    const c = Math.abs(Math.cos(yaw));
+    const sn = Math.abs(Math.sin(yaw));
+    const hx = (w / 2) * c + (d / 2) * sn + pad;
+    const hz = (w / 2) * sn + (d / 2) * c + pad;
+    return [x - hx, z - hz, x + hx, z + hz];
+  };
+  /** Claims the footprint if it is free; houses keep a small alley between them. */
+  const claim = (x: number, z: number, yaw: number, w: number, d: number) => {
+    const f = footprint(x, z, yaw, w, d, 0.6);
+    if (Math.max(-f[0], -f[1], f[2], f[3]) > wallInner) return false;
+    if (occupied.some((o) => f[0] < o[2] && f[2] > o[0] && f[1] < o[3] && f[3] > o[1])) return false;
+    occupied.push(footprint(x, z, yaw, w, d, 0));
+    return true;
+  };
 
   // Along each street, both sides, facing the street.
   for (const s of streets) {
@@ -148,11 +216,7 @@ export async function buildTown(seed = 31): Promise<World> {
         const z = p.y + n.y * side * off;
         // Front (+Z local) must face back toward the street: direction -n*side.
         const yaw = Math.atan2(-n.x * side, -n.y * side);
-        const r = Math.max(w, d) * 0.55;
-        if (rng() < 0.85 && clear(x, z, r)) {
-          placeHouse(x, z, yaw, w, d);
-          occupied.push({ x, z, r });
-        }
+        if (rng() < 0.85 && claim(x, z, yaw, w, d)) placeHouse(x, z, yaw, w, d);
         t += w + range(rng, 1.2, 4);
       }
     }
@@ -167,19 +231,13 @@ export async function buildTown(seed = 31): Promise<World> {
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
       const yaw = Math.atan2(-x, -z);
-      if (clear(x, z, Math.max(w, d) * 0.5)) {
-        placeHouse(x, z, yaw, w, d);
-        occupied.push({ x, z, r: Math.max(w, d) * 0.5 });
-      }
+      if (claim(x, z, yaw, w, d)) placeHouse(x, z, yaw, w, d);
     }
   }
   scene.add(houses.build(mats));
 
   // ---- Walls, gate and cathedral ----------------------------------------
   const arch = new MeshBuilder();
-  const wallH = 8;
-  const inset = HALF - 3;
-  const gateZ = streetAt(streets[0], inset).p.y;
   // East wall (outer face +X) with the gate onto the wasteland.
   arch.addBuilder(
     (() => {
@@ -226,7 +284,6 @@ export async function buildTown(seed = 31): Promise<World> {
   // Block the gate passage until travel between areas exists.
   nav.blockBox(inset, gateZ, 2.5, 6, 0);
   // Broken cathedral at the end of the north street.
-  const north = streetAt(streets[2], HALF - 14).p;
   arch.addBuilder(
     (() => {
       const b = new MeshBuilder();

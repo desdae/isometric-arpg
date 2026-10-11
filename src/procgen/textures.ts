@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { clamp01, fbm2, smoothstep } from './noise';
-import { bakeSurfaceData, SURFACES, type SurfaceData, type SurfaceKind } from './surfaces';
+import { clamp01, fbm2, mulberry32, smoothstep } from './noise';
+import { bakeSurfaceData, SURFACES, toSrgbByte, type SurfaceData, type SurfaceKind } from './surfaces';
 
 // Turns baked surface data into three.js textures. Baking runs on a pool of
 // workers so several large texture sets generate in parallel off the main
@@ -120,3 +120,62 @@ export function mistTexture(size = 256, seed = 6): THREE.DataTexture {
   return tex;
 }
 
+
+/**
+ * Leaded medieval glazing: diamond quarries held in lead cames. The panes are
+ * greenish, uneven and filmed with grime (thicker toward the bottom of each
+ * pane and in patches), so they let only a murky view through. Returns an
+ * RGBA albedo/alpha map for unlit windows and an emissive map for windows
+ * with a fire or candles behind them. One texture tile holds 3 x 2 diamonds.
+ */
+export function leadedGlassTextures(size = 256, seed = 41): { map: THREE.DataTexture; emissive: THREE.DataTexture } {
+  const albedo = new Uint8Array(size * size * 4);
+  const glow = new Uint8Array(size * size * 4);
+  const rng = mulberry32(seed);
+  const paneTint: number[] = [];
+  for (let i = 0; i < 64; i++) paneTint.push(rng());
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      // Diamond lattice: rotate into a grid where each cell is one quarry.
+      const a = u * 3 + v * 2;
+      const b = u * 3 - v * 2;
+      const fa = a - Math.floor(a);
+      const fb = b - Math.floor(b);
+      const lead = Math.min(fa, 1 - fa, fb, 1 - fb);
+      const came = 1 - smoothstep(0.035, 0.06, lead);
+      const id = paneTint[(((Math.floor(a) * 7 + Math.floor(b) * 13) % 64) + 64) % 64];
+      // Grime: patchy film plus dirt gathered along the lower edges of each pane.
+      const film = fbm2(u * 6, v * 6, 4, seed, 6) * 0.5 + 0.5;
+      const edgeDirt = 1 - smoothstep(0.06, 0.22, lead);
+      const grime = clamp01(film * 0.7 + edgeDirt * 0.5 + id * 0.15);
+      // Seeds and ripples in hand-blown glass.
+      const ripple = fbm2(u * 24, v * 24, 2, seed + 5, 24) * 0.5 + 0.5;
+      const i = (y * size + x) * 4;
+      const gr = 0.32 + id * 0.12 + ripple * 0.08;
+      const pane = [gr * 0.82, gr, gr * 0.62].map((c) => c * (1 - grime * 0.55));
+      const lc = 0.035;
+      for (let k = 0; k < 3; k++) albedo[i + k] = toSrgbByte(came > 0.5 ? lc : pane[k]);
+      albedo[i + 3] = Math.round(255 * (came > 0.5 ? 1 : clamp01(0.45 + grime * 0.45)));
+      // Lit: warm light through the panes, dimmed by grime, cames block it.
+      const warm = (1 - came) * (1 - grime * 0.65) * (0.75 + ripple * 0.25) * (0.8 + id * 0.3);
+      glow[i] = toSrgbByte(warm);
+      glow[i + 1] = toSrgbByte(warm * 0.62);
+      glow[i + 2] = toSrgbByte(warm * 0.3);
+      glow[i + 3] = 255;
+    }
+  }
+  const mk = (data: Uint8Array) => {
+    const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = 4;
+    t.needsUpdate = true;
+    return t;
+  };
+  return { map: mk(albedo), emissive: mk(glow) };
+}

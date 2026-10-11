@@ -26,7 +26,7 @@ export interface SurfaceData {
 }
 
 /** Generators work in linear albedo; textures are stored sRGB-encoded. */
-function toSrgbByte(linear: number): number {
+export function toSrgbByte(linear: number): number {
   const c = clamp01(linear);
   const s = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
   return Math.round(s * 255);

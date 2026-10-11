@@ -26,6 +26,17 @@ export class MeshBuilder {
     return this;
   }
 
+  /** Renames material keys (e.g. to swap in charred variants). */
+  remap(fn: (key: string) => string) {
+    const next = new Map<string, THREE.BufferGeometry[]>();
+    for (const [key, list] of this.parts) {
+      const k = fn(key);
+      next.set(k, [...(next.get(k) ?? []), ...list]);
+    }
+    this.parts = next;
+    return this;
+  }
+
   /** Merges another builder's parts into this one under a transform. */
   addBuilder(other: MeshBuilder, matrix: THREE.Matrix4) {
     for (const [key, list] of other.parts) {
