@@ -143,11 +143,7 @@ export function crackedEarth(seed = 2): SurfaceFn {
     let g = mix(0.036, 0.064, large) * (0.8 + grain * 0.3);
     let b = mix(0.03, 0.05, large) * (0.8 + grain * 0.3);
 
-    const grass = smoothstep(0.55, 0.75, large + perlin2(u * 30, v * 30, seed + 40, 30) * 0.15) * (1 - crack);
-    r = mix(r, 0.11, grass);
-    g = mix(g, 0.085, grass);
-    b = mix(b, 0.04, grass);
-
+    // Grass is placed as real geometry, so the tile stays bare to avoid visible repeats.
     const dark = 1 - crack * 0.85;
     return { height, r: r * dark, g: g * dark, b: b * dark, rough: 0.92, ao: 1 - crack * 0.7 };
   };
@@ -247,5 +243,60 @@ export function roughStone(seed = 7): SurfaceFn {
   };
 }
 
-export const SURFACES = { cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone } as const;
+/** Battle-worn steel: brushed base, scratches, dents and grime in recesses. */
+export function wornMetal(seed = 8): SurfaceFn {
+  const rng = mulberry32(seed);
+  const scratches = Array.from({ length: 60 }, () => ({
+    x: rng(), y: rng(), a: rng() * Math.PI, len: 0.05 + rng() * 0.25, w: 0.0015 + rng() * 0.003,
+  }));
+  return (u, v) => {
+    const brush = fbm2(u * 4, v * 120, 3, seed, 4) * 0.5 + 0.5;
+    const dents = fbm2(u * 6, v * 6, 4, seed + 3, 6);
+    const grime = smoothstep(0.1, 0.6, fbm2(u * 3 + 5, v * 3, 5, seed + 7, 3));
+    let scratch = 0;
+    for (const s of scratches) {
+      // Distance to a wrapped line segment.
+      let dx = u - s.x;
+      let dy = v - s.y;
+      dx -= Math.round(dx);
+      dy -= Math.round(dy);
+      const ca = Math.cos(s.a);
+      const sa = Math.sin(s.a);
+      const along = dx * ca + dy * sa;
+      if (Math.abs(along) > s.len / 2) continue;
+      const across = Math.abs(-dx * sa + dy * ca);
+      scratch = Math.max(scratch, 1 - smoothstep(0, s.w, across));
+    }
+    const height = clamp01(0.6 + dents * 0.25 - scratch * 0.15);
+    const base = 0.42 + brush * 0.08;
+    const g = base * (1 - grime * 0.55) + scratch * 0.2;
+    return {
+      height,
+      r: g,
+      g: g * 0.98,
+      b: g * 0.96,
+      rough: clamp01(0.32 + brush * 0.1 + grime * 0.4 - scratch * 0.2),
+      metal: clamp01(1 - grime * 0.5),
+      ao: 1 - grime * 0.25,
+    };
+  };
+}
+
+/** Coarse woven cloth, dyed dark crimson and frayed with dirt. */
+export function cloth(seed = 9): SurfaceFn {
+  return (u, v) => {
+    const weaveU = Math.sin(u * 2 * Math.PI * 96) * 0.5 + 0.5;
+    const weaveV = Math.sin(v * 2 * Math.PI * 96) * 0.5 + 0.5;
+    const weave = Math.max(weaveU * (Math.floor(v * 96) % 2), weaveV * (Math.floor(u * 96) % 2));
+    const dirt = smoothstep(0.0, 0.6, fbm2(u * 4, v * 4, 5, seed, 4));
+    const fine = fbm2(u * 30, v * 30, 3, seed + 2, 30) * 0.5 + 0.5;
+    const t = 0.55 + weave * 0.25 + fine * 0.2;
+    const r = 0.16 * t * (1 - dirt * 0.5);
+    const g = 0.018 * t * (1 - dirt * 0.3) + dirt * 0.012;
+    const b = 0.016 * t;
+    return { height: 0.5 + weave * 0.3 + fine * 0.2, r, g, b, rough: 0.92, ao: 1 };
+  };
+}
+
+export const SURFACES = { cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth } as const;
 export type SurfaceKind = keyof typeof SURFACES;

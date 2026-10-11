@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { bakeSurfaces, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
-import { fbm2, mulberry32, range, smoothstep } from '../procgen/noise';
+import { fbm2, mulberry32, perlin2, range, smoothstep } from '../procgen/noise';
+import { createNightScene, type World } from '../world/World';
 import {
   barrel,
   boxProjectUVs,
@@ -18,34 +19,11 @@ import {
 // A small showcase scene for the rendering foundation: a cobbled plaza with
 // ruined stone buildings and lanterns, fading into cracked blighted earth.
 
-export interface TestScene {
-  scene: THREE.Scene;
-  lanterns: Lantern[];
-  moon: THREE.DirectionalLight;
-}
-
 const GROUND = 160;
 
-export async function buildTestScene(seed = 1337): Promise<TestScene> {
+export async function buildTestScene(seed = 1337): Promise<World> {
   const rng = mulberry32(seed);
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x3a0b09, 0.014);
-
-  // Lighting: dim red moonlight with shadows, a dark hemisphere fill.
-  scene.add(new THREE.HemisphereLight(new THREE.Color(0.6, 0.28, 0.26), new THREE.Color(0.08, 0.05, 0.05), 0.8));
-  const moon = new THREE.DirectionalLight(new THREE.Color(1.0, 0.55, 0.5), 1.6);
-  moon.position.set(-30, 45, 20);
-  moon.castShadow = true;
-  moon.shadow.mapSize.set(4096, 4096);
-  const sc = moon.shadow.camera;
-  sc.left = sc.bottom = -38;
-  sc.right = sc.top = 38;
-  sc.near = 1;
-  sc.far = 140;
-  moon.shadow.bias = -0.0004;
-  moon.shadow.normalBias = 0.04;
-  moon.shadow.radius = 3;
-  scene.add(moon, moon.target);
+  const { scene, moon } = createNightScene();
 
   // Materials, all baked from code.
   const [stoneSet, rockSet, woodSet, barkSet, earthSet, cobbleSet] = await bakeSurfaces([
@@ -193,5 +171,18 @@ export async function buildTestScene(seed = 1337): Promise<TestScene> {
     m.scale.setScalar(range(rng, 0.6, 1.4));
   });
 
-  return { scene, lanterns, moon };
+  return {
+    scene,
+    moon,
+    ground,
+    heightAt: () => 0,
+    extent: 40,
+    update(_dt, t) {
+      lanterns.forEach((l, i) => {
+        const f = 0.8 + 0.2 * perlin2(t * 6, i * 10) + 0.08 * perlin2(t * 23, i * 7);
+        l.light.intensity = 30 * f;
+        l.flame.scale.set(1, 1.5 * (0.9 + 0.2 * f), 1);
+      });
+    },
+  };
 }

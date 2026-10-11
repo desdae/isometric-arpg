@@ -10,9 +10,9 @@ export const heightFog = {
   /** World height where the ground fog is thickest. */
   base: 0.0,
   /** How quickly the ground fog thins with height. */
-  falloff: 0.55,
+  falloff: 0.8,
   /** Maximum opacity contributed by the ground fog. */
-  amount: 0.35,
+  amount: 0.45,
 };
 
 export function installHeightFog() {

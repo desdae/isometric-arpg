@@ -10,8 +10,9 @@ const ni = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
 
 /** Assigns UVs by projecting each triangle onto the axis plane it faces most. */
 export function boxProjectUVs(geo: THREE.BufferGeometry, scale = 1): THREE.BufferGeometry {
-  const g = geo.index ? ni(geo) : geo;
-  g.computeVertexNormals();
+  // Normals are computed before de-indexing so curved surfaces stay smooth.
+  if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+  const g = ni(geo);
   const pos = g.getAttribute('position');
   const nor = g.getAttribute('normal');
   const uv = new Float32Array(pos.count * 2);

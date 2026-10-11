@@ -14,6 +14,9 @@ export class IsoCamera {
   pitch = THREE.MathUtils.degToRad(48);
   yaw = THREE.MathUtils.degToRad(45);
   private targetYaw = this.yaw;
+  set targetYawValue(v: number) {
+    this.targetYaw = v;
+  }
   private keys = new Set<string>();
   private smoothTarget = new THREE.Vector3();
   private smoothDistance = this.distance;

@@ -80,7 +80,7 @@ export class Renderer {
     this.ao.blendIntensity = 0.85;
     composer.addPass(this.ao);
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.65, 0.55, 0.9);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.5, 1.0);
     composer.addPass(this.bloom);
 
     this.grade = new ShaderPass(GradeShader);
