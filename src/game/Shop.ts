@@ -116,7 +116,7 @@ export class Shop {
         <div><h4>Wares</h4><div class="shop-list">${wares || '<div class="shop-empty">Sold out until your next return.</div>'}</div></div>
         <div><h4>Sell from your bag</h4><div class="shop-list">${bag || '<div class="shop-empty">Your bag is empty.</div>'}</div></div>
       </div>
-      <div class="shop-note">Click a ware to buy it. Click something from your bag to sell it for a quarter of its worth.</div>`;
+      <div class="shop-note">Click a ware to buy it. Click something from your bag to sell it for a third of its worth.</div>`;
     this.el.querySelector('[data-close]')!.addEventListener('click', () => this.close());
     this.el.querySelectorAll<HTMLElement>('[data-ware]').forEach((row) => {
       const w = this.wares[Number(row.dataset.ware)];

@@ -22,10 +22,10 @@ const swirl = new THREE.ShaderMaterial({
       float fine = sin(a * 7.0 - r * 16.0 + t * 5.0) * 0.5 + 0.5;
       float core = smoothstep(0.75, 0.0, r);
       float rim = smoothstep(0.62, 0.97, r) * smoothstep(1.0, 0.92, r);
-      vec3 deep = vec3(0.02, 0.08, 0.35);
-      vec3 cold = vec3(0.35, 0.65, 1.6);
-      vec3 col = deep * (0.6 + core) + cold * (arms * 0.55 + fine * 0.2) * (0.35 + r * 0.7) + vec3(0.7, 0.9, 1.8) * rim * 1.3;
-      float alpha = clamp(0.55 + rim + arms * 0.25, 0.0, 1.0) * open;
+      vec3 deep = vec3(0.01, 0.04, 0.22);
+      vec3 cold = vec3(0.08, 0.25, 0.75);
+      vec3 col = deep * (0.5 + core) + cold * (arms * 0.6 + fine * 0.2) * (0.2 + r * 0.8) + vec3(0.25, 0.45, 1.0) * rim * 0.9;
+      float alpha = clamp(0.5 + rim * 0.6 + arms * 0.2, 0.0, 1.0) * open;
       gl_FragColor = vec4(col * alpha, alpha);
     }
   `,
@@ -44,13 +44,13 @@ const groundGlow = new THREE.ShaderMaterial({
       float ring = smoothstep(0.62, 0.8, r) * smoothstep(1.0, 0.82, r);
       float pool = smoothstep(1.0, 0.0, r) * 0.35;
       float a = (ring + pool) * open;
-      gl_FragColor = vec4(vec3(0.25, 0.5, 1.4) * a, a);
+      gl_FragColor = vec4(vec3(0.08, 0.2, 0.6) * a, a);
     }
   `,
 });
 
 const moteMat = new THREE.PointsMaterial({
-  color: new THREE.Color(0.6, 0.85, 1.8),
+  color: new THREE.Color(0.35, 0.6, 1.3),
   size: 0.07,
   transparent: true,
   depthWrite: false,
@@ -73,10 +73,10 @@ export class PortalFx {
     this.group.position.copy(pos);
     this.gate = new THREE.Group();
     this.group.add(this.gate);
-    const disc = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.3), this.swirlMat);
-    disc.position.y = 1.3;
+    const disc = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 2.5), this.swirlMat);
+    disc.position.y = 1.35;
     this.gate.add(disc);
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4).rotateX(-Math.PI / 2), this.glowMat);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9).rotateX(-Math.PI / 2), this.glowMat);
     glow.position.y = 0.04;
     this.group.add(glow);
     const geo = new THREE.BufferGeometry();

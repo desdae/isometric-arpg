@@ -169,9 +169,9 @@ export function makeQuestItem(name: string): Item {
   return { id: nextId++, name, base: name, slot: 'quest', rarity: 'common', level: 1, stats: {}, amount: 1 };
 }
 
-const RARITY_PRICE: Record<Rarity, number> = { common: 12, magic: 34, rare: 95, unique: 320 };
+const RARITY_PRICE: Record<Rarity, number> = { common: 16, magic: 40, rare: 110, unique: 360 };
 
-/** What a merchant asks for an item; they pay a quarter of it back. */
+/** What a merchant asks for an item; they pay a third of it back. */
 export function itemPrice(item: Item): number {
   if (item.slot === 'potion') return 25 * item.amount;
   if (item.slot === 'gold' || item.slot === 'quest') return 0;
@@ -179,7 +179,7 @@ export function itemPrice(item: Item): number {
   return Math.round(RARITY_PRICE[item.rarity] * (1 + item.level * 0.35) * (1 + affixes * 0.08));
 }
 
-export const sellPrice = (item: Item) => Math.max(1, Math.floor(itemPrice(item) / 4));
+export const sellPrice = (item: Item) => Math.max(1, Math.floor(itemPrice(item) / 3));
 
 /** Human-readable stat lines for tooltips. */
 export function statLines(s: ItemStats): string[] {
