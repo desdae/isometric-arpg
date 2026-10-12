@@ -332,7 +332,10 @@ export function buildLich(m: MonsterMaterials, rng: Rng, scale = 1.95): BossBody
         c.play(dur, (k) => fn(k, 1), () => {
           if (name === 'appear') c.body.scale.setScalar(baseScale);
           let next = 0;
-          while (next < hits.length) onHit?.(next++);
+          while (next < hits.length) {
+            const i = next++;
+            onHit?.(i);
+          }
         });
         return;
       }

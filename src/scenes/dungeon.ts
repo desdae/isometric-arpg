@@ -968,7 +968,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     nav.blockBox(back.x, back.z, 1.4, 0.75, backYaw);
   } else if (bossKind === 'lich') {
     // A throne on a dais at the back, empty while its king kneels in the circle.
-    const t = xf(back.x, 0, back.z, backYaw + Math.PI);
+    const t = xf(back.x, 0, back.z, backYaw);
     const at = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => t.clone().multiply(xf(x, y, z, 0, sx, sy, sz));
     props.add('altar', new THREE.BoxGeometry(3.6, 0.25, 2.2), at(0, 0.125, 0), 0.6);
     props.add('altar', new THREE.BoxGeometry(2.8, 0.25, 1.6), at(0, 0.375, -0.2), 0.6);
@@ -1045,15 +1045,26 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
       props.add('shroud', cocoon(), xf(low.x, low.y - 1.45, low.z, rng() * 6, 1, 1, 1, range(rng, -0.08, 0.08)), 0.5);
     }
     // A great horned skull at the back in place of an altar.
-    const t = xf(back.x, 0, back.z, backYaw + Math.PI);
+    const t = xf(back.x, 0, back.z, backYaw);
     const at = (x: number, y: number, z: number, rx = 0, sx = 1, sy = 1, sz = 1) => t.clone().multiply(xf(x, y, z, 0, sx, sy, sz, rx));
-    props.add('bone', new THREE.SphereGeometry(1, 16, 12), at(0, 0.85, -0.2, 0, 1.1, 0.8, 1.3), 0);
-    props.add('bone', new THREE.BoxGeometry(1.4, 0.35, 1.4), at(0, 0.18, 0.75, 0.15), 0);
+    props.add('bone', new THREE.SphereGeometry(1, 18, 12), at(0, 0.78, -0.45, 0, 0.85, 0.72, 0.95), 0);
+    props.add('bone', new THREE.CylinderGeometry(0.32, 0.55, 1.6, 4).rotateY(Math.PI / 4).rotateX(Math.PI / 2), at(0, 0.55, 0.65, 0.12, 1.25, 0.8, 1), 0);
+    props.add('bone', new THREE.BoxGeometry(1.5, 0.22, 0.45), at(0, 1.08, 0.12, 0.25), 0);
+    props.add('bone', new THREE.CylinderGeometry(0.25, 0.45, 1.5, 4).rotateY(Math.PI / 4).rotateX(Math.PI / 2), at(0, 0.14, 0.7, -0.08, 1.2, 0.35, 1), 0);
     for (const sx of [-1, 1]) {
-      props.add('void', new THREE.SphereGeometry(0.24, 8, 6), at(sx * 0.42, 1.05, 0.8), 0);
-      props.add('bone', new THREE.ConeGeometry(0.22, 1.9, 7), at(sx * 0.9, 1.7, -0.5, -0.5, 1, 1, 1).multiply(xf(0, 0, 0, 0, 1, 1, 1, 0, -sx * 0.7)), 0);
-      props.add('bone', new THREE.ConeGeometry(0.06, 0.35, 5).rotateX(Math.PI), at(sx * 0.25, 0.42, 1.05), 0);
+      props.add('void', new THREE.SphereGeometry(0.22, 10, 8), at(sx * 0.42, 0.92, 0.32), 0);
+      props.add('void', new THREE.SphereGeometry(0.07, 6, 5), at(sx * 0.13, 0.62, 1.42), 0);
+      for (const fz of [1.15, 0.8]) props.add('bone', new THREE.ConeGeometry(0.07, fz > 1 ? 0.55 : 0.32, 6).rotateX(Math.PI), at(sx * (fz > 1 ? 0.28 : 0.36), 0.2, fz), 0);
+      const horn = [
+        [0.55, 1.05, -0.55],
+        [1.05, 1.7, -0.95],
+        [1.35, 2.5, -0.75],
+        [1.2, 3.05, -0.1],
+      ].map(([x, y, z]) => new THREE.Vector3(sx * x, y, z));
+      props.add('bone', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(horn), 16, 0.15, 7), t, 0);
+      props.add('bone', new THREE.ConeGeometry(0.15, 0.4, 7), t.clone().multiply(new THREE.Matrix4().lookAt(horn[3], horn[3].clone().add(new THREE.Vector3(-sx * 0.2, 0.2, 0.9)), new THREE.Vector3(0, 1, 0)).multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2)).setPosition(horn[3])), 0);
     }
+    for (let q = 0; q < 6; q++) props.add('rubble', rock(rng, range(rng, 0.25, 0.5)), at(range(rng, -1.6, 1.6), 0, range(rng, -1.4, 1.2), 0), 0.5);
     nav.blockCircle(back.x, back.z, 1.4);
   }
   // Keep the boss's shaders hot so the first ability doesn't hitch.

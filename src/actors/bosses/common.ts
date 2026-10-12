@@ -23,10 +23,16 @@ export function poseAction(c: { play: Character['play'] }, dur: number, fn: (k: 
     dur,
     (k) => {
       fn(k, blendWeight(k, inK, outK));
-      while (next < hits.length && k >= hits[next]) onHit?.(next++);
+      while (next < hits.length && k >= hits[next]) {
+        const i = next++;
+        onHit?.(i);
+      }
     },
     () => {
-      while (next < hits.length) onHit?.(next++);
+      while (next < hits.length) {
+        const i = next++;
+        onHit?.(i);
+      }
     },
   );
 }
