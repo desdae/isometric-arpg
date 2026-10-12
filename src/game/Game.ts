@@ -14,6 +14,7 @@ import { LootLayer, type GroundItem } from './Loot';
 import { Hud } from './Hud';
 import { Inventory } from './Inventory';
 import { Stats } from './Stats';
+import { cutaway } from '../engine/cutaway';
 import { makeGold, makeItem, makePotion, rollRarity } from './Items';
 import type { Character } from '../actors/Character';
 
@@ -320,6 +321,8 @@ export class Game {
     const p = this.player;
     const ctx = this.playerCtx();
     p.update(dt, ctx);
+    cutaway.hero.value.copy(p.position).setY(p.position.y + 1.1);
+    cutaway.amount.value = 1;
     // Monsters near the hero think and move; far ones sleep, hidden in the fog.
     const mctx = {
       player: p,

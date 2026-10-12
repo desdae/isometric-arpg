@@ -15,6 +15,7 @@ import { Character } from '../actors/Character';
 import { dressVillager, randomLook } from '../actors/outfits/villager';
 import { Npc, type NpcDef } from '../actors/Npc';
 import { perlin2 } from '../procgen/noise';
+import { installCutaway } from '../engine/cutaway';
 
 // The NPC town: a walled, half-ruined gothic town around a market square
 // with a well. Four streets lead out from the square: east to the gate onto
@@ -86,6 +87,9 @@ export async function buildTown(seed = 31): Promise<World> {
       return m;
     })(),
   };
+
+  // Architecture dissolves around the hero when it stands in the way.
+  for (const m of Object.values(mats)) installCutaway(m);
 
   // ---- Street plan ------------------------------------------------------
   const streets: Street[] = [

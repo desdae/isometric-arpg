@@ -11,6 +11,7 @@ import { Fire } from '../engine/Fire';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterSpawn } from '../actors/Monster';
+import { installCutaway } from '../engine/cutaway';
 
 // The first combat zone: a blighted wasteland outside the spired walls of the
 // town. A cobbled road leaves the gatehouse and peters out into cracked earth
@@ -46,6 +47,9 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     coal: new THREE.MeshStandardMaterial({ color: 0x110805, emissive: new THREE.Color(2.5, 0.5, 0.1), roughness: 1 }),
     thorn: new THREE.MeshStandardMaterial({ color: 0x3a2a24, roughness: 0.9 }),
   };
+
+  // Architecture dissolves around the hero when it stands in the way.
+  for (const m of Object.values(mats)) installCutaway(m);
 
   // ---- Terrain -----------------------------------------------------------
   const roadZ = (x: number) => Math.sin(x * 0.07) * 4 + Math.sin(x * 0.023 + 1) * 3;

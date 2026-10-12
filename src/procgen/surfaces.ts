@@ -225,21 +225,27 @@ export function deadBark(seed = 5): SurfaceFn {
 
 /** Weathered dark rock for boulders and rubble. */
 export function roughStone(seed = 7): SurfaceFn {
+  // Weathered sandstone-like rock: wavy strata bands, sparse hairline
+  // fractures, pitting and a little lichen, rather than a cell pattern.
   return (u, v) => {
     const big = fbm2(u * 4, v * 4, 5, seed, 4) * 0.5 + 0.5;
-    const c = voronoi2(u * 7, v * 7, seed + 3, 7, 1);
-    const facet = smoothstep(0.0, 0.25, c.f2 - c.f1);
+    const warp = fbm2(u * 2, v * 2, 3, seed + 1, 2) * 0.08;
+    const band = Math.sin((v + warp) * Math.PI * 2 * 6) * 0.5 + 0.5;
+    const strata = smoothstep(0.75, 0.95, band);
+    const c = voronoi2(u * 3, v * 3, seed + 3, 3, 1);
+    const crack = 1 - smoothstep(0.0, 0.035, c.f2 - c.f1);
+    const pits = smoothstep(0.55, 0.75, fbm2(u * 24, v * 24, 3, seed + 6, 24) * 0.5 + 0.5);
     const fine = fbm2(u * 48, v * 48, 3, seed + 5, 48) * 0.5 + 0.5;
-    const height = clamp01(big * 0.6 + facet * 0.3 + fine * 0.1);
-    const lichen = smoothstep(0.62, 0.78, fbm2(u * 6 + 3, v * 6, 4, seed + 9, 6) * 0.5 + 0.5);
-    const t = 0.04 + big * 0.05 + fine * 0.02;
-    let r = t;
-    let g = t * 0.94;
-    let b = t * 0.9;
-    r = mix(r, 0.09, lichen * 0.6);
-    g = mix(g, 0.075, lichen * 0.6);
-    b = mix(b, 0.04, lichen * 0.6);
-    return { height, r, g, b, rough: 0.88 - fine * 0.1, ao: mix(0.6, 1, facet) };
+    const height = clamp01(0.55 + big * 0.25 + fine * 0.12 - strata * 0.12 - crack * 0.35 - pits * 0.08);
+    const lichen = smoothstep(0.64, 0.8, fbm2(u * 6 + 3, v * 6, 4, seed + 9, 6) * 0.5 + 0.5);
+    const t = (0.045 + big * 0.045 + fine * 0.025 + band * 0.012) * (1 - crack * 0.6) * (1 - pits * 0.2);
+    let r = t * 1.04;
+    let g = t * 0.95;
+    let b = t * 0.88;
+    r = mix(r, 0.09, lichen * 0.55);
+    g = mix(g, 0.078, lichen * 0.55);
+    b = mix(b, 0.04, lichen * 0.55);
+    return { height, r, g, b, rough: 0.86 - fine * 0.08 + crack * 0.1, ao: 1 - crack * 0.5 - pits * 0.15 };
   };
 }
 
@@ -279,6 +285,43 @@ export function wornMetal(seed = 8): SurfaceFn {
       metal: clamp01(1 - grime * 0.5),
       ao: 1 - grime * 0.25,
     };
+  };
+}
+
+/** Riveted mail: staggered rows of interlocking rings, dark between them. */
+export function chainmail(seed = 10): SurfaceFn {
+  const N = 16; // rings across the tile
+  return (u, v) => {
+    let height = 0;
+    let ring = 0;
+    // Each texel can be covered by rings from this row and the neighbours;
+    // the highest ring wins, which reads as overlap.
+    const ry = v * N;
+    for (let dy = -1; dy <= 1; dy++) {
+      const row = Math.floor(ry) + dy;
+      const off = (((row % 2) + 2) % 2) * 0.5;
+      const rx = u * N - off;
+      for (let dx = -1; dx <= 1; dx++) {
+        const col = Math.floor(rx) + dx;
+        const cx = col + 0.5;
+        const cy = row + 0.5;
+        const ddx = rx - cx;
+        const ddy = (ry - cy) * 1.25;
+        const d = Math.hypot(ddx, ddy);
+        const t = 1 - Math.abs(d - 0.42) / 0.13; // torus cross-section
+        if (t <= 0) continue;
+        // Rings lean: one side sits higher, so rows overlap the next.
+        const h = Math.sqrt(t) * (0.75 + 0.25 * Math.sin(Math.atan2(ddy, ddx) + 0.8)) + (row & 1) * 0.04;
+        if (h > height) {
+          height = h;
+          ring = t;
+        }
+      }
+    }
+    const grime = smoothstep(0.1, 0.7, fbm2(u * 3, v * 3, 4, seed, 3));
+    const lit = ring > 0 ? 0.36 + ring * 0.2 : 0.03;
+    const c = lit * (1 - grime * 0.45);
+    return { height: clamp01(height), r: c, g: c * 0.97, b: c * 0.93, rough: ring > 0 ? 0.45 + grime * 0.3 : 0.9, metal: ring > 0 ? 1 : 0.2, ao: ring > 0 ? 1 : 0.3 };
   };
 }
 
@@ -383,5 +426,5 @@ export function chitin(seed = 14): SurfaceFn {
   };
 }
 
-export const SURFACES = { flesh, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, cloth, linen, slate, plaster } as const;
+export const SURFACES = { flesh, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

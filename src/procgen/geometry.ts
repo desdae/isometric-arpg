@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { fbm3, range, type Rng } from './noise';
 
 // Procedural mesh building blocks. Generators return plain BufferGeometry (or
@@ -52,28 +52,52 @@ export function boxProjectUVs(geo: THREE.BufferGeometry, scale = 1): THREE.Buffe
 
 /** A craggy boulder: noise-displaced icosphere with a flattened base. */
 export function rock(rng: Rng, size = 1): THREE.BufferGeometry {
+  // A fractured block rather than a lumpy egg: start from a squashed sphere,
+  // shear off flat cleavage faces with random planes, then add small chips
+  // and grain so the faces aren't glassy.
   const seed = Math.floor(rng() * 1e6);
-  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, 5);
+  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, 4);
   geo.deleteAttribute('normal');
   geo.deleteAttribute('uv');
   geo = mergeVertices(geo);
   const pos = geo.getAttribute('position');
-  const sx = range(rng, 0.8, 1.4);
-  const sy = range(rng, 0.5, 0.9);
-  const sz = range(rng, 0.8, 1.3);
+  const sx = range(rng, 0.85, 1.5);
+  const sy = range(rng, 0.55, 1.0);
+  const sz = range(rng, 0.8, 1.25);
+  const planes: { n: THREE.Vector3; d: number }[] = [];
+  const cuts = 5 + Math.floor(rng() * 5);
+  for (let i = 0; i < cuts; i++) {
+    // Faces at all angles and depths, one sloping top: an irregular block,
+    // not a drum.
+    const a = rng() * Math.PI * 2;
+    const tilt = i === 0 ? range(rng, 0.5, 1.2) : range(rng, -0.35, 0.9);
+    const n = new THREE.Vector3(Math.cos(a) * Math.cos(tilt), Math.sin(tilt), Math.sin(a) * Math.cos(tilt)).normalize();
+    planes.push({ n, d: range(rng, 0.42, 0.95) });
+  }
+  // A couple of strata lines stepping across the faces.
+  const strata = range(rng, 0.18, 0.3);
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const big = fbm3(v.x * 1.2, v.y * 1.2, v.z * 1.2, 4, seed);
-    // Ridged term gives sharp faceted breaks rather than blobby lumps.
-    const ridged = 1 - Math.abs(fbm3(v.x * 3, v.y * 3, v.z * 3, 3, seed + 9));
-    const d = 1 + big * 0.45 + ridged * 0.12;
-    v.multiplyScalar(d);
+    const lump = fbm3(v.x * 1.1, v.y * 1.1, v.z * 1.1, 3, seed) * 0.32;
+    v.multiplyScalar(1 + lump);
     v.set(v.x * sx, v.y * sy, v.z * sz);
-    if (v.y < -0.15) v.y = -0.15 + (v.y + 0.15) * 0.15;
+    for (const p of planes) {
+      const k = v.dot(p.n) - p.d;
+      if (k > 0) v.addScaledVector(p.n, -k);
+    }
+    // Chips and grain.
+    const chip = 1 - Math.abs(fbm3(v.x * 4, v.y * 4, v.z * 4, 3, seed + 9));
+    const grain = fbm3(v.x * 11, v.y * 11, v.z * 11, 2, seed + 4);
+    const step = Math.abs(((v.y / strata) % 1 + 1) % 1 - 0.5) < 0.06 ? -0.025 : 0;
+    const len = v.length();
+    v.multiplyScalar((len + chip * 0.05 + grain * 0.012 + step) / Math.max(len, 1e-4));
+    if (v.y < -0.12) v.y = -0.12 + (v.y + 0.12) * 0.15;
     pos.setXYZ(i, v.x * size, v.y * size, v.z * size);
   }
-  return boxProjectUVs(geo, 0.6 / size);
+  // Hard edges where cleavage faces meet, smooth shading within a face.
+  const creased = toCreasedNormals(geo, 0.55);
+  return boxProjectUVs(creased, 0.6 / size);
 }
 
 /** Tapered cylinder from a to b, merged into a list. */

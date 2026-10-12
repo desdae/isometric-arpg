@@ -37,16 +37,20 @@ const sky = new Sky();
 window.addEventListener('resize', () => cam.resize(window.innerWidth / window.innerHeight));
 
 async function knight(): Promise<Character> {
-  const [metal, cloth] = await bakeSurfaces([
+  const [metal, cloth, mail] = await bakeSurfaces([
     { kind: 'wornMetal', seed: 21, size: 512, normalStrength: 2 },
     { kind: 'cloth', seed: 22, size: 512, normalStrength: 1.5 },
+    { kind: 'chainmail', seed: 23, size: 256, normalStrength: 6 },
   ]);
   const c = dressKnight(new Character(), {
-    steel: pbrMaterial(metal, 2),
-    darkSteel: pbrMaterial(metal, 2, { color: 0x5a5550 }),
+    steel: pbrMaterial(metal, 2, { color: 0xb4aea6 }),
+    darkSteel: pbrMaterial(metal, 2, { color: 0x4a4642 }),
     leather: new THREE.MeshStandardMaterial({ color: 0x1c120c, roughness: 0.75 }),
     cloth: pbrMaterial(cloth, 2),
     dark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0x9a7438, metalness: 1, roughness: 0.42 }),
+    tabard: pbrMaterial(cloth, 3, { color: new THREE.Color(0.55, 0.06, 0.05), metalness: 0 }),
+    mail: pbrMaterial(mail, 6, { color: 0x56524d }),
   });
   bakeRig(c.root);
   return c;
@@ -54,8 +58,8 @@ async function knight(): Promise<Character> {
 
 /** ARPG "light radius": a soft light that travels with the hero so they always read. */
 function heroLight(c: THREE.Object3D) {
-  const l = new THREE.PointLight(0xffd2b0, 9, 9, 1.6);
-  l.position.set(0.4, 3.6, -0.6);
+  const l = new THREE.PointLight(0xffd2b0, 7, 9.5, 1.6);
+  l.position.set(0, 3.8, 0);
   c.add(l);
 }
 
