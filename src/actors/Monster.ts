@@ -11,6 +11,8 @@ import { buildGhoul } from './monsters/ghoul';
 import { buildBrute } from './monsters/brute';
 import { buildCultist } from './monsters/cultist';
 import { buildCrawler } from './monsters/crawler';
+import { buildHorror } from './monsters/horror';
+import { buildWraith } from './monsters/wraith';
 import { mulberry32 } from '../procgen/noise';
 
 // Monster behaviour: idle and wander near home, notice the player, chase
@@ -18,7 +20,7 @@ import { mulberry32 } from '../procgen/noise';
 // in range, flinch, die and leave a corpse. Casters keep their distance and
 // throw blood bolts. Packs wake together.
 
-export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist';
+export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith';
 
 interface KindDef {
   name: string;
@@ -35,7 +37,7 @@ interface KindDef {
   blood: THREE.Color;
   /** Casters: preferred distance band. */
   ranged?: { min: number; max: number; boltSpeed: number };
-  build: (m: MonsterMaterials, seed: number, elite: boolean) => MonsterBody;
+  build: (m: MonsterMaterials, seed: number, elite: boolean, boss: boolean) => MonsterBody;
 }
 
 export const KINDS: Record<MonsterKind, KindDef> = {
@@ -100,6 +102,52 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     ranged: { min: 5.5, max: 11, boltSpeed: 11 },
     build: (m, seed) => buildCultist(m, mulberry32(seed)),
   },
+  spider: {
+    name: 'Tomb Spider',
+    hp: 110,
+    dmg: [8, 14],
+    armor: 22,
+    speed: 4.0,
+    radius: 1.0,
+    height: 1.3,
+    reach: 1.7,
+    cooldown: 1.2,
+    aggro: 12,
+    xp: 55,
+    blood: new THREE.Color(0.1, 0.14, 0.03),
+    build: (m, seed, elite) => buildCrawler(m, mulberry32(seed), elite ? 2.5 : 1.9, true),
+  },
+  horror: {
+    name: 'Flesh Horror',
+    hp: 190,
+    dmg: [12, 21],
+    armor: 16,
+    speed: 2.7,
+    radius: 0.9,
+    height: 2.4,
+    reach: 2.0,
+    cooldown: 1.4,
+    aggro: 9,
+    xp: 75,
+    blood: new THREE.Color(0.24, 0.01, 0.008),
+    build: (m, seed, elite) => buildHorror(m, mulberry32(seed), elite ? 1.7 : undefined),
+  },
+  wraith: {
+    name: 'Wraith',
+    hp: 70,
+    dmg: [9, 15],
+    armor: 6,
+    speed: 3.3,
+    radius: 0.5,
+    height: 2.0,
+    reach: 14,
+    cooldown: 1.5,
+    aggro: 14,
+    xp: 45,
+    blood: new THREE.Color(0.05, 0.06, 0.12),
+    ranged: { min: 5, max: 11, boltSpeed: 12 },
+    build: (m, seed, elite, boss) => buildWraith(m, mulberry32(seed), boss ? 2.2 : elite ? 1.45 : undefined),
+  },
 };
 
 export interface MonsterSpawn {
@@ -110,6 +158,12 @@ export interface MonsterSpawn {
   /** Named champion: tougher, bigger, better loot. */
   elite?: string;
   wander?: number;
+  /** Dungeon boss: far tougher than an ordinary champion, and bigger. */
+  boss?: boolean;
+  /** Free-form marker scripted encounters use to find their monsters. */
+  tag?: string;
+  /** Will not wake until a script rouses it (sealed behind a door). */
+  dormant?: boolean;
 }
 
 /** What a monster sees of the world each frame. */
@@ -165,17 +219,18 @@ export class Monster implements Combatant {
     this.def = KINDS[spawn.kind];
     this.elite = !!spawn.elite;
     this.level = spawn.level;
-    this.body = this.def.build(mats, Math.floor(Math.random() * 1e6), this.elite);
+    this.body = this.def.build(mats, Math.floor(Math.random() * 1e6), this.elite, !!spawn.boss);
     const lv = 1 + (spawn.level - 1) * 0.28;
-    const eliteMul = this.elite ? 3.2 : 1;
+    const eliteMul = spawn.boss ? 9 : this.elite ? 3.2 : 1;
     this.maxHp = this.hp = Math.round(this.def.hp * lv * eliteMul);
-    const dm = (1 + (spawn.level - 1) * 0.16) * (this.elite ? 1.5 : 1);
+    const dm = (1 + (spawn.level - 1) * 0.16) * (spawn.boss ? 1.7 : this.elite ? 1.5 : 1);
     this.dmg = [this.def.dmg[0] * dm, this.def.dmg[1] * dm];
     this.armor = this.def.armor * lv;
-    this.radius = this.def.radius * (this.elite ? 1.2 : 1);
-    this.height = this.def.height * (this.elite ? 1.2 : 1);
+    this.radius = this.def.radius * (spawn.boss ? 1.9 : this.elite ? 1.2 : 1);
+    this.height = this.def.height * (spawn.boss ? 2 : this.elite ? 1.2 : 1);
     this.name = spawn.elite ?? this.def.name;
     this.position.copy(spawn.pos);
+    this.dormant = !!spawn.dormant;
     this.hit = new THREE.Mesh(
       new THREE.CylinderGeometry(this.radius * 1.1, this.radius * 1.1, this.height, 8).translate(0, this.height / 2, 0),
       new THREE.MeshBasicMaterial({ visible: false }),
@@ -184,8 +239,8 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
-    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8 }[this.kind] * (this.elite ? 1.3 : 1);
-    this.body.rig.onStep = () => audio.step(this.position, weight);
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0 }[this.kind] * (this.elite ? 1.3 : 1);
+    if (weight > 0) this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
   get alive() {
@@ -317,7 +372,11 @@ export class Monster implements Combatant {
     this.sync();
   }
 
+  /** Sleeping behind a seal until a script rouses it. */
+  dormant = false;
+
   private wake(ctx: MonsterContext) {
+    if (this.dormant) return;
     this.state = 'chase';
     this.awake = true;
     audio.voice(this.kind, 'aggro', this.position, this.voiceSize);
@@ -403,7 +462,7 @@ export class Monster implements Combatant {
   }
 
   private get voiceSize() {
-    return (this.kind === 'brute' ? 1.15 : 1) * (this.elite ? 1.3 : 1);
+    return (this.kind === 'brute' || this.kind === 'horror' ? 1.15 : this.kind === 'spider' ? 1.8 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
   }
 
   get kind(): MonsterKind {

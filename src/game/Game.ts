@@ -58,7 +58,7 @@ export class Game {
   private deathTimer = -1;
 
   constructor(
-    private builders: Record<AreaName, AreaBuilder>,
+    private builders: Partial<Record<AreaName, AreaBuilder>>,
     hero: Character,
     private cam: IsoCamera,
     private renderer: Renderer,
@@ -99,7 +99,7 @@ export class Game {
     const cached = this.building.get(name);
     if (cached) return cached;
     const p = (async () => {
-      const world = await this.builders[name]();
+      const world = await this.builders[name]!();
       const scene = world.scene;
       scene.environment = this.environment;
       scene.environmentIntensity = 0.45;
@@ -193,7 +193,7 @@ export class Game {
     // Loot.
     const at = m.position.clone();
     const loot = this.area.loot;
-    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55 }[m.kind];
+    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4 }[m.kind];
     if (Math.random() < (m.elite ? 1 : 0.55)) loot.drop(makeGold(m.level, m.elite ? 6 : m.kind === 'brute' ? 2.5 : 1), at);
     if (Math.random() < (m.kind === 'brute' ? 0.4 : 0.15) || (m.elite && Math.random() < 0.8)) loot.drop(makePotion(), at);
     if (m.elite) {

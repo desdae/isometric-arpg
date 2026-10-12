@@ -190,6 +190,34 @@ export function stoneBricks(seed = 3): SurfaceFn {
   };
 }
 
+/** Worn square flagstones with cracked corners and grime in the joints, for crypt floors. */
+export function flagstones(seed = 17): SurfaceFn {
+  const n = 4;
+  return (u, v) => {
+    const cu = u * n;
+    const cv = v * n;
+    const ix = Math.floor(cu);
+    const iy = Math.floor(cv);
+    const fu = cu - ix;
+    const fv = cv - iy;
+    const id = Math.abs((Math.sin((((ix % n) + n) % n) * 12.9898 + (((iy % n) + n) % n) * 78.233 + seed) * 43758.5453) % 1);
+    const chip = fbm2(u * 30, v * 30, 4, seed + 4, 30) * 0.05;
+    const e = Math.min(Math.min(fu, 1 - fu), Math.min(fv, 1 - fv)) / n + chip;
+    const block = smoothstep(0.003, 0.016, e);
+    const vc = voronoi2(u * 7, v * 7, seed + 2, 7, 1);
+    const crack = (1 - smoothstep(0, 0.02, vc.f2 - vc.f1)) * smoothstep(0.6, 0.8, fbm2(u * 5, v * 5, 3, seed + 3, 5) * 0.5 + 0.5);
+    const surface = fbm2(u * 40, v * 40, 4, seed + 8, 40) * 0.5 + 0.5;
+    const tilt = (fu - 0.5) * (id - 0.5) * 0.1 + (fv - 0.5) * (0.5 - id) * 0.08; // stones settle unevenly
+    const height = clamp01(block * (0.75 + surface * 0.15 + tilt + id * 0.05) - crack * 0.3);
+    const grime = smoothstep(0.2, 0.8, fbm2(u * 3, v * 3, 4, seed + 12, 3)) * 0.5;
+    const tone = (0.05 + id * 0.04) * (0.85 + surface * 0.3) * (1 - grime * 0.45);
+    const r = mix(0.015, tone, block) * (1 - crack * 0.6);
+    const g = mix(0.013, tone * 0.93, block) * (1 - crack * 0.6);
+    const b = mix(0.012, tone * 0.88, block) * (1 - crack * 0.6);
+    return { height, r, g, b, rough: mix(0.95, 0.7, block * surface), ao: mix(0.45, 1, block) * (1 - crack * 0.3) };
+  };
+}
+
 /** Weathered dark wooden planks. */
 export function woodPlanks(seed = 4): SurfaceFn {
   const planks = 5;
@@ -457,5 +485,5 @@ export function chitin(seed = 14): SurfaceFn {
   };
 }
 
-export const SURFACES = { flesh, skin, hair, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
+export const SURFACES = { flesh, skin, hair, flagstones, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

@@ -80,7 +80,7 @@ if (sceneName === 'test' || sceneName === 'character') {
   if (world.spawn) {
     const model = params.get('model') ?? 'knight';
     if (model in KINDS) {
-      const body = KINDS[model as MonsterKind].build(await monsterMaterials(), Number(params.get('seed') ?? 3), params.has('elite'));
+      const body = KINDS[model as MonsterKind].build(await monsterMaterials(), Number(params.get('seed') ?? 3), params.has('elite'), params.has('boss'));
       preview = body.rig;
       const anim = params.get('anim');
       if (anim === 'attack') previewAttack = () => body.attack(() => {});

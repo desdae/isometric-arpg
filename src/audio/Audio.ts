@@ -8,7 +8,7 @@ import { Music, type Mood } from './Music';
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first click or key press.
 
-export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist';
+export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith';
 
 interface At {
   gain: number;
@@ -489,6 +489,7 @@ class AudioEngine {
         // Deep distorted roar.
         this.throat(o, t, { f0: 85 * p, f1: (what === 'die' ? 45 : 70) * p, dur: 0.6 * long, formants: [380, 800], gain: 0.4, rough: 0.5, wobble: 0.04, drive: true });
         break;
+      case 'spider':
       case 'crawler':
         // Chittering clicks and a thin insect squeal.
         for (let i = 0; i < 8 * long; i++) this.burst(o, t + i * 0.035, { f0: 3000 + Math.random() * 2000, q: 8, gain: 0.25, decay: 0.02 });
@@ -500,8 +501,18 @@ class AudioEngine {
         this.burst(o, t, { f0: 2600, q: 6, gain: 0.15, attack: 0.1, decay: 0.45 * long });
         this.throat(o, t, { f0: 110 * p, f1: (what === 'die' ? 60 : 105) * p, dur: 0.6 * long, formants: [500, 900], gain: 0.15, breath: 0.1 });
         break;
+      case 'horror':
+        // Wet, gurgling bellow from the chest maw.
+        this.throat(o, t, { f0: 70 * p, f1: (what === 'die' ? 38 : 95) * p, dur: 0.7 * long, formants: [300, 650], gain: 0.4, rough: 0.8, wobble: 0.12, drive: true });
+        this.burst(o, t + 0.05, { f0: 500, f1: 200, q: 5, gain: 0.25, attack: 0.05, decay: 0.5 * long });
+        break;
+      case 'wraith':
+        // A hollow, rising moan with a whispering edge.
+        this.throat(o, t, { f0: 330 * p, f1: (what === 'die' ? 120 : 470) * p, dur: 0.9 * long, formants: [700, 1600], gain: 0.12, wobble: 0.03, breath: 0.12 });
+        this.tone(o, t, { type: 'sine', f0: 660 * p, f1: (what === 'die' ? 200 : 880) * p, gain: 0.06, attack: 0.2, decay: 0.9 * long });
+        break;
     }
-    if (what === 'die') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
+    if (what === 'die' && kind !== 'wraith') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
   }
 
   /** The brute's cleaver slamming into the ground. */

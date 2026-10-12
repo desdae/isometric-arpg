@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import type { NavGrid } from './NavGrid';
 import type { Npc } from '../actors/Npc';
-import type { MonsterSpawn } from '../actors/Monster';
+import type { Monster, MonsterSpawn } from '../actors/Monster';
+import type { Effects } from '../game/Effects';
 
-export type AreaName = 'town' | 'zone';
+export type AreaName = 'town' | 'zone' | 'dungeon';
 
 /** A way out of an area: walk into it to travel. */
 export interface Exit {
@@ -13,6 +14,37 @@ export interface Exit {
   to: AreaName;
   entry: string;
   label: string;
+}
+
+/** Something in the world the hero can walk up to and use (click its label). */
+export interface Interactable {
+  pos: THREE.Vector3;
+  radius: number;
+  label: string;
+  active(): boolean;
+  use(): void;
+}
+
+/** What an area script may do to the game. */
+export interface ScriptContext {
+  player: { position: THREE.Vector3; alive: boolean };
+  monsters: Monster[];
+  effects: Effects;
+  /** Big centred banner. */
+  banner(title: string, subtitle: string): void;
+  /** Small floating text over the hero. */
+  say(text: string): void;
+}
+
+/** Scripted goals for an area (the dungeon's objectives and boss door). */
+export interface AreaScript {
+  title: string;
+  objectives(): { text: string; done: boolean }[];
+  interactables: Interactable[];
+  /** True once the area's final goal is met. */
+  finished: boolean;
+  update(dt: number, ctx: ScriptContext): void;
+  onKill(m: Monster, ctx: ScriptContext): void;
 }
 
 // What a playable area hands to the game loop.
@@ -38,6 +70,11 @@ export interface World {
   /** Named arrival points (other areas' exits lead to these). */
   entries?: Record<string, { pos: THREE.Vector3; yaw: number }>;
   monsterSpawns?: MonsterSpawn[];
+  /** Underground: no sky, denser fog, the dead stay dead. */
+  indoor?: boolean;
+  /** Multiplies the distance fog density. */
+  fogScale?: number;
+  script?: AreaScript;
   update(dt: number, t: number): void;
 }
 

@@ -76,6 +76,13 @@ export class NavGrid {
     }
   }
 
+  /** Clears an axis-aligned rectangle of half-extents (hx, hz). */
+  unblockRect(x: number, z: number, hx: number, hz: number) {
+    const [x0, z0] = this.toCell(x - hx, z - hz);
+    const [x1, z1] = this.toCell(x + hx, z + hz);
+    for (let cz = z0; cz <= z1; cz++) for (let cx = x0; cx <= x1; cx++) if (this.inside(cx, cz)) this.blocked[cz * this.cols + cx] = 0;
+  }
+
   /** Nearest walkable point to (x, z), searching outward in rings. */
   nearestWalkable(x: number, z: number): THREE.Vector2 | null {
     const [cx, cz] = this.toCell(x, z);
