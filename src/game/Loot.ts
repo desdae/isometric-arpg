@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import { lathe } from '../actors/Character';
 import { RARITY_COLOR, type Item } from './Items';
@@ -86,6 +87,8 @@ export class LootLayer {
   constructor(
     private height: HeightFn,
     private onClick: (g: GroundItem) => void,
+    /** Where things may come to rest: walkable ground the hero can reach. */
+    private nav?: NavGrid,
   ) {
     this.layer = document.createElement('div');
     this.layer.className = 'loot-layer';
@@ -107,10 +110,29 @@ export class LootLayer {
 
   /** Throws an item out of `from` to land a short way off. */
   drop(item: Item, from: THREE.Vector3) {
-    const a = Math.random() * Math.PI * 2;
-    const r = 0.6 + Math.random() * 1.3;
-    const x = from.x + Math.cos(a) * r;
-    const z = from.z + Math.sin(a) * r;
+    // Land on open floor in plain sight of where it fell from, never inside
+    // a wall or behind one, so the hero can always walk up and take it.
+    let x = from.x;
+    let z = from.z;
+    const nav = this.nav;
+    for (let tries = 0; tries < 16; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = (0.6 + Math.random() * 1.3) * (1 - tries / 24);
+      const px = from.x + Math.cos(a) * r;
+      const pz = from.z + Math.sin(a) * r;
+      if (!nav || (nav.walkable(px, pz) && nav.lineOfSight(from.x, from.z, px, pz))) {
+        x = px;
+        z = pz;
+        break;
+      }
+    }
+    if (nav && !nav.walkable(x, z)) {
+      const p = nav.nearestWalkable(x, z);
+      if (p) {
+        x = p.x;
+        z = p.y;
+      }
+    }
     const pos = new THREE.Vector3(x, this.height(x, z), z);
     const obj = itemModel(item);
     obj.rotation.y = Math.random() * 6.28;

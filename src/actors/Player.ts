@@ -322,7 +322,11 @@ export class Player implements Combatant {
     }
     if (this.pending && !this.swinging) {
       const t = this.pending.target;
-      if (Math.hypot(t.x - pos2.x, t.z - pos2.y) <= this.pending.radius) {
+      const d = Math.hypot(t.x - pos2.x, t.z - pos2.y);
+      // Something tucked against a wall: once the walk has ended as close as
+      // the floor allows, reach a little further for it.
+      const stuck = this.path.length === 0 && d <= this.pending.radius + 1.6 && !area.nav.walkable(t.x, t.z);
+      if (d <= this.pending.radius || stuck) {
         const act = this.pending.onReach;
         this.pending = null;
         this.path = [];

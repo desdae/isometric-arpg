@@ -114,7 +114,7 @@ export class Game {
       const effects = new Effects(world.heightAt);
       scene.add(effects.group);
       noAO.add(effects.group);
-      const loot = new LootLayer(world.heightAt, (g) => this.pickUp(g));
+      const loot = new LootLayer(world.heightAt, (g) => this.pickUp(g), world.nav);
       loot.setVisible(false);
       scene.add(loot.group);
       noAO.add(loot.group);
