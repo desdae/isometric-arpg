@@ -203,16 +203,23 @@ export function buildBrute(m: MonsterMaterials, rng: Rng, scale = range(rng, 1.3
     return 0.43 - 0.14 * front * front;
   };
   const cordPts: THREE.Vector3[] = [];
-  for (let i = 0; i < 24; i++) {
-    const a = -Math.PI + (i / 24) * Math.PI * 2;
+  for (let i = 0; i < 72; i++) {
+    const a = -Math.PI + (i / 72) * Math.PI * 2;
     cordPts.push(surfacePoint(chestGeo, neckline(a), a, 0.006));
   }
-  mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cordPts, true), 64, 0.005, 5, true), darkLeather, c.chest);
+  mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cordPts, true), 144, 0.005, 5, true), darkLeather, c.chest);
+  // Teeth hang from the cord: each top sits on the cord itself, threaded by
+  // a small loop, and the tooth lies down along the chest below it.
+  const loop = new THREE.TorusGeometry(0.0065, 0.0022, 5, 12).rotateY(Math.PI / 2);
   for (let i = -4; i <= 4; i++) {
     const a = i * 0.14;
-    const p = surfacePoint(chestGeo, neckline(a) - 0.026, a, 0.012);
-    const tooth = mesh(new THREE.ConeGeometry(range(rng, 0.009, 0.012), range(rng, 0.045, 0.06) - Math.abs(i) * 0.003, 6).rotateX(Math.PI), m.bone, c.chest, p.x, p.y, p.z);
-    tooth.rotation.set(-0.3, a, range(rng, -0.15, 0.15));
+    const h = range(rng, 0.045, 0.06) - Math.abs(i) * 0.003;
+    const top = surfacePoint(chestGeo, neckline(a), a, 0.006);
+    const low = surfacePoint(chestGeo, neckline(a) - h, a, 0.01);
+    const tooth = mesh(new THREE.ConeGeometry(range(rng, 0.009, 0.012), h, 6).rotateX(Math.PI).translate(0, -h / 2 - 0.004, 0), m.bone, c.chest, top.x, top.y, top.z);
+    tooth.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), low.sub(top).normalize());
+    tooth.rotateY(range(rng, -0.4, 0.4));
+    mesh(loop, darkLeather, tooth, 0, -0.001, 0);
   }
 
   // --- Arms --------------------------------------------------------------
