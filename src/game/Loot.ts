@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import { lathe } from '../actors/Character';
-import { RARITY_COLOR, type Item } from './Items';
+import { QUEST_COLOR, RARITY_COLOR, type Item } from './Items';
 
 // Items lying on the ground: a small model that arcs out of the corpse and
 // bounces, a light beam for rare finds, and a clickable name label in the
@@ -16,6 +16,9 @@ const mats = {
   glass: new THREE.MeshStandardMaterial({ color: 0x302020, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.6 }),
   potion: new THREE.MeshStandardMaterial({ color: 0x300000, emissive: new THREE.Color(1.4, 0.05, 0.03), roughness: 0.2 }),
   cork: new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.9 }),
+  moss: new THREE.MeshStandardMaterial({ color: 0x2a3a1a, emissive: new THREE.Color(0.05, 0.12, 0.03), roughness: 1 }),
+  ichor: new THREE.MeshStandardMaterial({ color: 0x3a0a20, emissive: new THREE.Color(0.35, 0.02, 0.12), roughness: 0.25 }),
+  scarf: new THREE.MeshStandardMaterial({ color: 0x8a1410, roughness: 0.9 }),
 };
 
 function itemModel(item: Item): THREE.Object3D {
@@ -41,6 +44,16 @@ function itemModel(item: Item): THREE.Object3D {
     case 'potion':
       add(lathe([[0, 0], [0.06, 0.01], [0.075, 0.07], [0.06, 0.13], [0.025, 0.16], [0.025, 0.2], [0, 0.2]], 12), mats.glass, 0, 0, 0, 0, 0, Math.PI / 2 - 0.1).position.y = 0.075;
       add(lathe([[0, 0], [0.055, 0.01], [0.068, 0.07], [0.05, 0.12], [0, 0.12]], 10), mats.potion, 0, 0.075, 0, 0, 0, Math.PI / 2 - 0.1);
+      break;
+    case 'quest':
+      if (item.base === 'Grave Moss') {
+        for (let i = 0; i < 5; i++) add(new THREE.SphereGeometry(0.05 + Math.random() * 0.03, 7, 5).scale(1, 0.5, 1), mats.moss, (Math.random() - 0.5) * 0.14, 0.02, (Math.random() - 0.5) * 0.14);
+      } else if (item.base === 'Ichor Sac') {
+        add(new THREE.SphereGeometry(0.08, 12, 8).scale(1, 0.75, 1.2), mats.ichor, 0, 0.06, 0);
+      } else {
+        add(new THREE.BoxGeometry(0.36, 0.02, 0.1), mats.scarf, 0, 0.012, 0, 0, 0.3, 0);
+        add(new THREE.BoxGeometry(0.1, 0.022, 0.24), mats.scarf, 0.14, 0.014, 0.1, 0, -0.4, 0);
+      }
       break;
     case 'weapon':
       add(new THREE.BoxGeometry(0.7, 0.012, 0.06), mats.steel, 0.2, 0.03, 0);
@@ -155,7 +168,7 @@ export class LootLayer {
     const label = document.createElement('button');
     label.type = 'button';
     label.className = `loot-label ${item.rarity}`;
-    label.style.color = RARITY_COLOR[item.rarity];
+    label.style.color = item.slot === 'quest' ? QUEST_COLOR : RARITY_COLOR[item.rarity];
     label.textContent = item.name;
     label.hidden = true;
     const g: GroundItem = { item, obj, label, pos, age: 0, from: from.clone().setY(from.y + 1) };

@@ -484,6 +484,26 @@ class AudioEngine {
     this.bell(t + 0.05, 147, 0.07, 4);
   }
 
+  /** Brother Anselm's blessing: a soft choir rising into a bright chord. */
+  heal() {
+    if (!this.ready()) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out({ gain: 1, pan: 0 }, 1, 0.9);
+    for (const f of [220, 277, 330, 440]) for (const det of [-6, 6]) this.tone(o, t, { type: 'triangle', f0: f, gain: 0.035, attack: 0.5, decay: 2.2, detune: det });
+    this.bell(t + 0.35, 440, 0.05, 3);
+  }
+
+  /** A town portal tearing open: a rising airy swirl over a low hum. */
+  portal(pos?: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = (pos && this.at(pos, 2)) || { gain: 1, pan: 0 };
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.8);
+    this.burst(o, t, { type: 'bandpass', f0: 300, f1: 2400, q: 4, gain: 0.35, attack: 0.5, decay: 1.2 });
+    this.tone(o, t, { type: 'sine', f0: 90, f1: 140, gain: 0.3, attack: 0.3, decay: 1.6 });
+    this.tone(o, t + 0.2, { type: 'triangle', f0: 660, f1: 990, gain: 0.05, attack: 0.4, decay: 1.2 });
+  }
+
   /** A rune circle kindling under the hero's feet. */
   runeLit(pos: THREE.Vector3) {
     if (!this.ready()) return;

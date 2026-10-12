@@ -21,7 +21,7 @@ export interface Item {
   id: number;
   name: string;
   base: string;
-  slot: Slot | 'potion' | 'gold';
+  slot: Slot | 'potion' | 'gold' | 'quest';
   rarity: Rarity;
   level: number;
   stats: ItemStats;
@@ -37,6 +37,9 @@ export const RARITY_COLOR: Record<Rarity, string> = {
   rare: '#f0d060',
   unique: '#c8803a',
 };
+
+/** Label colour for quest items lying on the ground. */
+export const QUEST_COLOR = '#8ad08a';
 
 interface Base {
   name: string;
@@ -160,6 +163,23 @@ export function makeGold(level: number, mult = 1): Item {
 export function makePotion(): Item {
   return { id: nextId++, name: 'Healing Draught', base: 'Healing Draught', slot: 'potion', rarity: 'common', level: 1, stats: {}, amount: 1 };
 }
+
+/** Something a townsperson asked for (grave moss, a lost scarf). It goes to the quest, not the bag. */
+export function makeQuestItem(name: string): Item {
+  return { id: nextId++, name, base: name, slot: 'quest', rarity: 'common', level: 1, stats: {}, amount: 1 };
+}
+
+const RARITY_PRICE: Record<Rarity, number> = { common: 12, magic: 34, rare: 95, unique: 320 };
+
+/** What a merchant asks for an item; they pay a quarter of it back. */
+export function itemPrice(item: Item): number {
+  if (item.slot === 'potion') return 25 * item.amount;
+  if (item.slot === 'gold' || item.slot === 'quest') return 0;
+  const affixes = Object.keys(item.stats).length;
+  return Math.round(RARITY_PRICE[item.rarity] * (1 + item.level * 0.35) * (1 + affixes * 0.08));
+}
+
+export const sellPrice = (item: Item) => Math.max(1, Math.floor(itemPrice(item) / 4));
 
 /** Human-readable stat lines for tooltips. */
 export function statLines(s: ItemStats): string[] {

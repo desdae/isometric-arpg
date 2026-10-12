@@ -18,7 +18,11 @@ import { Inventory } from './Inventory';
 import { Stats } from './Stats';
 import { cutaway } from '../engine/cutaway';
 import { noAO } from '../engine/Renderer';
-import { makeGold, makeItem, makePotion, rollRarity } from './Items';
+import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
+import { QuestLog, type Quest } from './Quests';
+import { Shop } from './Shop';
+import { PortalFx } from './Portal';
+import type { DialogueAction } from '../engine/Dialogue';
 import type { Character } from '../actors/Character';
 
 // Runs the playable game: keeps each area (town, wasteland) alive once built,
@@ -52,6 +56,15 @@ export class Game {
   readonly floaters = new FloatingText();
   readonly dialogue = new Dialogue();
   readonly inventory: Inventory;
+  readonly quests = new QuestLog();
+  readonly shop: Shop;
+  /** The open town portal: one end out in the world, the other in the square. */
+  private portal: { area: AreaName; there: PortalFx; home: PortalFx; exitThere: Exit; exitHome: Exit } | null = null;
+  private portalBusy = false;
+  private lastPortal = -10;
+  private townVisits = 0;
+  private markers = new Map<Npc, HTMLDivElement>();
+  private talkingTo: Npc | null = null;
   private areas = new Map<AreaName, AreaState>();
   private building = new Map<AreaName, Promise<AreaState>>();
   area!: AreaState;
@@ -77,6 +90,17 @@ export class Game {
     this.player = new Player(hero, this.stats);
     this.inventory = new Inventory(this.stats);
     this.inventory.onChange = () => this.hud.update(0, this.stats);
+    this.shop = new Shop(this.stats, this.inventory);
+    this.shop.onTrade = (kind, item) => {
+      if (kind === 'poor') {
+        this.say(this.stats.bag.length >= this.stats.bagSize && item.slot !== 'potion' ? 'My bag is full' : 'I cannot afford that');
+        return;
+      }
+      audio.coins();
+      this.inventory.render();
+    };
+    this.hud.onPortal = () => void this.openPortal();
+    this.hud.onJournal = () => this.toggleJournal();
     this.hud.onInventory = () => this.inventory.toggle();
     this.hud.onPotion = () => this.player.drinkPotion(this.playerCtx());
     this.hud.onCleave = () => this.player.cleave(this.playerCtx());
@@ -91,7 +115,12 @@ export class Game {
     style.textContent = `.exit-label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; white-space: nowrap;
       font: 600 13px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; color: #f0d8b0; padding: 6px 10px; background: rgba(20,8,6,.8);
       border: 1px solid #8a5a34; box-shadow: 0 0 12px rgba(200,120,40,.25); }
-      .exit-label:hover { border-color: #e0a060; }`;
+      .exit-label:hover { border-color: #e0a060; }
+      .exit-label.portal { color: #d0e4ff; border-color: #4a6aa8; box-shadow: 0 0 14px rgba(80,140,255,.35); }
+      .quest-mark { position: absolute; left: 0; top: 0; font: 700 30px/1 'Cinzel', Georgia, serif; color: #f4c850; pointer-events: none;
+        text-shadow: 0 0 10px rgba(240,180,60,.7), 0 2px 3px #000; animation: quest-bob 1.6s ease-in-out infinite; }
+      .quest-mark.wait { color: #9a9088; text-shadow: 0 2px 3px #000; animation: none; }
+      @keyframes quest-bob { 50% { margin-top: -5px; } }`;
     document.head.appendChild(style);
     this.bindInput();
   }
@@ -157,8 +186,13 @@ export class Game {
     return el;
   }
 
+  private say(text: string, life = 1.6) {
+    this.floaters.spawn(text, this.player.position.clone().setY(this.player.position.y + 2.3), 'info', life);
+  }
+
   /** Forgets an area so it is generated afresh next time (a cleared dungeon). */
   private discard(a: AreaState) {
+    if (this.portal?.area === a.name) this.closePortal();
     for (const x of [...a.exitLabels, ...a.useLabels]) x.el.remove();
     this.areas.delete(a.name);
     this.building.delete(a.name);
@@ -196,7 +230,9 @@ export class Game {
     this.area = area;
     audio.setArea(name);
     this.dialogue.close();
+    this.shop.close();
     this.floaters.clear();
+    if (name === 'town') this.townVisits++;
     const w = area.world;
     if (!w.indoor) w.scene.add(this.sky.mesh);
     this.renderer.setScene(w.scene);
@@ -223,7 +259,9 @@ export class Game {
       if (fade) void this.hud.fade(false);
       await loading.hide();
     } else if (fade) await this.hud.fade(false);
-    if (w.title) this.hud.showBanner(w.title, w.subtitle ?? '');
+    if (w.title && entry !== 'portal') this.hud.showBanner(w.title, w.subtitle ?? '');
+    // Stepping back through from town closes the portal behind you.
+    if (entry === 'portal' && name !== 'town') this.closePortal();
     // Dig the crypt while the hero is out in the fields, so going down is quick.
     if (name === 'zone') setTimeout(() => void this.load('dungeon'), 4000);
     this.travelling = false;
@@ -267,6 +305,10 @@ export class Game {
       g.announced = true;
       if (g.item.rarity === 'rare' || g.item.rarity === 'unique') audio.drop(g.pos, g.item.rarity);
     }
+    // Errands: kills count, and things asked for start dropping.
+    for (const q of this.quests.onKill(m.kind, !!m.spawn.boss)) this.questFinished(q);
+    const want = this.quests.dropFor(m.kind, this.area.name, (name) => loot.items.filter((g) => g.item.name === name).length);
+    if (want) loot.drop(makeQuestItem(want), at);
     if (m.elite && !this.area.world.script) this.hud.showBanner(`${m.name} Is Slain`, 'The fields fall quiet, for now');
     this.area.world.script?.onKill(m, this.scriptCtx());
   }
@@ -283,6 +325,15 @@ export class Game {
       return;
     }
     this.area.loot.remove(g);
+    if (g.item.slot === 'quest') {
+      const q = this.quests.gather(g.item.name);
+      audio.pickup('magic');
+      if (q) {
+        this.say(`${g.item.name} (${q.progress}/${q.def.count})`, 1.4);
+        if (q.progress >= q.def.count) this.questFinished(q);
+      }
+      return;
+    }
     if (g.item.slot === 'gold') audio.coins();
     else audio.pickup(g.item.slot === 'potion' ? 'common' : g.item.rarity);
     const text = g.item.slot === 'gold' ? `+${g.item.amount} gold` : g.item.slot === 'potion' ? '+1 draught' : g.item.name;
@@ -310,6 +361,215 @@ export class Game {
     this.stats.gold = Math.floor(this.stats.gold * 0.9);
     this.player.revive();
     await this.enter('town', 'square');
+  }
+
+  // ---- Townsfolk: quests, trade, healing ----------------------------------
+
+  /** Opens a conversation, leading with whatever errand is between you. */
+  private talk(npc: Npc, text?: string) {
+    npc.talking = true;
+    this.talkingTo = npc;
+    const d = npc.def;
+    const q = this.quests;
+    const lv = this.stats.level;
+    const actions: DialogueAction[] = [];
+    const ready = q.ready(d.name);
+    const offer = q.available(d.name);
+    const current = q.current(d.name);
+    if (ready) {
+      text ??= 'You are back, and in one piece. Is it done?';
+      actions.push({ label: `Turn in: ${ready.def.title}`, run: () => this.turnIn(npc, ready) });
+    } else if (offer) {
+      text ??= offer.offer;
+      actions.push({
+        label: `Accept: ${offer.title}`,
+        run: () => {
+          q.accept(offer);
+          audio.click();
+          this.talk(npc, `${offer.waiting} ${q.rewardText(offer, lv)}.`);
+        },
+      });
+    } else if (current) {
+      text ??= current.def.waiting;
+    }
+    if (d.name === 'Brother Anselm') actions.push({ label: 'Be healed', run: () => this.heal(npc) });
+    if (d.name === 'Mirela' || d.name === 'Dusan') {
+      actions.push({
+        label: 'Trade',
+        run: () => {
+          audio.click();
+          this.shop.show(d.name, this.townVisits);
+        },
+      });
+    }
+    this.dialogue.show(d.name, d.role, text ?? npc.nextLine(), () => this.dialogue.setText(npc.nextLine()), () => {
+      npc.talking = false;
+      if (this.talkingTo === npc) this.talkingTo = null;
+      this.shop.close();
+    }, actions);
+  }
+
+  private turnIn(npc: Npc, quest: Quest) {
+    const s = this.stats;
+    const r = this.quests.reward(quest.def, s.level);
+    this.quests.turnIn(quest);
+    s.gold += r.gold;
+    s.potions += r.potions;
+    if (r.gift) {
+      const it = makeItem(s.level + 1, r.gift);
+      if (!s.take(it)) this.area.loot.drop(it, this.player.position);
+    }
+    audio.objective();
+    audio.coins();
+    const levels = s.gainXp(r.xp);
+    if (levels > 0) {
+      this.area.effects.pillar(this.player.position.clone());
+      audio.levelUp();
+      this.floaters.spawn(`Level ${s.level}`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
+    }
+    this.say(`+${r.gold} gold · +${r.xp} experience`, 2);
+    this.inventory.render();
+    const next = this.quests.available(npc.def.name);
+    this.talk(npc, next && next.id !== quest.def.id ? `${quest.def.thanks} There is something else, if you have the stomach for it.` : quest.def.thanks);
+  }
+
+  private questFinished(q: Quest) {
+    audio.objective();
+    this.hud.showBanner(q.def.title, `Return to ${q.def.giver} in Saint Orsolya`);
+  }
+
+  /** Brother Anselm's blessing: life and mana made whole, free of charge. */
+  private heal(npc: Npc) {
+    const s = this.stats;
+    const hurt = s.hp < s.maxHp - 0.5 || s.mana < s.maxMana - 0.5;
+    s.hp = s.maxHp;
+    s.mana = s.maxMana;
+    audio.heal();
+    const at = this.player.position.clone();
+    this.area.effects.sparks(at.clone().setY(at.y + 0.4), 30, new THREE.Color(1.8, 1.5, 0.9), 2.2, 1.2);
+    this.area.effects.flash(at.clone().setY(at.y + 1.6), 0xffe0a0, 18, 6, 0.9);
+    this.say(hurt ? 'Life and mana restored' : 'Blessed', 1.6);
+    this.talk(npc, hurt ? 'There. The saint still listens, even now. Go carefully.' : 'You are whole already. Still, take the blessing. You will need it out there.');
+  }
+
+  /** "!" over townsfolk with an errand to give, "?" over those waiting on one. */
+  private updateMarkers(W: number, H: number) {
+    const npcs = this.area.name === 'town' ? (this.area.world.npcs ?? []) : [];
+    for (const [n, el] of this.markers) if (!npcs.includes(n)) el.hidden = true;
+    for (const n of npcs) {
+      const name = n.def.name;
+      const ready = this.quests.ready(name);
+      const mark = ready ? '?' : this.quests.available(name) ? '!' : this.quests.current(name) ? '?' : '';
+      let el = this.markers.get(n);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'quest-mark';
+        this.exitLayer.appendChild(el);
+        this.markers.set(n, el);
+      }
+      this.v.set(n.position.x, n.position.y + 2.55, n.position.z).project(this.cam.camera);
+      const show = mark !== '' && this.v.z < 1 && n.position.distanceTo(this.player.position) < 34 && !this.travelling;
+      el.hidden = !show;
+      if (!show) continue;
+      el.textContent = mark;
+      el.classList.toggle('wait', mark === '?' && !ready);
+      el.style.transform = `translate(${Math.round((this.v.x * 0.5 + 0.5) * W)}px, ${Math.round((-this.v.y * 0.5 + 0.5) * H)}px) translate(-50%, -100%)`;
+    }
+  }
+
+  private toggleJournal() {
+    audio.click();
+    if (this.hud.journalOpen) {
+      this.hud.showJournal(null);
+      return;
+    }
+    const lv = this.stats.level;
+    this.hud.showJournal(
+      this.quests.active.map((q) => ({
+        title: q.def.title,
+        giver: `From ${q.def.giver}`,
+        text: q.def.offer,
+        progress: q.progress >= q.def.count ? 'Done, return' : q.def.kind === 'clear' ? 'Not yet' : `${q.progress}/${q.def.count}`,
+        reward: this.quests.rewardText(q.def, lv),
+      })),
+    );
+  }
+
+  // ---- Town portal -------------------------------------------------------
+
+  /** Tears open a way home in front of the hero, with its twin in the square. */
+  private async openPortal() {
+    if (this.travelling || this.portalBusy || !this.area || this.player.dead) return;
+    const a = this.area;
+    if (a.name === 'town') {
+      this.say('I am already in town');
+      return;
+    }
+    if (this.time - this.lastPortal < 1.5) return;
+    this.lastPortal = this.time;
+    this.portalBusy = true;
+    try {
+      this.closePortal();
+      const nav = a.world.nav!;
+      const p = this.player.position;
+      const yaw = this.player.facingYaw;
+      // Open it a stride ahead, on floor the hero can reach and see.
+      let pos: THREE.Vector3 | null = null;
+      for (const turn of [0, 0.6, -0.6, 1.3, -1.3, 2.2, -2.2, Math.PI]) {
+        const x = p.x + Math.sin(yaw + turn) * 1.9;
+        const z = p.z + Math.cos(yaw + turn) * 1.9;
+        if (nav.walkable(x, z) && nav.lineOfSight(p.x, p.z, x, z)) {
+          pos = new THREE.Vector3(x, a.world.heightAt(x, z), z);
+          break;
+        }
+      }
+      if (!pos) {
+        this.say('There is no room here');
+        return;
+      }
+      const town = await this.load('town');
+      if (this.area !== a || this.player.dead) return;
+      const tw = town.world;
+      const tn = tw.nav!;
+      const spot = tn.nearestWalkable(-3.5, 6.5) ?? new THREE.Vector2(-3.5, 6.5);
+      const homePos = new THREE.Vector3(spot.x, tw.heightAt(spot.x, spot.y), spot.y);
+      const arrive = tn.nearestWalkable(spot.x, spot.y + 2) ?? new THREE.Vector2(spot.x, spot.y + 2);
+      const there = new PortalFx(pos);
+      const home = new PortalFx(homePos);
+      a.world.scene.add(there.group);
+      tw.scene.add(home.group);
+      noAO.add(there.group);
+      noAO.add(home.group);
+      const exitThere: Exit = { pos, radius: 0.7, to: 'town', entry: 'portal', label: 'Town Portal' };
+      const exitHome: Exit = { pos: homePos, radius: 0.7, to: a.name, entry: 'portal', label: `Portal to ${AREA_TITLES[a.name][0]}` };
+      (a.world.exits ??= []).push(exitThere);
+      (tw.exits ??= []).push(exitHome);
+      // Coming back, you step out where you stood when you cast it.
+      (a.world.entries ??= {}).portal = { pos: p.clone(), yaw };
+      (tw.entries ??= {}).portal = { pos: new THREE.Vector3(arrive.x, 0, arrive.y), yaw: 0 };
+      this.portal = { area: a.name, there, home, exitThere, exitHome };
+      audio.portal(pos);
+      a.effects.flash(pos.clone().setY(pos.y + 1.3), 0x6aa0ff, 26, 7, 0.8);
+      a.effects.sparks(pos.clone().setY(pos.y + 1.2), 24, new THREE.Color(0.6, 0.9, 2.0), 2.5, 0.9);
+    } finally {
+      this.portalBusy = false;
+    }
+  }
+
+  private closePortal() {
+    const pt = this.portal;
+    if (!pt) return;
+    this.portal = null;
+    pt.there.dispose();
+    pt.home.dispose();
+    noAO.delete(pt.there.group);
+    noAO.delete(pt.home.group);
+    const there = this.areas.get(pt.area)?.world;
+    const town = this.areas.get('town')?.world;
+    if (there?.exits) there.exits.splice(there.exits.indexOf(pt.exitThere) >>> 0, 1);
+    if (town?.exits) town.exits.splice(town.exits.indexOf(pt.exitHome) >>> 0, 1);
+    if (there?.entries) delete there.entries.portal;
+    if (town?.entries) delete town.entries.portal;
   }
 
   // ---- Input -------------------------------------------------------------
@@ -350,6 +610,7 @@ export class Game {
       }
       if (e.button !== 0) return;
       this.dialogue.close();
+      this.shop.close();
       if (hit.monster) {
         this.player.holdAttack = true;
         this.player.attack(hit.monster);
@@ -358,10 +619,7 @@ export class Game {
       }
       if (hit.npc) {
         const npc = hit.npc;
-        this.player.interact(npc.position, 1.8, () => {
-          npc.talking = true;
-          this.dialogue.show(npc.def.name, npc.def.role, npc.nextLine(), () => this.dialogue.setText(npc.nextLine()), () => (npc.talking = false));
-        });
+        this.player.interact(npc.position, 1.8, () => this.talk(npc));
         return;
       }
       if (hit.ground) {
@@ -393,7 +651,12 @@ export class Game {
         audio.click();
       }
       if (k === 'm') audio.toggleMute();
-      if (k === 'escape') this.inventory.toggle(false);
+      if (k === 't') void this.openPortal();
+      if (k === 'l' || k === 'j') this.toggleJournal();
+      if (k === 'escape') {
+        this.inventory.toggle(false);
+        this.hud.showJournal(null);
+      }
     });
   }
 
@@ -440,7 +703,7 @@ export class Game {
     a.loot.update(dt, this.cam.camera, p.position);
     // Walk over gold and potions to scoop them up.
     for (const g of [...a.loot.items]) {
-      if ((g.item.slot === 'gold' || g.item.slot === 'potion') && g.age > 0.7 && g.pos.distanceTo(p.position) < 1.1) this.take(g);
+      if ((g.item.slot === 'gold' || g.item.slot === 'potion' || g.item.slot === 'quest') && g.age > 0.7 && g.pos.distanceTo(p.position) < 1.1) this.take(g);
     }
     // Exits: labels over the gates, and travel when the hero walks in.
     const W = window.innerWidth;
@@ -452,7 +715,24 @@ export class Game {
       this.hud.setObjectives(script.title, script.objectives());
     }
     for (const exit of w.exits ?? []) {
-      if (!a.exitLabels.some((x) => x.exit === exit)) a.exitLabels.push({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) });
+      if (a.exitLabels.some((x) => x.exit === exit)) continue;
+      const el = this.label(exit.label, () => this.player.moveTo(exit.pos));
+      if (exit.entry === 'portal') el.classList.add('portal');
+      a.exitLabels.push({ exit, el });
+    }
+    // A closed portal takes its label with it.
+    a.exitLabels = a.exitLabels.filter((x) => {
+      if (w.exits?.includes(x.exit)) return true;
+      x.el.remove();
+      return false;
+    });
+    if (this.portal) for (const fx of [this.portal.there, this.portal.home]) fx.update(dt, this.cam.camera);
+    this.updateMarkers(W, H);
+    this.hud.setQuests(this.quests.lines());
+    // Walking off ends a conversation or a trade.
+    if (this.talkingTo && this.talkingTo.position.distanceTo(p.position) > 4.5) {
+      this.dialogue.close();
+      this.shop.close();
     }
     for (const { it, el } of a.useLabels) {
       this.v.set(it.pos.x, w.heightAt(it.pos.x, it.pos.z) + 2.2, it.pos.z).project(this.cam.camera);

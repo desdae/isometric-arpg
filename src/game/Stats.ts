@@ -78,7 +78,7 @@ export class Stats {
 
   /** Equips a bag item, swapping out whatever was in its slot. */
   equip(item: Item) {
-    if (item.slot === 'gold' || item.slot === 'potion') return;
+    if (item.slot === 'gold' || item.slot === 'potion' || item.slot === 'quest') return;
     const i = this.bag.indexOf(item);
     if (i < 0) return;
     this.bag.splice(i, 1);
@@ -106,6 +106,7 @@ export class Stats {
       this.potions += item.amount;
       return true;
     }
+    if (item.slot === 'quest') return true;
     if (this.bag.length >= this.bagSize) return false;
     this.bag.push(item);
     return true;

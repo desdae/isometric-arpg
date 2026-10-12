@@ -476,20 +476,20 @@ export async function buildTown(seed = 31): Promise<World> {
     },
     {
       name: 'Mirela',
-      role: 'Chandler',
+      role: 'Chandler · draughts and oil',
       home: stallSpots[0],
       yaw: 0,
       wander: 0,
       look: { hood: false, apron: true, longRobe: true, prop: 'none', beard: false },
       scale: 0.93,
       lines: [
-        'Candles, lamp oil, tallow. Light is the only coin anyone takes now.',
+        'Candles, lamp oil, tallow, and Petra\'s healing draughts. Light is the only coin anyone takes now, but I will take gold.',
         'The braziers burn day and night. Folk say the things outside will not cross fire. I hope they are right.',
       ],
     },
     {
       name: 'Brother Anselm',
-      role: 'Keeper of the cathedral',
+      role: 'Healer · keeper of the cathedral',
       home: cathedralStep,
       yaw: 0,
       wander: 2,
@@ -497,6 +497,7 @@ export async function buildTown(seed = 31): Promise<World> {
       lines: [
         'The roof of the nave fell in on the night of the red sky. The relics are still under it.',
         'I pray for the ones in the fields. They were our neighbours once.',
+        'Come to me when you are hurt. The saint asks no coin for her mercy, and neither do I.',
       ],
     },
     {
@@ -515,15 +516,15 @@ export async function buildTown(seed = 31): Promise<World> {
     },
     {
       name: 'Dusan',
-      role: 'Smith',
+      role: 'Smith · arms and armour',
       home: stallSpots[2],
       yaw: 0,
       wander: 0,
       look: { hood: false, bald: true, beard: true, apron: true, longRobe: false, prop: 'hammer' },
       scale: 1.05,
       lines: [
-        'My forge is cold. No charcoal has come through the gate in a week.',
-        'That plate of yours has seen worse than rust. Come back when I have fire and I will see to the dents.',
+        'My forge is cold. No charcoal has come through the gate in a week. But I have blades and mail from the ones who did not come back.',
+        'Bring me what you strip off the dead out there. I will pay for it, and sell it on to the next fool who walks out that gate.',
       ],
     },
     {

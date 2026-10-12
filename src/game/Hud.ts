@@ -70,15 +70,34 @@ const CSS = `
   .help { position: absolute; left: 16px; top: calc(14px + env(safe-area-inset-top, 0px)); font-size: 13px; line-height: 1.5; color: #a89080;
     text-shadow: 0 1px 2px #000; max-width: 260px; transition: opacity 1s; }
   .help b { font-weight: 600; color: #d8b890; }
-  .objectives { position: absolute; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px)); width: min(270px, 60vw); text-align: right;
-    text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  .tracker { position: absolute; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px)); width: min(270px, 60vw); display: grid; gap: 14px; }
+  .objectives, .quests { text-align: right; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  .quests { pointer-events: auto; cursor: pointer; }
+  .quests h3 { margin: 0 0 6px; font: 600 13px/1.2 'Cinzel', Georgia, serif; letter-spacing: .1em; color: #a8c890; }
+  .quests ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 14px; line-height: 1.25; color: #d8cdb8; }
+  .quests li.done { color: #f0d070; }
+  .quests li::after { content: ' ◆'; font-size: 10px; color: #6a9a5a; vertical-align: 2px; }
+  .quests li.done::after { content: ' ?'; font: 600 13px/1 'Cinzel', Georgia, serif; color: #f0d070; }
+  .journal { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 12; pointer-events: auto;
+    width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 190px); overflow: auto; padding: 16px 20px 18px;
+    background: linear-gradient(180deg, rgba(24,11,9,.97), rgba(10,5,5,.98)); border: 1px solid #5a2a20;
+    box-shadow: 0 0 0 1px #1a0a08, 0 14px 40px rgba(0,0,0,.7); color: #d8c8b8; font: 15px/1.5 'EB Garamond', Georgia, serif; }
+  .journal h3 { margin: 0 0 12px; font: 600 16px/1.2 'Cinzel', Georgia, serif; letter-spacing: .08em; color: #e8b070; display: flex; justify-content: space-between; align-items: center; }
+  .journal h3 button { font: 600 12px/1 'Cinzel', Georgia, serif; color: #e8d0b0; background: #2a1210; border: 1px solid #6a3424; padding: 6px 9px; cursor: pointer; }
+  .journal article { padding: 10px 0; border-top: 1px solid #2a1612; }
+  .journal h4 { margin: 0; font: 600 14px/1.3 'Cinzel', Georgia, serif; letter-spacing: .05em; color: #e8d0a8; display: flex; justify-content: space-between; gap: 10px; }
+  .journal h4 span { color: #a8c890; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .journal .giver { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #8a7060; margin: 2px 0 4px; }
+  .journal p { margin: 0; color: #c0b0a0; font-style: italic; text-wrap: pretty; }
+  .journal .reward { margin-top: 4px; font-size: 13px; color: #e8c060; }
+  .journal .none { font-style: italic; color: #8a7060; }
   .objectives h3 { margin: 0 0 6px; font: 600 14px/1.2 'Cinzel', Georgia, serif; letter-spacing: .1em; color: #d8b080; }
   .objectives ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 15px; line-height: 1.25; color: #e0cdb8; }
   .objectives li.done { color: #8a7a68; text-decoration: line-through; text-decoration-color: rgba(200,60,40,.7); }
   .objectives li::after { content: ' ◆'; font-size: 10px; color: #a03020; vertical-align: 2px; }
   .objectives li.done::after { color: #5a4a3a; }
   @media (max-width: 560px) {
-    .objectives { top: calc(48px + env(safe-area-inset-top, 0px)); font-size: 13px; }
+    .tracker { top: calc(48px + env(safe-area-inset-top, 0px)); font-size: 13px; }
     .orb { width: 78px; height: 78px; }
     .slot { width: 42px; height: 42px; }
     .slot svg { width: 26px; height: 26px; }
@@ -90,6 +109,16 @@ const CSS = `
 const ICON_SWORD = `<svg viewBox="0 0 32 32"><path d="M24 4l4 0 0 4-13 13-3-1-1-3z" fill="#c8c0b8" stroke="#3a2a20"/><path d="M8 18l6 6-2 2-2-1-3 3-2-2 3-3-1-2z" fill="#6a4020" stroke="#2a1a10"/></svg>`;
 const ICON_CLEAVE = `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="none" stroke="#e08050" stroke-width="2.5" stroke-dasharray="40 10"/><path d="M16 5l3 4h-6z" fill="#e08050"/><circle cx="16" cy="16" r="3" fill="#c8c0b8"/></svg>`;
 const ICON_POTION = `<svg viewBox="0 0 32 32"><path d="M13 4h6v5l5 6v9a4 4 0 0 1-4 4h-8a4 4 0 0 1-4-4v-9l5-6z" fill="#2a1010" stroke="#8a6a50"/><path d="M9 17h14v7a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3z" fill="#c01810"/><rect x="12" y="2" width="8" height="3" fill="#6a4a30"/></svg>`;
+
+const ICON_PORTAL = `<svg viewBox="0 0 32 32"><ellipse cx="16" cy="16" rx="8" ry="12" fill="#0a1a3a" stroke="#6aa0ff" stroke-width="2"/><path d="M16 8c-4 3-4 13 0 16M16 8c4 3 4 13 0 16" fill="none" stroke="#a8d0ff" stroke-width="1.2" opacity=".8"/><path d="M6 28h20" stroke="#6a5040" stroke-width="2"/></svg>`;
+
+export interface JournalEntry {
+  title: string;
+  giver: string;
+  text: string;
+  progress: string;
+  reward: string;
+}
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -124,6 +153,9 @@ export class Hud {
   onPotion: () => void = () => {};
   onCleave: () => void = () => {};
   onRevive: () => void = () => {};
+  onPortal: () => void = () => {};
+  onJournal: () => void = () => {};
+  private journal!: HTMLDivElement;
 
   constructor() {
     const style = document.createElement('style');
@@ -133,11 +165,12 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>I</b> inventory · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>T</b> town portal<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
-      <div class="objectives" hidden><h3></h3><ul></ul></div>
-      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>
+      <div class="journal" hidden></div>
+      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
@@ -147,6 +180,7 @@ export class Hud {
             <div class="slot" title="Strike (left click a foe)"><span class="key">LMB</span>${ICON_SWORD}</div>
             <div class="slot" data-act="cleave" title="Cleave: spin and hit everything around you (${CLEAVE_COST} mana)"><span class="key">RMB</span>${ICON_CLEAVE}</div>
             <div class="slot" data-act="potion" title="Healing Draught"><span class="key">1</span>${ICON_POTION}<span class="count"></span></div>
+            <div class="slot" data-act="portal" title="Town Portal: open a way home, and back again"><span class="key">T</span>${ICON_PORTAL}</div>
           </div>
         </div>
         <div class="orb mana"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
@@ -178,6 +212,15 @@ export class Hud {
     this.muteBtn.addEventListener('click', () => this.onMute());
     this.potionSlot.addEventListener('click', () => this.onPotion());
     this.cleaveSlot.addEventListener('click', () => this.onCleave());
+    q<HTMLDivElement>('.slot[data-act="portal"]').addEventListener('click', () => this.onPortal());
+    q<HTMLButtonElement>('[data-act="quests"]').addEventListener('click', () => this.onJournal());
+    const quests = q<HTMLDivElement>('.quests');
+    quests.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.onJournal();
+    });
+    this.journal = q('.journal');
+    this.journal.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     this.fadeEl = document.createElement('div');
     this.fadeEl.className = 'fade';
@@ -245,6 +288,45 @@ export class Hud {
         return li;
       }),
     );
+  }
+
+  private questKey = '';
+  /** The errands the hero has taken on, under the area objectives. */
+  setQuests(items: { text: string; done: boolean }[]) {
+    const key = items.map((i) => i.text + i.done).join('|');
+    if (key === this.questKey) return;
+    this.questKey = key;
+    const el = this.root.querySelector<HTMLDivElement>('.quests')!;
+    el.hidden = items.length === 0;
+    el.querySelector('ul')!.replaceChildren(
+      ...items.map((i) => {
+        const li = document.createElement('li');
+        li.textContent = i.text;
+        li.classList.toggle('done', i.done);
+        return li;
+      }),
+    );
+  }
+
+  get journalOpen() {
+    return !this.journal.hidden;
+  }
+
+  /** The quest log; null closes it. */
+  showJournal(entries: JournalEntry[] | null) {
+    this.journal.hidden = entries === null;
+    if (!entries) return;
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    this.journal.innerHTML = `<h3>Quest Log <button type="button">Close</button></h3>${
+      entries.length
+        ? entries
+            .map(
+              (e) => `<article><h4>${esc(e.title)} <span>${esc(e.progress)}</span></h4><div class="giver">${esc(e.giver)}</div><p>${esc(e.text)}</p><div class="reward">${esc(e.reward)}</div></article>`,
+            )
+            .join('')
+        : '<p class="none">No one has asked anything of you yet. Talk to the townsfolk marked with a gold ! above their heads.</p>'
+    }`;
+    this.journal.querySelector('button')!.addEventListener('click', () => this.showJournal(null));
   }
 
   showBanner(title: string, sub: string) {

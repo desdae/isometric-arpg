@@ -121,23 +121,29 @@ export class Inventory {
     });
   }
 
+  hideTip() {
+    this.tip.hidden = true;
+  }
+
   private changed() {
     this.tip.hidden = true;
     this.onChange();
     this.render();
   }
 
-  private hover(el: HTMLElement, get: () => Item | undefined, compare = false) {
+  /** Shows the item tooltip while the pointer is over `el` (the shop uses it too). */
+  hover(el: HTMLElement, get: () => Item | undefined, compare = false, extra?: (it: Item) => string) {
     el.addEventListener('pointerenter', (e) => {
       const it = get();
       if (!it) return;
-      const worn = compare && it.slot !== 'gold' && it.slot !== 'potion' ? this.stats.equipped[it.slot as Slot] : undefined;
+      const worn = compare && it.slot !== 'gold' && it.slot !== 'potion' && it.slot !== 'quest' ? this.stats.equipped[it.slot as Slot] : undefined;
       this.tip.innerHTML = `
         <div class="tname" style="color:${RARITY_COLOR[it.rarity]}">${esc(it.name)}</div>
         <div class="tbase">${it.rarity === 'common' ? '' : cap(it.rarity) + ' · '}${esc(it.base)} · Level ${it.level}</div>
         ${statLines(it.stats).map((l) => `<div>${l}</div>`).join('')}
         ${it.lore ? `<div class="tlore">${esc(it.lore)}</div>` : ''}
-        ${worn ? `<div class="tcmp">Worn: <span style="color:${RARITY_COLOR[worn.rarity]}">${esc(worn.name)}</span><br>${statLines(worn.stats).join(' · ')}</div>` : ''}`;
+        ${worn ? `<div class="tcmp">Worn: <span style="color:${RARITY_COLOR[worn.rarity]}">${esc(worn.name)}</span><br>${statLines(worn.stats).join(' · ')}</div>` : ''}
+        ${extra ? extra(it) : ''}`;
       this.tip.hidden = false;
       this.placeTip(e);
     });
@@ -156,5 +162,5 @@ export class Inventory {
   }
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+export const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
