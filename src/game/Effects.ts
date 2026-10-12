@@ -9,33 +9,92 @@ import { fbm2, clamp01, smoothstep } from '../procgen/noise';
 const MAX_DROPS = 900;
 const MAX_SPLATS = 70;
 
-/** Splatter alpha mask: a lumpy blot with droplets thrown around it. */
-function splatTexture(size = 128, seed = 3): THREE.DataTexture {
+/**
+ * Blood pool flow field. G holds the "arrival time" of the spreading pool at
+ * each texel (0 at the centre, 1 at the furthest finger), so raising a
+ * threshold over time makes the blood run outward along uneven fingers
+ * instead of scaling up a disc. R holds thickness (darker, glossier centre).
+ * Pixels the pool never reaches are 1.
+ */
+function splatTexture(size = 256, seed = 3): THREE.DataTexture {
   const data = new Uint8Array(size * size * 4);
+  // A few satellite drips thrown from the wound, reached early.
+  const drips = Array.from({ length: 9 }, (_, i) => {
+    const a = i * 2.39996 + seed;
+    const r = 0.3 + ((i * 0.618) % 1) * 0.15;
+    return { x: Math.cos(a) * r, y: Math.sin(a) * r, s: 0.012 + ((i * 0.37) % 1) * 0.022 };
+  });
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const u = x / size - 0.5;
-      const v = y / size - 0.5;
+      let u = x / size - 0.5;
+      let v = y / size - 0.5;
+      // Domain warp so the outline wanders.
+      u += fbm2(u * 5 + 11, v * 5, 3, seed + 1) * 0.05;
+      v += fbm2(u * 5, v * 5 + 7, 3, seed + 2) * 0.05;
       const r = Math.hypot(u, v) * 2;
       const a = Math.atan2(v, u);
-      const edge = 0.55 + fbm2(Math.cos(a) * 2 + 5, Math.sin(a) * 2 + 5, 4, seed) * 0.35;
-      let m = 1 - smoothstep(edge - 0.06, edge + 0.02, r);
-      // Droplets beyond the main blot.
-      const drops = fbm2(u * 14, v * 14, 2, seed + 4) * 0.5 + 0.5;
-      m = Math.max(m, smoothstep(0.78, 0.84, drops) * (1 - smoothstep(0.7, 1.0, r)));
+      // Reach in this direction: a lumpy base plus a few long runnels where
+      // the blood found a downhill path.
+      const lump = 0.5 + fbm2(Math.cos(a) * 1.6 + 5, Math.sin(a) * 1.6 + 5, 4, seed) * 0.22;
+      const finger = Math.pow(Math.max(0, fbm2(Math.cos(a) * 3.2 + 9, Math.sin(a) * 3.2 + 2, 3, seed + 5)), 1.6) * 0.75;
+      const reach = Math.min(0.96, lump + finger);
+      let t = r / reach; // < 1 inside the final pool
+      for (const d of drips) {
+        const dd = Math.hypot(u - d.x, v - d.y) / d.s;
+        if (dd < 1) t = Math.min(t, 0.35 + dd * 0.2);
+      }
       const i = (y * size + x) * 4;
-      const depth = clamp01(1 - r / edge) * 0.5 + 0.5; // darker, thicker centre
-      data[i] = Math.round(255 * depth);
-      data[i + 1] = data[i + 2] = data[i];
-      data[i + 3] = Math.round(255 * clamp01(m));
+      data[i] = Math.round(255 * clamp01(1 - smoothstep(0, 1, t)));
+      data[i + 1] = Math.round(255 * clamp01(t));
+      data[i + 2] = 0;
+      data[i + 3] = 255;
     }
   }
   const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   t.magFilter = THREE.LinearFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearFilter;
   t.needsUpdate = true;
   return t;
+}
+
+/** Wet pool material: alpha from the flow field against a per-pool spread. */
+function poolMaterial(tex: THREE.Texture): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0.34, 0.012, 0.008),
+    alphaMap: tex,
+    envMapIntensity: 1.6,
+    transparent: true,
+    depthWrite: false,
+    roughness: 0.06,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const spread = { value: 0 };
+  mat.userData.spread = spread;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.spread = spread;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float spread;')
+      .replace(
+        '#include <alphamap_fragment>',
+        `vec4 flow = texture2D( alphaMap, vAlphaMapUv );
+        // Leading edge: a soft rim that is slightly darker, like blood
+        // beading where it meets dry ground.
+        float edge = spread - flow.g;
+        diffuseColor.a *= smoothstep( 0.0, 0.035, edge );
+        diffuseColor.rgb *= mix( 1.3, 0.7, flow.r ) * mix( 0.55, 1.0, smoothstep( 0.0, 0.06, edge ) );`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+        // Thin edges soak in and dull; the thick centre stays glossy.
+        roughnessFactor = mix( 0.55, roughnessFactor, flow.r );`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'bloodpool';
+  return mat;
 }
 
 const dropMaterial = new THREE.ShaderMaterial({
@@ -92,7 +151,7 @@ export class Effects {
   private glowGeo = new THREE.BufferGeometry();
   private splats: THREE.Mesh[] = [];
   private splatIndex = 0;
-  private splatMat: THREE.MeshStandardMaterial;
+  private splatTex = splatTexture();
   private timed: Timed[] = [];
   private bolts: Bolt[] = [];
   private shake = 0;
@@ -127,17 +186,6 @@ export class Effects {
       this.group.add(l);
     }
 
-    this.splatMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0.16, 0.008, 0.006),
-      alphaMap: splatTexture(),
-      transparent: true,
-      depthWrite: false,
-      roughness: 0.18,
-      metalness: 0,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
   }
 
   /** Spray of blood (or ichor) from a wound, thrown away from `from`. */
@@ -166,29 +214,40 @@ export class Effects {
     this.drops.push({ pos, vel, age: 0, life, size, color, glow, landed: false });
   }
 
-  /** Pool of blood soaking into the ground. */
+  /** Pool of blood running out over the ground from where a body fell. */
   splat(x: number, z: number, size: number) {
+    const N = 16;
     let m = this.splats[this.splatIndex % MAX_SPLATS];
     if (!m) {
-      m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), this.splatMat);
+      m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, N, N).rotateX(-Math.PI / 2), poolMaterial(this.splatTex));
       m.receiveShadow = true;
       m.renderOrder = 2;
+      m.frustumCulled = false;
       this.splats.push(m);
       this.group.add(m);
     }
     this.splatIndex++;
-    // Sit on the terrain, tilted to its slope.
-    const e = 0.3;
-    const y = this.height(x, z);
-    const nx = this.height(x - e, z) - this.height(x + e, z);
-    const nz = this.height(x, z - e) - this.height(x, z + e);
-    const n = new THREE.Vector3(nx, 2 * e, nz).normalize();
-    m.position.set(x, y + 0.03, z);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6.28));
-    m.scale.set(0.01, 1, 0.01);
-    const target = size * (0.8 + Math.random() * 0.4);
-    // Spreads out over a second or so.
-    this.after(1.2, m, (k) => m.scale.set(target * (0.3 + 0.7 * Math.sqrt(k)), 1, target * (0.3 + 0.7 * Math.sqrt(k))));
+    // Drape the grid over the terrain in world space so the pool hugs bumps
+    // instead of a flat card cutting through them.
+    const half = (size * (0.85 + Math.random() * 0.35)) / 2;
+    const rot = Math.random() * Math.PI * 2;
+    const c = Math.cos(rot);
+    const sn = Math.sin(rot);
+    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const gx = ((i % (N + 1)) / N - 0.5) * 2 * half;
+      const gz = (Math.floor(i / (N + 1)) / N - 0.5) * 2 * half;
+      const wx = x + gx * c - gz * sn;
+      const wz = z + gx * sn + gz * c;
+      pos.setXYZ(i, wx, this.height(wx, wz) + 0.03, wz);
+    }
+    pos.needsUpdate = true;
+    m.geometry.computeVertexNormals();
+    m.geometry.computeBoundingSphere();
+    const spread = (m.material as THREE.Material).userData.spread as { value: number };
+    spread.value = 0;
+    // Gushes out fast, then creeps along its runnels for a few seconds.
+    this.after(5, m, (k) => (spread.value = 0.08 + 0.88 * (1 - Math.pow(1 - k, 3))));
   }
 
   /** Run `update(k)` for `life` seconds on an object (removed afterwards unless `keep`). */

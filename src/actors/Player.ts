@@ -230,7 +230,7 @@ export class Player implements Combatant {
     if (s.lifeSteal > 0) s.hp = Math.min(s.maxHp, s.hp + dealt * s.lifeSteal);
     if (!m.alive) {
       ctx.effects.blood(at, this.position, 40, m.def.blood, 1.5);
-      ctx.effects.splat(m.position.x, m.position.z, m.radius * 3.2);
+      ctx.effects.splat(m.position.x, m.position.z, m.radius * 4.2);
       ctx.onKill(m);
     }
   }
