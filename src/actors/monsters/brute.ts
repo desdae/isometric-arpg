@@ -24,7 +24,10 @@ function cleaver(): THREE.BufferGeometry[] {
   s.lineTo(0.05, 0.18);
   s.closePath();
   const blade = new THREE.ExtrudeGeometry(s, { depth: 0.025, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.012, bevelSegments: 1 });
-  blade.translate(0, 0, -0.0125);
+  // Turn the edge (+X in the shape) to face +Z: the overhead slam swings the
+  // grip about its X axis, so +Z is the direction the blade travels and the
+  // edge, not the flat, leads the blow.
+  blade.translate(0, 0, -0.0125).rotateY(-Math.PI / 2);
   const grip = new THREE.CylinderGeometry(0.028, 0.032, 0.36, 8).translate(0, 0.02, 0);
   return [blade, grip];
 }
