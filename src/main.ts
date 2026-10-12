@@ -112,6 +112,7 @@ if (params.has('yaw')) cam.yaw = cam.targetYawValue = THREE.MathUtils.degToRad(N
 if (params.has('pitch')) cam.pitch = THREE.MathUtils.degToRad(Number(params.get('pitch')));
 const freeCam = params.has('x') || params.has('z');
 if (freeCam) cam.target.set(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0));
+if (params.has('ty')) cam.target.y += Number(params.get('ty'));
 // Scripting hooks for automated screenshots.
 (window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
 (window as unknown as { __THREE: typeof THREE }).__THREE = THREE;

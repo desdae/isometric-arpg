@@ -413,6 +413,37 @@ export function flesh(seed = 13): SurfaceFn {
   };
 }
 
+/**
+ * Weathered human skin: soft blotchy colour variation, fine pores, a few
+ * pale scars and grime in the creases. Neutral albedo, tinted per creature.
+ */
+export function skin(seed = 15): SurfaceFn {
+  return (u, v) => {
+    const blotch = fbm2(u * 4, v * 4, 5, seed, 4) * 0.5 + 0.5;
+    const ruddy = smoothstep(0.45, 0.8, fbm2(u * 7, v * 7, 4, seed + 1, 7) * 0.5 + 0.5);
+    const pores = smoothstep(0.55, 0.75, fbm2(u * 90, v * 90, 2, seed + 2, 90) * 0.5 + 0.5);
+    const fine = fbm2(u * 30, v * 30, 3, seed + 3, 30) * 0.5 + 0.5;
+    const sc = fbm2(u * 3, v * 12, 3, seed + 4, 3);
+    const scar = smoothstep(0.035, 0.0, Math.abs(sc)) * smoothstep(0.55, 0.7, fbm2(u * 2, v * 2, 3, seed + 5, 2) * 0.5 + 0.5);
+    const grime = smoothstep(0.55, 0.9, fbm2(u * 5, v * 5, 4, seed + 6, 5) * 0.5 + 0.5);
+    const t = (0.62 + blotch * 0.22 + fine * 0.08) * (1 - pores * 0.08) * (1 - grime * 0.3);
+    const r = mix(t * 0.64, t * 0.7, ruddy) + scar * 0.08;
+    const g = mix(t * 0.6, t * 0.5, ruddy) + scar * 0.07;
+    const b = mix(t * 0.56, t * 0.45, ruddy) + scar * 0.07;
+    return { height: 0.5 + fine * 0.15 - pores * 0.12 + scar * 0.15, r, g, b, rough: 0.55 + grime * 0.2 + pores * 0.1 - scar * 0.15, ao: 1 - pores * 0.1 };
+  };
+}
+
+/** Coarse hair: long strands along V with clumps and flyaways. */
+export function hair(seed = 16): SurfaceFn {
+  return (u, v) => {
+    const strand = fbm2(u * 160, v * 6, 3, seed, 160) * 0.5 + 0.5;
+    const clump = fbm2(u * 18, v * 2, 3, seed + 1, 18) * 0.5 + 0.5;
+    const t = 0.35 + strand * 0.45 + clump * 0.2;
+    return { height: strand * 0.7 + clump * 0.3, r: t * 0.55, g: t * 0.5, b: t * 0.45, rough: 0.7 - strand * 0.2, ao: 0.7 + clump * 0.3 };
+  };
+}
+
 /** Insect armour: overlapping glossy plates with sutures and pitting. */
 export function chitin(seed = 14): SurfaceFn {
   return (u, v) => {
@@ -426,5 +457,5 @@ export function chitin(seed = 14): SurfaceFn {
   };
 }
 
-export const SURFACES = { flesh, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
+export const SURFACES = { flesh, skin, hair, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

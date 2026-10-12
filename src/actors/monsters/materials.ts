@@ -5,6 +5,10 @@ import type { Rig } from '../Rig';
 export interface MonsterMaterials {
   ghoulSkin: THREE.Material;
   bruteSkin: THREE.Material;
+  /** Weathered human skin for the brute. */
+  tannedSkin: THREE.Material;
+  hair: THREE.Material;
+  steel: THREE.Material;
   paleSkin: THREE.Material;
   wound: THREE.Material;
   chitin: THREE.Material;
@@ -36,17 +40,22 @@ let cached: Promise<MonsterMaterials> | null = null;
 
 export function monsterMaterials(): Promise<MonsterMaterials> {
   cached ??= (async () => {
-    const [flesh, chitin, cloth, metal, wood] = await bakeSurfaces([
+    const [flesh, chitin, cloth, metal, wood, skin, hair] = await bakeSurfaces([
       { kind: 'flesh', seed: 61, size: 512, normalStrength: 3 },
       { kind: 'chitin', seed: 62, size: 512, normalStrength: 4 },
       { kind: 'cloth', seed: 63, size: 256, normalStrength: 1.5 },
       { kind: 'wornMetal', seed: 64, size: 256, normalStrength: 2 },
       { kind: 'deadBark', seed: 65, size: 256, normalStrength: 4 },
+      { kind: 'skin', seed: 66, size: 512, normalStrength: 2 },
+      { kind: 'hair', seed: 67, size: 256, normalStrength: 5 },
     ]);
     const robe = pbrMaterial(cloth, 2, { color: new THREE.Color(0.42, 0.26, 0.26), side: THREE.DoubleSide });
     return {
       ghoulSkin: pbrMaterial(flesh, 2, { color: new THREE.Color(0.26, 0.29, 0.22) }),
       bruteSkin: pbrMaterial(flesh, 2, { color: new THREE.Color(0.36, 0.2, 0.17) }),
+      tannedSkin: pbrMaterial(skin, 2, { color: new THREE.Color(0.74, 0.52, 0.39), metalness: 0 }),
+      hair: pbrMaterial(hair, 3, { color: new THREE.Color(0.17, 0.1, 0.055), metalness: 0 }),
+      steel: pbrMaterial(metal, 2, { color: new THREE.Color(0.5, 0.49, 0.48) }),
       paleSkin: pbrMaterial(flesh, 2, { color: new THREE.Color(0.38, 0.35, 0.32) }),
       wound: new THREE.MeshStandardMaterial({ color: 0x2a0303, roughness: 0.25 }),
       chitin: pbrMaterial(chitin, 2, { color: new THREE.Color(0.16, 0.13, 0.13) }),
