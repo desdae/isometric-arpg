@@ -16,6 +16,7 @@ import { dressVillager, randomLook } from '../actors/outfits/villager';
 import { Npc, type NpcDef } from '../actors/Npc';
 import { perlin2 } from '../procgen/noise';
 import { installCutaway } from '../engine/cutaway';
+import { flickerTime, installFlicker, LightPool } from '../engine/LightPool';
 
 // The NPC town: a walled, half-ruined gothic town around a market square
 // with a well. Four streets lead out from the square: east to the gate onto
@@ -52,6 +53,13 @@ export async function buildTown(seed = 31): Promise<World> {
   const glow = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(2.0, 0.8, 0.28), roughness: 1 });
   const linenMat = pbrMaterial(linenSet, 2);
   const glassTex = leadedGlassTextures();
+  const installFlickerMat = (m: THREE.MeshStandardMaterial) => {
+    installFlicker(m);
+    return m;
+  };
+  // Hearth and lamp flames inside lit houses: a few real lights handed to the
+  // nearest flames as the hero walks the streets.
+  const houseLights = new LightPool(scene, 6, 0xff8a3a);
   const mats: Record<string, THREE.Material> = {
     stone: pbrMaterial(stoneSet, 1),
     trim: pbrMaterial(trimSet, 1, { color: 0x9a9090 }),
@@ -68,7 +76,10 @@ export async function buildTown(seed = 31): Promise<World> {
     ember: new THREE.MeshStandardMaterial({ color: 0x0a0604, emissive: new THREE.Color(0.7, 0.09, 0.015), roughness: 1 }),
     emberHot: new THREE.MeshStandardMaterial({ color: 0x0a0604, emissive: new THREE.Color(1.5, 0.3, 0.04), roughness: 1 }),
     glass: new THREE.MeshStandardMaterial({ map: glassTex.map, transparent: true, roughness: 0.2, metalness: 0, side: THREE.DoubleSide }),
-    glassLit: new THREE.MeshStandardMaterial({ map: glassTex.map, emissiveMap: glassTex.emissive, emissive: new THREE.Color(2.2, 1.5, 1.0), roughness: 0.3 }),
+    // Firelight behind grimy glass: dim, warm and never quite steady.
+    glassLit: installFlickerMat(new THREE.MeshStandardMaterial({ map: glassTex.map, color: 0x4a4038, emissiveMap: glassTex.emissive, emissive: new THREE.Color(0.5, 0.2, 0.06), roughness: 0.3 })),
+    hearth: installFlickerMat(new THREE.MeshStandardMaterial({ color: 0x050302, emissiveMap: hearthGlowTexture(), emissive: new THREE.Color(0.75, 0.32, 0.1), roughness: 1 })),
+    lampFlame: new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.3, 0.5) }),
     bark: pbrMaterial(barkSet, 1),
     iron: new THREE.MeshStandardMaterial({ color: 0x2a2522, roughness: 0.45, metalness: 0.9 }),
     glow,
@@ -152,7 +163,10 @@ export async function buildTown(seed = 31): Promise<World> {
     const lit = damage < 0.5 && rng() < 0.75;
     // A few gutted houses burnt recently and are still smouldering.
     const charred = damage >= 0.5 && charredCount < 4 && rng() < 0.6;
-    const b = ruinedHouse(rng, { w, d, floors: rng() < 0.6 ? 2 : 1, damage, lit, charred });
+    const spec = { w, d, floors: (rng() < 0.6 ? 2 : 1) as 1 | 2, damage, lit, charred, emitters: [] as NonNullable<Parameters<typeof ruinedHouse>[1]['emitters']> };
+    const b = ruinedHouse(rng, spec);
+    const toWorld = xf(x, height(x, z), z, faceYaw);
+    for (const e of spec.emitters) houseLights.add(e.pos.clone().applyMatrix4(toWorld), e.intensity, e.range, e.lively);
     if (charred) {
       charredCount++;
       const y = height(x, z);
@@ -572,6 +586,33 @@ export async function buildTown(seed = 31): Promise<World> {
       Fire.tick(t);
       fires.forEach((f) => f.update(t));
       lights.forEach((l) => l.update(t));
+      flickerTime.value = t;
+      houseLights.update(t);
     },
   };
+}
+
+/** Doorway seen into a dim room: dark above, warm near the floor where the hearth light falls. */
+function hearthGlowTexture(): THREE.DataTexture {
+  const w = 16;
+  const h = 64;
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const v = y / (h - 1);
+    for (let x = 0; x < w; x++) {
+      const u = x / (w - 1);
+      const side = 1 - Math.abs(u - 0.62) * 1.2; // the fire sits off to one side
+      const k = Math.max(0, (1 - v) ** 1.8 * (0.55 + 0.45 * side));
+      const i = (y * w + x) * 4;
+      data[i] = Math.round(255 * Math.min(1, k));
+      data[i + 1] = Math.round(255 * Math.min(1, k * 0.7));
+      data[i + 2] = Math.round(255 * Math.min(1, k * 0.45));
+      data[i + 3] = 255;
+    }
+  }
+  const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }

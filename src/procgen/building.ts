@@ -7,7 +7,7 @@ import { clamp01, fbm2, range, type Rng } from './noise';
 // panels, and a slate gable roof whose tiles, battens and rafters fall away
 // where the house has collapsed. Material keys:
 //   stone, trim, wood, plaster, slate (+ slateMoss, slateDark, slateLight),
-//   glass, glassLit, iron, glow, dark
+//   glass, glassLit, iron, glow, dark, hearth, lampFlame
 
 export interface HouseSpec {
   w: number; // along X (the street front faces +Z)
@@ -19,6 +19,8 @@ export interface HouseSpec {
   lit: boolean;
   /** Burnt out: sooted stone, charcoal timbers, embers still glowing in the rubble. */
   charred?: boolean;
+  /** Filled in by ruinedHouse: where real flames sit (hearth glow inside the door, oil lamps), in house space. */
+  emitters?: { pos: THREE.Vector3; intensity: number; range: number; lively: number }[];
 }
 
 interface Opening {
@@ -335,8 +337,30 @@ export function ruinedHouse(rng: Rng, spec: HouseSpec): MeshBuilder {
   const profiles = walls.map(([m, len, open], i) =>
     masonryWall(b, rng, m, len, groundH, thick, open, standing ? 0 : Math.min(1, damage * (i === 0 ? 0.8 : 1.1)), seed + i * 7, fill),
   );
-  // Lit doorway: warm light spilling from inside.
-  if (lit) b.add('glow', new THREE.PlaneGeometry(1.0, 2.05), xf(-w / 2 + doorX, 1.03, d / 2 - thick - 0.05), 0);
+  // Lit doorway: a dim room with a hearth somewhere inside. The glow comes
+  // from a real light set back behind the threshold, so it pools on the
+  // street in front of the door instead of the opening shining like a lamp.
+  if (lit) {
+    const dx = -w / 2 + doorX;
+    b.add('hearth', new THREE.PlaneGeometry(1.0, 2.05), xf(dx, 1.03, d / 2 - thick - 0.05), 0);
+    spec.emitters?.push({ pos: new THREE.Vector3(dx, 0.7, d / 2 - thick + 0.12), intensity: 20, range: 8, lively: 1 });
+    // Some keep an oil lamp burning on a bracket beside the door.
+    if (rng() < 0.55) {
+      const side = doorX > w / 2 ? -1 : 1;
+      const lx = dx + side * 0.85;
+      const ly = 2.2;
+      const lm = xf(lx, ly, d / 2, 0);
+      b.add('iron', new THREE.BoxGeometry(0.05, 0.12, 0.03), lm.clone().multiply(xf(0, 0.05, 0.015)), 0); // wall plate
+      b.add('iron', new THREE.BoxGeometry(0.025, 0.025, 0.34), lm.clone().multiply(xf(0, 0.06, 0.17)), 0); // arm
+      b.add('iron', new THREE.BoxGeometry(0.012, 0.1, 0.012), lm.clone().multiply(xf(0, 0.0, 0.32)), 0); // hook
+      const cage = lm.clone().multiply(xf(0, -0.17, 0.32));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add('iron', new THREE.BoxGeometry(0.012, 0.16, 0.012), cage.clone().multiply(xf(sx * 0.055, 0, sz * 0.055)), 0);
+      b.add('iron', new THREE.ConeGeometry(0.09, 0.07, 4).rotateY(Math.PI / 4), cage.clone().multiply(xf(0, 0.11, 0)), 0);
+      b.add('iron', new THREE.BoxGeometry(0.13, 0.02, 0.13), cage.clone().multiply(xf(0, -0.08, 0)), 0);
+      b.add('lampFlame', new THREE.SphereGeometry(0.022, 8, 6).scale(1, 1.8, 1), cage.clone().multiply(xf(0, -0.03, 0)), 0);
+      spec.emitters?.push({ pos: new THREE.Vector3(lx, ly - 0.2, d / 2 + 0.34), intensity: 5, range: 6, lively: 0.15 });
+    }
+  }
 
   let top = groundH;
   if (floors === 2 && standing) {
