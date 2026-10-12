@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loading } from '../engine/Loading';
 import { audio } from '../audio/Audio';
 import { bakeSurfaces, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
@@ -422,6 +423,7 @@ function sconce(b: MeshBuilder, face: THREE.Vector3, n: THREE.Vector3, y: number
 
 export async function buildDungeon(seed = 1): Promise<World> {
   const rng = mulberry32(seed);
+  await loading.step('Carving rooms and passages', 0.02);
   const L = generate(rng);
   const { grid, rooms, boss, start, dir } = L;
   const at = (i: number, j: number) => (i < 0 || j < 0 || i >= G || j >= G ? 0 : grid[j * G + i]);
@@ -444,6 +446,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   moon.shadow.radius = 3;
   scene.add(moon, moon.target);
 
+  await loading.step('Cutting stone for the walls', 0.1);
   const [wallSet, capSet, floorSet, cobbleSet, woodSet] = await bakeSurfaces([
     { kind: 'stoneBricks', seed: seed % 997, size: 512, normalStrength: 6 },
     { kind: 'roughStone', seed: (seed % 991) + 3, size: 512, normalStrength: 7 },
@@ -467,6 +470,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   };
   for (const k of ['wall', 'trim', 'rubble', 'void', 'iron', 'wood']) installCutaway(mats[k]);
 
+  await loading.step('Laying flagstones and spilling blood', 0.4);
   // ---- Floor ----------------------------------------------------------
   const blood = (x: number, z: number) => {
     const n = fbm2(x * 0.12, z * 0.12, 4, seed + 80) + fbm2(x * 0.5, z * 0.5, 3, seed + 81) * 0.25;
@@ -489,6 +493,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   const nav = new NavGrid(-HALF, -HALF, SIZE, SIZE, 0.5);
   for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) if (!at(i, j)) nav.blockBox(cx(i), cx(j), CELL / 2 + 0.3, CELL / 2 + 0.3, 0);
 
+  await loading.step('Raising the walls', 0.5);
   // ---- Walls ----------------------------------------------------------
   const walls = new MeshBuilder();
   const props = new MeshBuilder();
@@ -529,6 +534,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   }
   scene.add(walls.build(mats));
 
+  await loading.step('Lighting the torches', 0.62);
   // ---- Lights and torches ----------------------------------------------
   const pool = new LightPool(scene, 8, 0xff6a28);
   const fires: Fire[] = [];
@@ -578,6 +584,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
     }
   }
 
+  await loading.step('Hanging chains and drawing runes', 0.7);
   // ---- Room dressing ----------------------------------------------------
   const runeMats: THREE.MeshBasicMaterial[] = [];
   const runeCircle = (x: number, z: number, radius: number, color: THREE.Color, rot = rng() * 6) => {
@@ -703,6 +710,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   const entryPos = stairFace.face.clone().addScaledVector(stairFace.n, 5.2);
   const entryYaw = Math.atan2(stairFace.n.x, stairFace.n.z);
 
+  await loading.step('Sealing the vault', 0.82);
   // ---- Boss vault ---------------------------------------------------------
   const vc = roomCentre(boss);
   const bossName = BOSSES[Math.floor(rng() * BOSSES.length)];
@@ -772,6 +780,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
   nav.blockBox(doorPos.x, doorPos.z, 2.1, 0.4, doorYaw);
   pool.add(doorPos.clone().addScaledVector(new THREE.Vector3(dir[0], 0, dir[1]), 0.8).setY(1.6), 7, 6, 0.3);
 
+  await loading.step('Binding the three seals', 0.9);
   // ---- Objectives --------------------------------------------------------
   const pool5: Objective[] = ['runes', 'warden', 'key', 'hearts', 'brood'];
   const chosen = pool5.sort(() => rng() - 0.5).slice(0, 3);

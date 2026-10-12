@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { audio } from './audio/Audio';
+import { loading } from './engine/Loading';
 import { installHeightFog } from './engine/fog';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
@@ -74,6 +75,7 @@ if (sceneName === 'test' || sceneName === 'character') {
   // Inspection stages: the test scene, or one model animating in place
   // (?model=knight|ghoul|brute|crawler|cultist, ?speed=m/s, ?anim=attack|die).
   world = sceneName === 'test' ? await buildTestScene() : await buildCharacterPreview();
+  document.getElementById('boot')?.remove();
   world.scene.add(sky.mesh);
   world.scene.environment = environment;
   world.scene.environmentIntensity = 0.45;
@@ -95,11 +97,15 @@ if (sceneName === 'test' || sceneName === 'character') {
     cam.target.copy(world.spawn).add(new THREE.Vector3(0, 1, 0));
   }
 } else {
+  const startArea = sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
+  await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : 'Into the Crypt', 'Forging a world out of nothing');
+  loading.range(0, 0.12);
+  await loading.step("Forging the knight's armour", 0);
   const hero = await knight();
+  loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.body);
   game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9))) }, hero, cam, renderer, sky, environment);
-  const startArea = sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
 }

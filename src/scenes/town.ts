@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loading } from '../engine/Loading';
 import { bakeSurfaces, leadedGlassTextures, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
 import { fbm2, mulberry32, range, smoothstep } from '../procgen/noise';
@@ -38,6 +39,7 @@ export async function buildTown(seed = 31): Promise<World> {
   const rng = mulberry32(seed);
   const { scene, moon } = createNightScene();
 
+  await loading.step('Baking stone, slate and timber', 0.02);
   const sets = await bakeSurfaces([
     { kind: 'stoneBricks', seed: seed + 1, size: 512, normalStrength: 5 },
     { kind: 'roughStone', seed: seed + 2, size: 512, normalStrength: 6 },
@@ -102,6 +104,7 @@ export async function buildTown(seed = 31): Promise<World> {
   // Architecture dissolves around the hero when it stands in the way.
   for (const m of Object.values(mats)) installCutaway(m);
 
+  await loading.step('Laying out the streets', 0.35);
   // ---- Street plan ------------------------------------------------------
   const streets: Street[] = [
     { dir: new THREE.Vector2(1, 0.04).normalize(), bend: 2.5, phase: 0.3 },
@@ -155,6 +158,7 @@ export async function buildTown(seed = 31): Promise<World> {
   const gateZ = streetAt(streets[0], inset).p.y;
   const north = streetAt(streets[2], HALF - 14).p;
 
+  await loading.step('Raising the houses', 0.42);
   // ---- Houses -----------------------------------------------------------
   const houses = new MeshBuilder();
   let charredCount = 0;
@@ -254,6 +258,7 @@ export async function buildTown(seed = 31): Promise<World> {
   }
   scene.add(houses.build(mats));
 
+  await loading.step('Building the walls and the cathedral', 0.62);
   // ---- Walls, gate and cathedral ----------------------------------------
   const arch = new MeshBuilder();
   // East wall (outer face +X) with the gate onto the wasteland.
@@ -324,6 +329,7 @@ export async function buildTown(seed = 31): Promise<World> {
   }
   scene.add(skyline.build(mats, false));
 
+  await loading.step('Kindling the braziers in the square', 0.74);
   // ---- Square: well, stalls, braziers -----------------------------------
   const place = (b: MeshBuilder, x: number, z: number, yaw: number, cast = true) => {
     const g = b.build(mats, cast);
@@ -359,6 +365,7 @@ export async function buildTown(seed = 31): Promise<World> {
   placeBrazier(inset - 4, gateZ + 4.5);
   placeBrazier(inset - 4, gateZ - 4.5);
 
+  await loading.step('Hanging the lanterns', 0.8);
   // ---- Street furniture -------------------------------------------------
   const wood = mats.wood;
   const iron = mats.iron;
@@ -446,6 +453,7 @@ export async function buildTown(seed = 31): Promise<World> {
     scene.add(grass);
   }
 
+  await loading.step('Waking the townsfolk', 0.88);
   // ---- Townsfolk --------------------------------------------------------
   const shared = { linen: linenMat, leather: new THREE.MeshStandardMaterial({ color: 0x1c120c, roughness: 0.75 }), wood, iron, glow, dark: mats.dark };
   const gate = new THREE.Vector3(inset - 7, 0, gateZ);

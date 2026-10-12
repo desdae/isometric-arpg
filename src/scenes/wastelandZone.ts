@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loading } from '../engine/Loading';
 import { bakeSurfaces, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
 import { fbm2, mulberry32, range, smoothstep, type Rng } from '../procgen/noise';
@@ -25,6 +26,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   const rng = mulberry32(seed);
   const { scene, moon } = createNightScene();
 
+  await loading.step('Baking earth, stone and bark', 0.02);
   const [stoneSet, trimSet, woodSet, barkSet, earthSet, cobbleSet, rockSet] = await bakeSurfaces([
     { kind: 'stoneBricks', seed: seed + 1, size: 512, normalStrength: 5 },
     { kind: 'roughStone', seed: seed + 2, size: 512, normalStrength: 6 },
@@ -51,6 +53,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   // Architecture dissolves around the hero when it stands in the way.
   for (const m of Object.values(mats)) installCutaway(m);
 
+  await loading.step('Shaping the blighted earth', 0.35);
   // ---- Terrain -----------------------------------------------------------
   const roadZ = (x: number) => Math.sin(x * 0.07) * 4 + Math.sin(x * 0.023 + 1) * 3;
   const roadDist = (x: number, z: number) => Math.abs(z - roadZ(x));
@@ -113,6 +116,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   for (const s of [-1, 1]) nav.blockBox(WALL_X + 0.6, s * 5.6, 2.6, 3.4, 0);
   for (let z = -HALF; z < HALF; z += 1) if (Math.abs(z) > 8.5) nav.blockBox(WALL_X + 0.4, z, 1.2, 0.6, 0);
 
+  await loading.step('Raising the town walls', 0.45);
   // ---- Town walls and skyline ------------------------------------------
   const arch = new MeshBuilder();
   const wallH = 9;
@@ -186,6 +190,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   for (let z = -HALF + 12; z < HALF - 6; z += 16) if (Math.abs(z) > 12) placeBrazier(WALL_X + 3.5, z);
   for (let x = WALL_X + 14; x < 10; x += 13) placeBrazier(x, roadZ(x) + (x % 2 ? 3.2 : -3.2));
 
+  await loading.step('Hiding the crypt entrance', 0.55);
   // ---- Crypt entrance ----------------------------------------------------
   // A sunken mausoleum: plinth, buttressed walls, a steep stone roof with
   // pinnacles, and a pointed doorway onto stairs going down into red light.
@@ -257,6 +262,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     }
   }
 
+  await loading.step('Scattering wreckage, bones and thorns', 0.6);
   // ---- Scatter ---------------------------------------------------------
   const free = (x: number, z: number, r: number) =>
     Math.hypot(x - crypt.x, z - crypt.z) > 8 + r &&
@@ -322,6 +328,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   instanced(Array.from({ length: 5 }, () => deadTree(rng, range(rng, 4, 7))), mats.bark, 45, 1, [0.8, 1.2], 0.35);
   instanced(Array.from({ length: 5 }, () => thornShrub(rng)), mats.thorn, 800, 0.4, [0.6, 1.5], 0);
 
+  await loading.step('Growing dead grass', 0.78);
   // Dead grass, swaying in the wind.
   const grassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.2, 0.15, 0.08), vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
   const wind = { value: 0 };
@@ -368,6 +375,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     });
   }
 
+  await loading.step('Raising the dead', 0.92);
   // ---- Monsters ----------------------------------------------------------
   // Danger rises with distance from the gate. Blood priests stand in the
   // crater pools with ghouls about them; ghoul packs roam the open ground,

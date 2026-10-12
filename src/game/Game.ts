@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { audio } from '../audio/Audio';
+import { loading } from '../engine/Loading';
 import type { IsoCamera } from '../engine/IsoCamera';
 import type { Renderer } from '../engine/Renderer';
 import { Mist, type Sky } from '../engine/Atmosphere';
@@ -36,6 +37,13 @@ interface AreaState {
 }
 
 export type AreaBuilder = () => Promise<World>;
+
+/** What the loading splash says while an area is generated. */
+const AREA_TITLES: Record<AreaName, [string, string]> = {
+  town: ['Saint Orsolya', 'The last lit town at the edge of the blight'],
+  zone: ['The Blighted Fields', 'Where the dead were buried, they do not rest'],
+  dungeon: ['Into the Crypt', 'A new dark is dug for every soul that descends'],
+};
 
 export class Game {
   readonly stats = new Stats();
@@ -89,6 +97,7 @@ export class Game {
   }
 
   async start(name: AreaName, entry: string) {
+    await loading.step('Sculpting flesh, chitin and bone', 0);
     this.monsterMats = await monsterMaterials();
     await this.enter(name, entry, false);
     // Build the other area in the background so the first trip is quick.
@@ -118,6 +127,7 @@ export class Game {
       loot.setVisible(false);
       scene.add(loot.group);
       noAO.add(loot.group);
+      await loading.step('Summoning the monsters', 0.97);
       const monsters = (world.monsterSpawns ?? []).map((s) => new Monster(s, this.monsterMats, scene));
       const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
       const useLabels = (world.script?.interactables ?? []).map((it) => ({
@@ -169,9 +179,12 @@ export class Game {
   async enter(name: AreaName, entry: string, fade = true) {
     this.travelling = true;
     if (this.area) audio.travel();
-    if (fade) await this.hud.fade(true, '');
     const ready = this.areas.get(name);
-    if (!ready) this.hud.setFadeText('The mists part…');
+    // An area that still has to be generated gets the loading splash.
+    const splash = !ready || loading.active;
+    if (fade && !loading.active) await this.hud.fade(true, '');
+    if (splash && !loading.active) await loading.show(...AREA_TITLES[name]);
+    if (splash) loading.range(loading.progress, 0.86);
     const area = ready ?? (await this.load(name));
     if (this.area) {
       const prev = this.area;
@@ -192,15 +205,27 @@ export class Game {
     // Monsters regroup whenever you come back (underground, the dead stay dead).
     if (!w.indoor) for (const m of area.monsters) m.reset();
     this.hud.setObjectives(w.script ? w.script.title : null, w.script?.objectives());
-    // Dig the crypt while the hero is out in the fields, so going down is quick.
-    if (name === 'zone') setTimeout(() => void this.load('dungeon'), 4000);
     const e = w.entries?.[entry] ?? { pos: w.spawn ?? new THREE.Vector3(), yaw: w.spawnYaw ?? 0 };
     this.player.enter({ scene: w.scene, nav: w.nav!, heightAt: w.heightAt }, e.pos, e.yaw);
     if (w.cameraYaw !== undefined) this.cam.yaw = this.cam.targetYawValue = w.cameraYaw;
     this.cam.target.copy(this.player.position);
     this.cam.update(0);
-    if (fade) await this.hud.fade(false);
+    if (splash) {
+      // Compile every shader now, behind the splash, instead of stuttering
+      // through the first seconds of play.
+      loading.range(0.86, 1);
+      await loading.step('Lighting the scene', 0.1);
+      try {
+        await this.renderer.renderer.compileAsync(w.scene, this.cam.camera);
+      } catch {
+        /* compiled lazily on first draw instead */
+      }
+      if (fade) void this.hud.fade(false);
+      await loading.hide();
+    } else if (fade) await this.hud.fade(false);
     if (w.title) this.hud.showBanner(w.title, w.subtitle ?? '');
+    // Dig the crypt while the hero is out in the fields, so going down is quick.
+    if (name === 'zone') setTimeout(() => void this.load('dungeon'), 4000);
     this.travelling = false;
   }
 
