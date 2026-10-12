@@ -10,4 +10,6 @@ export interface Rig {
   play(dur: number, fn: (k: number) => void, done?: () => void): void;
   readonly acting: boolean;
   cancelAction(): void;
+  /** Footstep callback, if this rig walks on feet. */
+  onStep?: (() => void) | null;
 }

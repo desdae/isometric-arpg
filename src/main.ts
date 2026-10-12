@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { audio } from './audio/Audio';
 import { installHeightFog } from './engine/fog';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
@@ -116,6 +117,7 @@ if (params.has('ty')) cam.target.y += Number(params.get('ty'));
 // Scripting hooks for automated screenshots.
 (window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
 (window as unknown as { __THREE: typeof THREE }).__THREE = THREE;
+(window as unknown as { __audio: typeof audio }).__audio = audio;
 if (params.has('walk') && game) {
   const [wx, wz] = params.get('walk')!.split(',').map(Number);
   setTimeout(() => game!.player.moveTo(new THREE.Vector3(wx, 0, wz)), 500);

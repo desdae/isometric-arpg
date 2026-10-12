@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { audio } from '../audio/Audio';
 import type { Character } from './Character';
 import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
@@ -58,6 +59,7 @@ export class Player implements Combatant {
       new THREE.MeshBasicMaterial({ color: new THREE.Color(2.5, 0.5, 0.2), transparent: true, depthWrite: false, fog: false }),
     );
     this.marker.visible = false;
+    character.onStep = () => audio.step(this.position, 1, true);
   }
 
   get alive() {
@@ -152,6 +154,7 @@ export class Player implements Combatant {
         c.spine.rotation.x += 0.15 * w;
         if (!hit && k >= 0.4) {
           hit = true;
+          audio.cleave();
           ctx.effects.slash(this.position.clone().setY(this.position.y + 1.0), startYaw, 2.7, new THREE.Color(1.8, 0.7, 0.45), true);
           for (const m of ctx.monsters) {
             if (!m.alive) continue;
@@ -175,6 +178,7 @@ export class Player implements Combatant {
     this.potionCd = 0.8;
     const heal = Math.round(this.stats.maxHp * 0.45);
     this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + heal);
+    audio.potion();
     ctx.floaters.spawn(`+${heal}`, this.position.clone().setY(this.position.y + 2.1), 'heal');
     ctx.effects.sparks(this.position.clone().setY(this.position.y + 1.0), 24, new THREE.Color(2.4, 0.3, 0.2), 1.6, 0.9);
     return true;
@@ -195,6 +199,7 @@ export class Player implements Combatant {
       this.swinging = false;
       this.character.cancelAction();
       collapse(this.character, false);
+      audio.playerDie();
     } else if (dealt > this.stats.maxHp * 0.12 && !this.swinging && this.hurtCd <= 0) {
       this.hurtCd = 0.8;
       const c = this.character;
@@ -225,6 +230,7 @@ export class Player implements Combatant {
     const dealt = m.takeDamage(roll.amount, roll.crit, this.position);
     if (dealt <= 0) return;
     const at = m.position.clone().setY(m.position.y + m.height * 0.6);
+    audio.hit(at, roll.crit, m.kind === 'crawler');
     ctx.floaters.spawn(String(dealt), at.clone().setY(at.y + m.height * 0.45), roll.crit ? 'crit' : '');
     ctx.effects.blood(at, this.position, roll.crit ? 30 : 16, m.def.blood, roll.crit ? 1.3 : 1);
     if (s.lifeSteal > 0) s.hp = Math.min(s.maxHp, s.hp + dealt * s.lifeSteal);
@@ -260,6 +266,7 @@ export class Player implements Combatant {
       0.5,
       () => {
         if (this.dead) return;
+        audio.swing();
         ctx.effects.slash(this.position.clone().setY(this.position.y + 1.05), this.yaw, 1.8, new THREE.Color(1.5, 0.85, 0.65));
         const d = Math.hypot(m.position.x - this.position.x, m.position.z - this.position.z);
         if (m.alive && d <= this.reach(m) + 0.6) this.strike(m, ctx);

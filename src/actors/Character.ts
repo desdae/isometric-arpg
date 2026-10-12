@@ -72,6 +72,9 @@ export class Character {
   private time = Math.random() * 10;
   /** Head turn toward a point of interest, set by behaviours. */
   lookYaw = 0;
+  /** Called each time a foot lands while walking (footstep sounds). */
+  onStep: (() => void) | null = null;
+  private lastStep = 0;
   /**
    * One-shot action layered over the gait (attacks, casts, flinches). `fn`
    * gets progress 0..1 each frame after the gait has posed the rig and may
@@ -131,6 +134,12 @@ export class Character {
     this.walk += (target - this.walk) * (1 - Math.exp(-dt * 10));
     const w = this.walk;
     const ph = this.phase;
+    // A foot lands twice per gait cycle.
+    const stepIdx = Math.floor(ph / Math.PI + 0.5);
+    if (stepIdx !== this.lastStep) {
+      this.lastStep = stepIdx;
+      if (w > 0.25) this.onStep?.();
+    }
     const breathe = Math.sin(this.time * 1.8);
 
     this.hips.position.y = this.hipHeight - 0.035 * w * (0.5 + 0.5 * Math.cos(ph * 2)) - 0.015 * (1 - w);

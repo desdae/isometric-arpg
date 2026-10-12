@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { audio } from '../audio/Audio';
 import type { IsoCamera } from '../engine/IsoCamera';
 import type { Renderer } from '../engine/Renderer';
 import { Mist, type Sky } from '../engine/Atmosphere';
@@ -71,6 +72,9 @@ export class Game {
     this.hud.onPotion = () => this.player.drinkPotion(this.playerCtx());
     this.hud.onCleave = () => this.player.cleave(this.playerCtx());
     this.hud.onRevive = () => this.revive();
+    this.hud.onMute = () => audio.toggleMute();
+    audio.onMuteChange = (m) => this.hud.setMuted(m);
+    this.hud.setMuted(audio.muted);
     this.exitLayer = document.createElement('div');
     this.exitLayer.className = 'loot-layer';
     document.body.appendChild(this.exitLayer);
@@ -134,6 +138,7 @@ export class Game {
   /** Moves the hero to `name` at `entry`, fading out and in. */
   async enter(name: AreaName, entry: string, fade = true) {
     this.travelling = true;
+    if (this.area) audio.travel();
     if (fade) await this.hud.fade(true, '');
     const ready = this.areas.get(name);
     if (!ready) this.hud.setFadeText('The mists part…');
@@ -144,6 +149,7 @@ export class Game {
       this.area.effects.group.visible = false;
     }
     this.area = area;
+    audio.setArea(name);
     this.dialogue.close();
     this.floaters.clear();
     const w = area.world;
@@ -180,6 +186,7 @@ export class Game {
     const levels = s.gainXp(xp);
     if (levels > 0) {
       this.area.effects.pillar(this.player.position.clone());
+      audio.levelUp();
       this.floaters.spawn(`Level ${s.level}`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
       this.inventory.render();
     }
@@ -196,6 +203,10 @@ export class Game {
     } else if (Math.random() < itemChance) {
       loot.drop(makeItem(m.level, rollRarity(m.level)), at);
     }
+    for (const g of loot.items) if (!g.announced) {
+      g.announced = true;
+      if (g.item.rarity === 'rare' || g.item.rarity === 'unique') audio.drop(g.pos, g.item.rarity);
+    }
     if (m.elite) this.hud.showBanner(`${m.name} Is Slain`, 'The fields fall quiet, for now');
   }
 
@@ -211,6 +222,8 @@ export class Game {
       return;
     }
     this.area.loot.remove(g);
+    if (g.item.slot === 'gold') audio.coins();
+    else audio.pickup(g.item.slot === 'potion' ? 'common' : g.item.rarity);
     const text = g.item.slot === 'gold' ? `+${g.item.amount} gold` : g.item.slot === 'potion' ? '+1 draught' : g.item.name;
     this.floaters.spawn(text, this.player.position.clone().setY(this.player.position.y + 2.3), 'info', 1.3);
     this.inventory.render();
@@ -219,6 +232,8 @@ export class Game {
   private onPlayerHit(amount: number, crit: boolean, from: THREE.Vector3) {
     const dealt = this.player.takeDamage(amount, crit, from);
     if (dealt <= 0) return;
+    audio.hit(this.player.position, crit, true);
+    if (!this.player.dead) audio.playerHurt();
     const at = this.player.position.clone().setY(this.player.position.y + 1.2);
     this.floaters.spawn(String(dealt), at.clone().setY(at.y + 0.9), 'hurt');
     this.area.effects.blood(at, from, 10);
@@ -261,6 +276,8 @@ export class Game {
     let held = false;
     let lastIssue = 0;
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Audio may only start after a gesture.
+    for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => audio.unlock(), { capture: true });
     dom.addEventListener('pointerdown', (e) => {
       if (this.travelling || !this.area || this.player.dead) return;
       const hit = this.pick(e);
@@ -310,7 +327,11 @@ export class Game {
       if (e.repeat) return;
       const k = e.key.toLowerCase();
       if (k === '1') this.player.drinkPotion(this.playerCtx());
-      if (k === 'i' || k === 'b') this.inventory.toggle();
+      if (k === 'i' || k === 'b') {
+        this.inventory.toggle();
+        audio.click();
+      }
+      if (k === 'm') audio.toggleMute();
       if (k === 'escape') this.inventory.toggle(false);
     });
   }
@@ -325,6 +346,7 @@ export class Game {
     const p = this.player;
     const ctx = this.playerCtx();
     p.update(dt, ctx);
+    audio.setListener(p.position, this.cam.camera);
     cutaway.hero.value.copy(p.position).setY(p.position.y + 1.1);
     cutaway.amount.value = 1;
     // Monsters near the hero think and move; far ones sleep, hidden in the fog.
@@ -346,6 +368,10 @@ export class Game {
       m.body.rig.root.visible = d < 60;
       if (d < 46 || m.awake) m.update(dt, mctx);
     }
+    // Music swells when something is hunting the hero.
+    const hunted = a.monsters.some((m) => m.alive && m.awake && (m.state === 'chase' || m.state === 'attack') && m.position.distanceTo(p.position) < 26);
+    audio.setMood(hunted && !p.dead ? 'combat' : 'explore');
+    audio.update(dt);
     if (w.npcs) for (const n of w.npcs) n.update(dt, p.position);
     a.effects.update(dt);
     a.mist.update(dt);

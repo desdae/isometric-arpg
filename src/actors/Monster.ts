@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { audio } from '../audio/Audio';
 import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import type { Combatant } from '../game/Combat';
@@ -141,7 +142,7 @@ export class Monster implements Combatant {
   readonly hit: THREE.Mesh;
   hp: number;
   maxHp: number;
-  private state: State = 'idle';
+  state: State = 'idle';
   private yaw = Math.random() * Math.PI * 2;
   private speed = 0;
   private path: THREE.Vector2[] = [];
@@ -183,6 +184,8 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8 }[this.kind] * (this.elite ? 1.3 : 1);
+    this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
   get alive() {
@@ -202,11 +205,13 @@ export class Monster implements Combatant {
       this.speed = 0;
       this.body.rig.cancelAction();
       this.body.die();
+      audio.voice(this.kind, 'die', this.position, this.voiceSize);
       this.hit.visible = false;
       this.hit.userData.monster = null;
     } else if (this.flinchCd <= 0 && (crit || dealt > this.maxHp * 0.12)) {
       this.flinchCd = 1.2;
       this.body.flinch();
+      audio.voice(this.kind, 'hurt', this.position, this.voiceSize);
     }
     void from;
     return dealt;
@@ -315,6 +320,7 @@ export class Monster implements Combatant {
   private wake(ctx: MonsterContext) {
     this.state = 'chase';
     this.awake = true;
+    audio.voice(this.kind, 'aggro', this.position, this.voiceSize);
     for (const o of ctx.monsters) {
       if (o.alive && o.spawn.pack === this.spawn.pack && o.state === 'idle') {
         o.state = 'chase';
@@ -359,6 +365,7 @@ export class Monster implements Combatant {
   private startAttack(ctx: MonsterContext) {
     this.cooldown = this.def.cooldown + 0.6 + Math.random() * 0.4;
     const ranged = this.def.ranged;
+    if (!ranged) audio.voice(this.kind, 'attack', this.position, this.voiceSize);
     this.body.attack(() => {
       if (!this.alive) return;
       const p = ctx.player;
@@ -371,18 +378,21 @@ export class Monster implements Combatant {
           dir,
           (pos) => p.alive && Math.hypot(pos.x - p.position.x, pos.z - p.position.z) < p.radius + 0.25 && pos.y < p.position.y + 2,
           () => {
+            audio.boltHit(p.position);
             const roll = rollDamage(this.dmg[0], this.dmg[1], 0.05);
             ctx.onPlayerHit(roll.amount, roll.crit, this.position);
           },
           ranged.boltSpeed,
         );
         ctx.effects.flash(from, 0xff2010, 30, 6, 0.3);
+        audio.cast(from);
         return;
       }
       const d = Math.hypot(p.position.x - this.position.x, p.position.z - this.position.z);
       if (this.kind === 'brute') {
         const at = this.position.clone().add(new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(1.6 * (this.elite ? 1.2 : 1)));
         ctx.effects.shockwave(at, this.elite ? 4.5 : 3.5);
+        audio.slam(at, this.elite ? 1.3 : 1);
         ctx.effects.sparks(at.clone().setY(at.y + 0.2), 14, new THREE.Color(1.4, 0.6, 0.3), 3, 0.5);
       }
       if (p.alive && d <= this.def.reach + p.radius + this.radius * 0.5 + 0.6) {
@@ -390,6 +400,10 @@ export class Monster implements Combatant {
         ctx.onPlayerHit(roll.amount, roll.crit, this.position);
       }
     });
+  }
+
+  private get voiceSize() {
+    return (this.kind === 'brute' ? 1.15 : 1) * (this.elite ? 1.3 : 1);
   }
 
   get kind(): MonsterKind {

@@ -72,6 +72,8 @@ export interface GroundItem {
   pos: THREE.Vector3;
   age: number;
   from: THREE.Vector3;
+  /** Drop sound already played. */
+  announced?: boolean;
 }
 
 export class LootLayer {

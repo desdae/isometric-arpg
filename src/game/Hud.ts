@@ -106,6 +106,13 @@ export class Hud {
   private help: HTMLDivElement;
   private hurtLevel = 0;
   onInventory: () => void = () => {};
+  onMute: () => void = () => {};
+  private muteBtn!: HTMLButtonElement;
+
+  setMuted(muted: boolean) {
+    this.muteBtn.textContent = muted ? 'Sound off' : 'Sound on';
+    this.muteBtn.setAttribute('aria-pressed', String(muted));
+  }
   onPotion: () => void = () => {};
   onCleave: () => void = () => {};
   onRevive: () => void = () => {};
@@ -118,10 +125,10 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>I</b> inventory<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>I</b> inventory · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
-      <div class="menu"><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
@@ -158,6 +165,8 @@ export class Hud {
     this.help = q('.help');
     for (const el of root.querySelectorAll<HTMLElement>('.orb, .slot, .menu')) el.addEventListener('pointerdown', (e) => e.stopPropagation());
     q<HTMLButtonElement>('[data-act="inv"]').addEventListener('click', () => this.onInventory());
+    this.muteBtn = q<HTMLButtonElement>('[data-act="mute"]');
+    this.muteBtn.addEventListener('click', () => this.onMute());
     this.potionSlot.addEventListener('click', () => this.onPotion());
     this.cleaveSlot.addEventListener('click', () => this.onCleave());
 
