@@ -216,7 +216,8 @@ export function dressKnight(c: Character, mats: KnightMaterials): Character {
       mesh(sw.grip, leather, grip, 0, 0, 0);
       mesh(sw.pommel, brass, grip, 0, 0, 0);
     } else {
-      const strap = joint(fore, -0.06, -0.12, 0.02);
+      // Strapped well out on the forearm so the shield clears the breastplate.
+      const strap = joint(fore, -0.13, -0.13, 0.02);
       strap.rotation.y = -Math.PI / 2;
       const ks = kiteShield();
       mesh(ks.face, tabard, strap, 0, 0, 0.02);
@@ -227,7 +228,7 @@ export function dressKnight(c: Character, mats: KnightMaterials): Character {
       mesh(new THREE.BoxGeometry(0.36, 0.035, 0.01).translate(0, 0, -0.012), brass, strap, 0, 0.12, 0.06);
     }
     arm.restUpper = side === -1 ? -0.35 : -0.1;
-    arm.restFore = side === -1 ? -1.25 : -0.55;
+    arm.restFore = side === -1 ? -1.05 : -0.55;
     arm.swing = side === -1 ? 0.2 : 0.35;
   }
 

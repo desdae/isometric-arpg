@@ -24,6 +24,17 @@ export function addSilhouette(root: THREE.Object3D, color = new THREE.Color(1.0,
     depthFunc: THREE.GreaterDepth,
     fog: false,
   });
+  // Pull each twin vertex 0.35 m toward the camera along its view ray: the
+  // screen position stays put, but the glow now needs an occluder clearly in
+  // front, so feet dipping a centimetre into the ground don't light up.
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+      mvPosition.xyz -= normalize( mvPosition.xyz ) * 0.35;
+      gl_Position = projectionMatrix * mvPosition;`,
+    );
+  };
   const meshes: THREE.Mesh[] = [];
   root.traverse((o) => {
     const m = o as THREE.Mesh;
