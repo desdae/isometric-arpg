@@ -45,6 +45,7 @@ export class Player implements Combatant {
   target: Monster | null = null;
   holdAttack = false;
   private swinging = false;
+  private queuedCleave = false;
   private swingIndex = 0;
   private potionCd = 0;
   private hurtCd = 0;
@@ -89,6 +90,7 @@ export class Player implements Combatant {
     this.path = [];
     this.pending = null;
     this.target = null;
+    this.queuedCleave = false;
     this.velocity.set(0, 0);
     this.syncTransform();
   }
@@ -131,8 +133,14 @@ export class Player implements Combatant {
 
   /** Spinning cleave hitting everything around the hero. Returns false if not enough mana. */
   cleave(ctx: PlayerContext): boolean {
-    if (this.dead || this.swinging) return false;
+    if (this.dead) return true;
     if (this.stats.mana < CLEAVE_COST) return false;
+    // Mid-swing: remember the order and spin as soon as the swing ends.
+    if (this.swinging) {
+      this.queuedCleave = true;
+      return true;
+    }
+    this.queuedCleave = false;
     this.stats.mana -= CLEAVE_COST;
     this.path = [];
     this.pending = null;
@@ -286,6 +294,10 @@ export class Player implements Combatant {
   update(dt: number, ctx: PlayerContext) {
     const area = this.area;
     if (!area) return;
+    if (this.queuedCleave && !this.swinging && !this.dead) {
+      this.queuedCleave = false;
+      this.cleave(ctx);
+    }
     this.potionCd -= dt;
     this.hurtCd -= dt;
     const s = this.stats;
