@@ -15,6 +15,7 @@ import { Hud } from './Hud';
 import { Inventory } from './Inventory';
 import { Stats } from './Stats';
 import { cutaway } from '../engine/cutaway';
+import { noAO } from '../engine/Renderer';
 import { makeGold, makeItem, makePotion, rollRarity } from './Items';
 import type { Character } from '../actors/Character';
 
@@ -100,11 +101,14 @@ export class Game {
       scene.environmentIntensity = 0.45;
       const mist = new Mist(Math.min(world.extent, 60), world.heightAt, 110);
       scene.add(mist.group);
+      noAO.add(mist.group);
       const effects = new Effects(world.heightAt);
       scene.add(effects.group);
+      noAO.add(effects.group);
       const loot = new LootLayer(world.heightAt, (g) => this.pickUp(g));
       loot.setVisible(false);
       scene.add(loot.group);
+      noAO.add(loot.group);
       const monsters = (world.monsterSpawns ?? []).map((s) => new Monster(s, this.monsterMats, scene));
       const exitLabels = (world.exits ?? []).map((exit) => {
         const el = document.createElement('button');

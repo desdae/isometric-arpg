@@ -47,6 +47,14 @@ const GradeShader = {
   `,
 };
 
+/**
+ * Objects kept out of the ambient-occlusion pass. GTAO renders the scene's
+ * depth and normals with an override material, so see-through things (mist
+ * sheets, blood decals, flames) would be treated as solid and cast dark AO
+ * creases onto the ground that drift with them.
+ */
+export const noAO = new Set<THREE.Object3D>();
+
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly composer: EffectComposer;
@@ -81,6 +89,14 @@ export class Renderer {
     this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
     this.ao.blendIntensity = 0.85;
     composer.addPass(this.ao);
+    // Hide transparent and registered objects while the AO pass draws depth.
+    const aoRender = this.ao.render.bind(this.ao);
+    this.ao.render = (...args: Parameters<GTAOPass['render']>) => {
+      const hidden = this.aoHidden();
+      for (const o of hidden) o.visible = false;
+      aoRender(...args);
+      for (const o of hidden) o.visible = true;
+    };
 
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.5, 1.0);
     composer.addPass(this.bloom);
@@ -91,6 +107,27 @@ export class Renderer {
     this.composer = composer;
 
     window.addEventListener('resize', () => this.resize());
+  }
+
+  private aoCache = new WeakMap<THREE.Scene, THREE.Object3D[]>();
+
+  /** Visible objects to hide from AO this frame: registered ones plus every transparent mesh or point cloud in the scene (scanned once per scene). */
+  private aoHidden(): THREE.Object3D[] {
+    const scene = this.renderPass.scene as THREE.Scene;
+    let list = this.aoCache.get(scene);
+    if (!list) {
+      list = [];
+      scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        const mat = m.material as THREE.Material | undefined;
+        if ((o as THREE.Points).isPoints || (mat && !Array.isArray(mat) && mat.transparent)) list!.push(o);
+      });
+      this.aoCache.set(scene, list);
+    }
+    const out: THREE.Object3D[] = [];
+    for (const o of list) if (o.visible) out.push(o);
+    for (const o of noAO) if (o.visible) out.push(o);
+    return out;
   }
 
   /** Switches the rendered scene (travelling between areas). */
