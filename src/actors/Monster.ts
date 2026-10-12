@@ -221,7 +221,7 @@ export class Monster implements Combatant {
     this.level = spawn.level;
     this.body = this.def.build(mats, Math.floor(Math.random() * 1e6), this.elite, !!spawn.boss);
     const lv = 1 + (spawn.level - 1) * 0.28;
-    const eliteMul = spawn.boss ? 9 : this.elite ? 3.2 : 1;
+    const eliteMul = spawn.boss ? 7 : this.elite ? 3.2 : 1;
     this.maxHp = this.hp = Math.round(this.def.hp * lv * eliteMul);
     const dm = (1 + (spawn.level - 1) * 0.16) * (spawn.boss ? 1.7 : this.elite ? 1.5 : 1);
     this.dmg = [this.def.dmg[0] * dm, this.def.dmg[1] * dm];
@@ -375,13 +375,18 @@ export class Monster implements Combatant {
   /** Sleeping behind a seal until a script rouses it. */
   dormant = false;
 
+  /** Lifts the seal: from now on it hunts like any other monster. */
+  rouse() {
+    this.dormant = false;
+  }
+
   private wake(ctx: MonsterContext) {
     if (this.dormant) return;
     this.state = 'chase';
     this.awake = true;
     audio.voice(this.kind, 'aggro', this.position, this.voiceSize);
     for (const o of ctx.monsters) {
-      if (o.alive && o.spawn.pack === this.spawn.pack && o.state === 'idle') {
+      if (o.alive && !o.dormant && o.spawn.pack === this.spawn.pack && o.state === 'idle') {
         o.state = 'chase';
         o.awake = true;
       }

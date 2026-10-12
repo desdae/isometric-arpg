@@ -33,6 +33,7 @@ class AudioEngine {
   private last = new Map<string, number>();
   private ambience: { wind: BiquadFilterNode; windGain: GainNode; lfoGain: GainNode } | null = null;
   private area = 'town';
+  private dripTimer = 2;
   private bellTimer = 6;
   onMuteChange: (muted: boolean) => void = () => {};
 
@@ -115,8 +116,9 @@ class AudioEngine {
     if (this.ambience && this.ctx) {
       const t = this.ctx.currentTime;
       // Town: low sheltered wind. Wasteland: louder, higher, gustier.
-      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : 0.32, t, 1);
-      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : 620, t, 1);
+      // Underground: only a deep draught moaning through the passages.
+      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : name === 'dungeon' ? 0.1 : 0.32, t, 1);
+      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : name === 'dungeon' ? 170 : 620, t, 1);
     }
   }
 
@@ -132,6 +134,18 @@ class AudioEngine {
       if (this.bellTimer <= 0) {
         this.bellTimer = 18 + Math.random() * 20;
         this.bell(this.ctx.currentTime, 98 * (Math.random() < 0.5 ? 1 : 0.75), 0.07, 7);
+      }
+    }
+    // Water dripping somewhere in the dark, and now and then a far groan of stone.
+    if (this.area === 'dungeon') {
+      this.dripTimer -= dt;
+      if (this.dripTimer <= 0) {
+        this.dripTimer = 0.6 + Math.random() * 3;
+        const t = this.ctx.currentTime;
+        const o = this.out({ gain: 1, pan: (Math.random() - 0.5) * 1.4 }, 0.5, 0.9);
+        const f = 900 + Math.random() * 1400;
+        this.tone(o, t, { f0: f, f1: f * 1.9, gain: 0.05 + Math.random() * 0.05, attack: 0.002, decay: 0.07 });
+        if (Math.random() < 0.06) this.burst(o, t + 0.2, { type: 'lowpass', f0: 160, f1: 60, q: 3, gain: 0.25, attack: 0.6, decay: 1.6 });
       }
     }
   }
@@ -376,7 +390,7 @@ class AudioEngine {
     if (!a || a.gain < 0.03) return;
     const t = this.ctx!.currentTime;
     const o = this.out(a, 0.5, 0.05);
-    const stone = this.area === 'town';
+    const stone = this.area !== 'zone';
     // Scuff on stone or gravel crunch on cracked earth, with a thump for weight.
     this.burst(o, t, { type: stone ? 'bandpass' : 'lowpass', f0: stone ? 1800 : 1400 + Math.random() * 600, q: stone ? 1.2 : 0.7, gain: 0.22 + Math.random() * 0.08, attack: 0.004, decay: stone ? 0.07 : 0.11 });
     this.tone(o, t, { f0: 90 / Math.sqrt(weight), f1: 40, gain: 0.25 * weight, decay: 0.09 });
@@ -458,6 +472,65 @@ class AudioEngine {
     const o = this.out({ gain: 1, pan: 0 }, 1, 0.8);
     this.burst(o, t, { type: 'lowpass', f0: 200, f1: 2000, q: 2, gain: 0.4, attack: 0.8, decay: 0.9 });
     this.tone(o, t, { f0: 55, f1: 41, gain: 0.4, attack: 0.4, decay: 1.4 });
+  }
+
+  /** An objective completed: a low struck chord with a dark shimmer. */
+  objective() {
+    if (!this.ready()) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out({ gain: 1, pan: 0 }, 1, 0.8);
+    this.tone(o, t, { f0: 55, f1: 52, gain: 0.45, attack: 0.01, decay: 2.2 });
+    for (const f of [110, 131, 165]) for (const det of [-7, 7]) this.tone(o, t, { type: 'sawtooth', f0: f, gain: 0.03, attack: 0.05, decay: 1.8, detune: det });
+    this.bell(t + 0.05, 147, 0.07, 4);
+  }
+
+  /** A rune circle kindling under the hero's feet. */
+  runeLit(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.7);
+    this.burst(o, t, { type: 'lowpass', f0: 300, f1: 3000, q: 3, gain: 0.35, attack: 0.25, decay: 0.8 });
+    this.tone(o, t, { type: 'triangle', f0: 220, f1: 440, gain: 0.12, attack: 0.3, decay: 1.2 });
+    this.tone(o, t + 0.05, { type: 'triangle', f0: 330, f1: 660, gain: 0.06, attack: 0.3, decay: 1.2 });
+  }
+
+  /** The charge building while the hero stands in an unlit circle. */
+  runeHum(pos: THREE.Vector3, k: number) {
+    if (!this.ready() || this.busy('hum', 0.18)) return;
+    const a = this.at(pos, 1.5);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.6, 0.5);
+    this.tone(o, t, { type: 'sawtooth', f0: 70 + k * 90, gain: 0.04, attack: 0.05, decay: 0.2 });
+  }
+
+  /** A Blood Heart bursting: wet rupture and a gush. */
+  heartBurst(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.4);
+    this.tone(o, t, { f0: 120, f1: 35, gain: 0.7, attack: 0.005, decay: 0.35 });
+    this.burst(o, t, { type: 'lowpass', f0: 2400, f1: 300, q: 1.5, gain: 0.6, decay: 0.45 });
+    for (let i = 0; i < 5; i++) this.burst(o, t + 0.1 + i * 0.07 + Math.random() * 0.04, { f0: 500 + Math.random() * 900, q: 5, gain: 0.15, decay: 0.08 });
+  }
+
+  /** The seal breaking and the portcullis grinding down into the floor. */
+  doorOpen(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3) ?? { gain: 0.3, pan: 0 };
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.9);
+    // Glass-like crack of the rune, then iron and stone grinding.
+    this.burst(o, t, { type: 'highpass', f0: 3000, gain: 0.35, decay: 0.5 });
+    this.tone(o, t, { f0: 880, f1: 110, gain: 0.12, decay: 0.8 });
+    this.burst(o, t + 0.4, { type: 'bandpass', f0: 220, f1: 140, q: 2, gain: 0.5, attack: 0.3, decay: 2.4 });
+    for (let i = 0; i < 14; i++) this.burst(o, t + 0.5 + i * 0.17, { f0: 1200 + Math.random() * 1500, q: 8, gain: 0.08, decay: 0.06 });
+    this.tone(o, t + 2.9, { f0: 60, f1: 30, gain: 0.6, decay: 0.8 });
+    this.burst(o, t + 2.9, { type: 'lowpass', f0: 800, f1: 150, gain: 0.45, decay: 0.7 });
   }
 
   click() {

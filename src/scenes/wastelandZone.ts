@@ -5,7 +5,7 @@ import { fbm2, mulberry32, range, smoothstep, type Rng } from '../procgen/noise'
 import { deadTree, rock, thornShrub } from '../procgen/geometry';
 import { terrainMesh, type HeightFn } from '../procgen/terrain';
 import { MeshBuilder, xf } from '../procgen/builder';
-import { curtainWall, gatehouse, spireTower } from '../procgen/gothic';
+import { curtainWall, gatehouse, pinnacle, pointedArch, spireTower } from '../procgen/gothic';
 import { bones, brazier, brokenWagon, grassTuft, stakes } from '../procgen/props';
 import { Fire } from '../engine/Fire';
 import { NavGrid } from '../world/NavGrid';
@@ -56,12 +56,28 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   const roadDist = (x: number, z: number) => Math.abs(z - roadZ(x));
   const roadFade = (x: number) => 1 - smoothstep(5, 30, x); // road peters out eastward
   const craters = Array.from({ length: 6 }, () => ({ x: range(rng, -25, 55), z: range(rng, -55, 55), r: range(rng, 3, 7) }));
+  // The crypt entrance moves every time the fields are walked: its own
+  // throwaway seed, so the rest of the zone stays as it was.
+  const crng = mulberry32(Math.floor(Math.random() * 1e9));
+  const crypt = (() => {
+    for (let i = 0; i < 200; i++) {
+      const x = range(crng, WALL_X + 34, HALF - 14);
+      const z = range(crng, -HALF + 14, HALF - 16);
+      if (roadDist(x, z) < 12) continue;
+      if (craters.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 7)) continue;
+      return new THREE.Vector3(x, 0, z);
+    }
+    return new THREE.Vector3(30, 0, -40);
+  })();
+  const cryptYaw = range(crng, -0.35, 0.35); // door faces roughly +Z, toward the camera
+  const cryptDoor = crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(3.4));
   const height: HeightFn = (x, z) => {
     let h = fbm2(x * 0.02, z * 0.02, 5, seed + 100) * 4.5 + fbm2(x * 0.08, z * 0.08, 3, seed + 101) * 0.45;
     // Flat apron along the wall and along the road.
     const nearWall = 1 - smoothstep(0, 14, x - WALL_X);
     const road = (1 - smoothstep(2.5, 9, roadDist(x, z))) * (0.4 + 0.6 * roadFade(x));
-    h *= 1 - Math.max(nearWall, road);
+    const cryptPad = 1 - smoothstep(6, 12, Math.hypot(x - crypt.x, z - crypt.z));
+    h *= 1 - Math.max(nearWall, road, cryptPad);
     for (const c of craters) {
       const d = Math.hypot(x - c.x, z - c.z) / c.r;
       if (d < 1.4) h += -Math.cos(Math.min(d, 1) * Math.PI * 0.5) * 0.9 * (d < 1 ? 1 : 0) + (d > 0.8 && d < 1.4 ? Math.sin(((d - 0.8) / 0.6) * Math.PI) * 0.35 : 0);
@@ -152,6 +168,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
 
   // ---- Fires -----------------------------------------------------------
   const fires: Fire[] = [];
+  let redGlow: THREE.PointLight | null = null;
   const brazierB = brazier();
   const placeBrazier = (x: number, z: number) => {
     const y = height(x, z);
@@ -169,8 +186,80 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   for (let z = -HALF + 12; z < HALF - 6; z += 16) if (Math.abs(z) > 12) placeBrazier(WALL_X + 3.5, z);
   for (let x = WALL_X + 14; x < 10; x += 13) placeBrazier(x, roadZ(x) + (x % 2 ? 3.2 : -3.2));
 
+  // ---- Crypt entrance ----------------------------------------------------
+  // A sunken mausoleum: plinth, buttressed walls, a steep stone roof with
+  // pinnacles, and a pointed doorway onto stairs going down into red light.
+  {
+    const cy = height(crypt.x, crypt.z);
+    const m = xf(crypt.x, cy - 0.1, crypt.z, cryptYaw);
+    const b = new MeshBuilder();
+    const W = 5.2;
+    const D = 6.2;
+    const H = 4.2;
+    b.add('trim', new THREE.BoxGeometry(W + 1.2, 0.5, D + 1.2), m.clone().multiply(xf(0, 0.25, 0)));
+    b.add('trim', new THREE.BoxGeometry(W + 0.6, 0.3, D + 0.6), m.clone().multiply(xf(0, 0.6, 0)));
+    // Walls; the front one is split around the doorway.
+    const t = 0.6;
+    b.add('stone', new THREE.BoxGeometry(W, H, t), m.clone().multiply(xf(0, H / 2 + 0.6, -D / 2 + t / 2)));
+    for (const s of [-1, 1]) b.add('stone', new THREE.BoxGeometry(t, H, D), m.clone().multiply(xf(s * (W / 2 - t / 2), H / 2 + 0.6, 0)));
+    const doorW = 1.9;
+    const side = (W - doorW) / 2;
+    for (const s of [-1, 1]) b.add('stone', new THREE.BoxGeometry(side, H, t), m.clone().multiply(xf(s * (doorW / 2 + side / 2), H / 2 + 0.6, D / 2 - t / 2)));
+    // Pointed arch over the door, the wall above it, and a dark stairwell.
+    const archH = 3.0;
+    const opening = pointedArch(doorW, archH);
+    // Wall above the arch: the arch curve below, the wall top above.
+    const spring = archH - doorW * Math.sin(Math.PI / 3);
+    const curve = opening.getPoints(24).filter((p, i, a) => p.y >= spring - 1e-4 && (i === 0 || p.distanceTo(a[i - 1]) > 1e-4));
+    const spandrel = new THREE.Shape([...curve, new THREE.Vector2(doorW / 2, H), new THREE.Vector2(-doorW / 2, H)]);
+    b.add('stone', new THREE.ExtrudeGeometry(spandrel, { depth: t, bevelEnabled: false }), m.clone().multiply(xf(0, 0.6, D / 2 - t)));
+    // Moulded frame: a horseshoe of the outer arch curve and the inner one reversed.
+    const pts = (sh: THREE.Shape) => sh.getPoints(24).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
+    const outer = pts(pointedArch(doorW + 0.5, archH + 0.3));
+    const inner = pts(opening);
+    while (outer.length > 1 && outer[outer.length - 1].distanceTo(outer[0]) < 1e-4) outer.pop();
+    while (inner.length > 1 && inner[inner.length - 1].distanceTo(inner[0]) < 1e-4) inner.pop();
+    b.add('trim', new THREE.ExtrudeGeometry(new THREE.Shape([...outer, ...inner.reverse()]), { depth: 0.14, bevelEnabled: false }), m.clone().multiply(xf(0, 0.6, D / 2 + 0.01)));
+    b.add('dark', new THREE.ShapeGeometry(opening), m.clone().multiply(xf(0, 0.6, D / 2 - t + 0.05)), 0);
+    b.add('dark', new THREE.PlaneGeometry(doorW, D - 2 * t).rotateX(-Math.PI / 2), m.clone().multiply(xf(0, 0.62, 0)), 0);
+    // Steps up onto the plinth.
+    for (let k = 0; k < 2; k++) b.add('trim', new THREE.BoxGeometry(doorW + 1, 0.25, 0.45), m.clone().multiply(xf(0, 0.12 + k * 0.25, D / 2 + 1.05 - k * 0.4)));
+    // Steep gable roof and its end walls.
+    const roofH = 2.6;
+    const gable = new THREE.Shape([new THREE.Vector2(-W / 2 - 0.3, 0), new THREE.Vector2(W / 2 + 0.3, 0), new THREE.Vector2(0, roofH)]);
+    const roof = new THREE.ExtrudeGeometry(gable, { depth: D + 0.6, bevelEnabled: false }).translate(0, 0, -(D + 0.6) / 2);
+    b.add('trim', roof, m.clone().multiply(xf(0, H + 0.6, 0)));
+    // Buttresses at the corners, each crowned with a pinnacle.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const c = m.clone().multiply(xf(sx * (W / 2 + 0.15), 0.6, sz * (D / 2 + 0.15)));
+        b.add('stone', new THREE.BoxGeometry(0.8, H, 0.8), c.clone().multiply(xf(0, H / 2, 0)));
+        pinnacle(b, c.clone().multiply(xf(0, H, 0)), 0.32, 2.2);
+      }
+    }
+    // A carved seal over the door, glowing faintly red.
+    b.add('glow', new THREE.TorusGeometry(0.32, 0.04, 6, 20), m.clone().multiply(xf(0, 0.6 + archH + 0.55, D / 2 + 0.03)), 0);
+    b.add('glow', new THREE.CircleGeometry(0.08, 10), m.clone().multiply(xf(0, 0.6 + archH + 0.55, D / 2 + 0.04)), 0);
+    scene.add(b.build(mats));
+    nav.blockBox(crypt.x, crypt.z, W / 2 + 0.7, D / 2 + 0.7, cryptYaw);
+    // Leave the doorway itself walkable so the hero can step into it.
+    const dIn = crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(D / 2 - 0.2));
+    nav.unblockRect(dIn.x, dIn.z, 0.6, 0.6);
+    nav.unblockRect(cryptDoor.x, cryptDoor.z, 0.8, 0.8);
+    // Red light welling up out of the stairwell.
+    const glowL = new THREE.PointLight(0xff2a10, 14, 9, 2);
+    glowL.position.copy(dIn).setY(cy + 1.4);
+    scene.add(glowL);
+    redGlow = glowL;
+    for (const s of [-1, 1]) {
+      const bp = crypt.clone().add(new THREE.Vector3(Math.cos(cryptYaw) * s * 2.6 + Math.sin(cryptYaw) * (D / 2 + 1.8), 0, -Math.sin(cryptYaw) * s * 2.6 + Math.cos(cryptYaw) * (D / 2 + 1.8)));
+      placeBrazier(bp.x, bp.z);
+    }
+  }
+
   // ---- Scatter ---------------------------------------------------------
   const free = (x: number, z: number, r: number) =>
+    Math.hypot(x - crypt.x, z - crypt.z) > 8 + r &&
     x > WALL_X + 6 && roadDist(x, z) > 3.5 + r && nav.walkable(x, z) && Math.abs(x) < HALF - 3 && Math.abs(z) < HALF - 3;
   const scatter = (count: number, r: number, fn: (x: number, z: number, rng: Rng) => void) => {
     let placed = 0;
@@ -312,11 +401,11 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     for (let i = 0; i < 60; i++) {
       const x = range(rng, minX, maxX);
       const z = range(rng, -HALF + 10, HALF - 10);
-      if (farFromGate(x, z) && nav.walkable(x, z)) return [x, z];
+      if (farFromGate(x, z) && Math.hypot(x - crypt.x, z - crypt.z) > 14 && nav.walkable(x, z)) return [x, z];
     }
     return [range(rng, minX, maxX), range(rng, -20, 20)];
   };
-  for (const c of craters) if (farFromGate(c.x, c.z)) group(c.x, c.z, [['cultist', 1], ['ghoul', 2 + Math.floor(rng() * 2)]], 4.5);
+  for (const c of craters) if (farFromGate(c.x, c.z) && Math.hypot(c.x - crypt.x, c.z - crypt.z) > 12) group(c.x, c.z, [['cultist', 1], ['ghoul', 2 + Math.floor(rng() * 2)]], 4.5);
   for (let i = 0; i < 6; i++) {
     const [x, z] = spot(WALL_X + 18, HALF - 10);
     group(x, z, [['ghoul', 3 + Math.floor(rng() * 3)]], 4);
@@ -348,8 +437,14 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     spawnYaw: Math.PI / 2,
     title: 'The Blighted Fields',
     subtitle: 'Where the dead were buried, they do not rest',
-    exits: [{ pos: new THREE.Vector3(WALL_X + 0.6, 0, 0), radius: 1.5, to: 'town', entry: 'gate', label: 'To Saint Orsolya' }],
-    entries: { gate: { pos: new THREE.Vector3(spawnX, 0, roadZ(spawnX)), yaw: Math.PI / 2 } },
+    exits: [
+      { pos: new THREE.Vector3(WALL_X + 0.6, 0, 0), radius: 1.5, to: 'town', entry: 'gate', label: 'To Saint Orsolya' },
+      { pos: crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(2.9)), radius: 0.9, to: 'dungeon', entry: 'start', label: 'Descend into the Crypt' },
+    ],
+    entries: {
+      gate: { pos: new THREE.Vector3(spawnX, 0, roadZ(spawnX)), yaw: Math.PI / 2 },
+      crypt: { pos: crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(6.2)), yaw: cryptYaw },
+    },
     monsterSpawns: spawns,
     // Walls on the left of the screen, the wasteland opening out to the right.
     cameraYaw: THREE.MathUtils.degToRad(20),
@@ -358,6 +453,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       wind.value = t;
       Fire.tick(t);
       fires.forEach((f) => f.update(t));
+      if (redGlow) redGlow.intensity = 14 * (0.75 + 0.25 * Math.sin(t * 1.7) * Math.sin(t * 0.63 + 1));
     },
   };
 }

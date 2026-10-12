@@ -9,6 +9,7 @@ import { buildTestScene } from './scenes/testScene';
 import { buildWastelandZone } from './scenes/wastelandZone';
 import { buildCharacterPreview } from './scenes/characterPreview';
 import { buildTown } from './scenes/town';
+import { buildDungeon } from './scenes/dungeon';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { dressKnight } from './actors/outfits/knight';
@@ -97,8 +98,9 @@ if (sceneName === 'test' || sceneName === 'character') {
   const hero = await knight();
   heroLight(hero.root);
   addSilhouette(hero.body);
-  game = new Game({ town: buildTown, zone: buildWastelandZone }, hero, cam, renderer, sky, environment);
-  await game.start(sceneName === 'zone' ? 'zone' : 'town', sceneName === 'zone' ? 'gate' : 'start');
+  game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9))) }, hero, cam, renderer, sky, environment);
+  const startArea = sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
+  await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
 }
 const genMs = performance.now() - t0;
@@ -171,7 +173,7 @@ function frame() {
   shadowFocus.applyMatrix4(shadowBasis);
   moon.target.position.copy(shadowFocus);
   moon.position.copy(shadowFocus).add(MOON_OFFSET);
-  (world.scene.fog as THREE.FogExp2).density = 0.42 / cam.distance;
+  (world.scene.fog as THREE.FogExp2).density = (0.42 / cam.distance) * (world.fogScale ?? 1);
   sky.update(t, cam.camera.position);
   renderer.render(t);
 

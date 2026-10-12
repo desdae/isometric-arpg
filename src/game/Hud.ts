@@ -70,7 +70,15 @@ const CSS = `
   .help { position: absolute; left: 16px; top: calc(14px + env(safe-area-inset-top, 0px)); font-size: 13px; line-height: 1.5; color: #a89080;
     text-shadow: 0 1px 2px #000; max-width: 260px; transition: opacity 1s; }
   .help b { font-weight: 600; color: #d8b890; }
+  .objectives { position: absolute; right: 16px; top: calc(52px + env(safe-area-inset-top, 0px)); width: min(270px, 60vw); text-align: right;
+    text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  .objectives h3 { margin: 0 0 6px; font: 600 14px/1.2 'Cinzel', Georgia, serif; letter-spacing: .1em; color: #d8b080; }
+  .objectives ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 15px; line-height: 1.25; color: #e0cdb8; }
+  .objectives li.done { color: #8a7a68; text-decoration: line-through; text-decoration-color: rgba(200,60,40,.7); }
+  .objectives li::after { content: ' ◆'; font-size: 10px; color: #a03020; vertical-align: 2px; }
+  .objectives li.done::after { color: #5a4a3a; }
   @media (max-width: 560px) {
+    .objectives { top: calc(48px + env(safe-area-inset-top, 0px)); font-size: 13px; }
     .orb { width: 78px; height: 78px; }
     .slot { width: 42px; height: 42px; }
     .slot svg { width: 26px; height: 26px; }
@@ -128,6 +136,7 @@ export class Hud {
       <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>I</b> inventory · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
+      <div class="objectives" hidden><h3></h3><ul></ul></div>
       <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
@@ -216,11 +225,34 @@ export class Hud {
     this.targetSub.textContent = t.elite ? `Champion ${t.kind} · Level ${t.level}` : `Level ${t.level}`;
   }
 
+  private objKey = '';
+  private bannerTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Quest tracker under the menu; null hides it. */
+  setObjectives(title: string | null, items: { text: string; done: boolean }[] = []) {
+    const key = title === null ? '' : title + items.map((i) => i.text + i.done).join('|');
+    if (key === this.objKey) return;
+    this.objKey = key;
+    const el = this.root.querySelector<HTMLDivElement>('.objectives')!;
+    el.hidden = title === null;
+    if (title === null) return;
+    el.querySelector('h3')!.textContent = title;
+    const ul = el.querySelector('ul')!;
+    ul.replaceChildren(
+      ...items.map((i) => {
+        const li = document.createElement('li');
+        li.textContent = i.text;
+        li.classList.toggle('done', i.done);
+        return li;
+      }),
+    );
+  }
+
   showBanner(title: string, sub: string) {
     this.banner.querySelector('h2')!.textContent = title;
     this.banner.querySelector('p')!.textContent = sub;
     this.banner.classList.add('show');
-    setTimeout(() => this.banner.classList.remove('show'), 3200);
+    clearTimeout(this.bannerTimer);
+    this.bannerTimer = setTimeout(() => this.banner.classList.remove('show'), 3400);
   }
 
   async fade(on: boolean, text = '') {

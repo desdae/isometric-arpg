@@ -8,7 +8,7 @@ import { Player } from '../actors/Player';
 import { Monster } from '../actors/Monster';
 import type { Npc } from '../actors/Npc';
 import { monsterMaterials, type MonsterMaterials } from '../actors/monsters/materials';
-import type { AreaName, Exit, World } from '../world/World';
+import type { AreaName, Exit, Interactable, ScriptContext, World } from '../world/World';
 import { Effects } from './Effects';
 import { FloatingText } from './Combat';
 import { LootLayer, type GroundItem } from './Loot';
@@ -32,6 +32,7 @@ interface AreaState {
   loot: LootLayer;
   monsters: Monster[];
   exitLabels: { exit: Exit; el: HTMLButtonElement }[];
+  useLabels: { it: Interactable; el: HTMLButtonElement }[];
 }
 
 export type AreaBuilder = () => Promise<World>;
@@ -103,7 +104,11 @@ export class Game {
       const scene = world.scene;
       scene.environment = this.environment;
       scene.environmentIntensity = 0.45;
-      const mist = new Mist(Math.min(world.extent, 60), world.heightAt, 110);
+      if (world.indoor) scene.environmentIntensity = 0.15;
+      // Underground the fog is thicker and bloodier.
+      const mist = world.indoor
+        ? new Mist(Math.min(world.extent, 60), world.heightAt, 90, new THREE.Color(0.42, 0.05, 0.035), 13)
+        : new Mist(Math.min(world.extent, 60), world.heightAt, 110);
       scene.add(mist.group);
       noAO.add(mist.group);
       const effects = new Effects(world.heightAt);
@@ -114,25 +119,50 @@ export class Game {
       scene.add(loot.group);
       noAO.add(loot.group);
       const monsters = (world.monsterSpawns ?? []).map((s) => new Monster(s, this.monsterMats, scene));
-      const exitLabels = (world.exits ?? []).map((exit) => {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'exit-label';
-        el.textContent = exit.label;
-        el.hidden = true;
-        el.addEventListener('pointerdown', (e) => {
-          e.stopPropagation();
-          if (e.button === 0) this.player.moveTo(exit.pos);
-        });
-        this.exitLayer.appendChild(el);
-        return { exit, el };
-      });
-      const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels };
+      const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
+      const useLabels = (world.script?.interactables ?? []).map((it) => ({
+        it,
+        el: this.label(it.label, () => this.player.interact(it.pos, it.radius, () => it.active() && it.use())),
+      }));
+      const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels, useLabels };
       this.areas.set(name, state);
       return state;
     })();
     this.building.set(name, p);
     return p;
+  }
+
+  /** A clickable world-space label (gates, levers, quest objects). */
+  private label(text: string, onClick: () => void): HTMLButtonElement {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'exit-label';
+    el.textContent = text;
+    el.hidden = true;
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if (e.button === 0 && !this.player.dead) onClick();
+    });
+    this.exitLayer.appendChild(el);
+    return el;
+  }
+
+  /** Forgets an area so it is generated afresh next time (a cleared dungeon). */
+  private discard(a: AreaState) {
+    for (const x of [...a.exitLabels, ...a.useLabels]) x.el.remove();
+    this.areas.delete(a.name);
+    this.building.delete(a.name);
+  }
+
+  private scriptCtx(): ScriptContext {
+    const p = this.player;
+    return {
+      player: { position: p.position, alive: !p.dead },
+      monsters: this.area.monsters,
+      effects: this.area.effects,
+      banner: (title, sub) => this.hud.showBanner(title, sub),
+      say: (text) => this.floaters.spawn(text, p.position.clone().setY(p.position.y + 2.4), 'info', 2),
+    };
   }
 
   /** Moves the hero to `name` at `entry`, fading out and in. */
@@ -144,21 +174,26 @@ export class Game {
     if (!ready) this.hud.setFadeText('The mists part…');
     const area = ready ?? (await this.load(name));
     if (this.area) {
-      this.area.loot.setVisible(false);
-      for (const x of this.area.exitLabels) x.el.hidden = true;
-      this.area.effects.group.visible = false;
+      const prev = this.area;
+      prev.loot.setVisible(false);
+      for (const x of [...prev.exitLabels, ...prev.useLabels]) x.el.hidden = true;
+      prev.effects.group.visible = false;
+      if (prev !== area && prev.world.indoor && prev.world.script?.finished) this.discard(prev);
     }
     this.area = area;
     audio.setArea(name);
     this.dialogue.close();
     this.floaters.clear();
     const w = area.world;
-    w.scene.add(this.sky.mesh);
+    if (!w.indoor) w.scene.add(this.sky.mesh);
     this.renderer.setScene(w.scene);
     area.loot.setVisible(true);
     area.effects.group.visible = true;
-    // Monsters regroup whenever you come back.
-    for (const m of area.monsters) m.reset();
+    // Monsters regroup whenever you come back (underground, the dead stay dead).
+    if (!w.indoor) for (const m of area.monsters) m.reset();
+    this.hud.setObjectives(w.script ? w.script.title : null, w.script?.objectives());
+    // Dig the crypt while the hero is out in the fields, so going down is quick.
+    if (name === 'zone') setTimeout(() => void this.load('dungeon'), 4000);
     const e = w.entries?.[entry] ?? { pos: w.spawn ?? new THREE.Vector3(), yaw: w.spawnYaw ?? 0 };
     this.player.enter({ scene: w.scene, nav: w.nav!, heightAt: w.heightAt }, e.pos, e.yaw);
     if (w.cameraYaw !== undefined) this.cam.yaw = this.cam.targetYawValue = w.cameraYaw;
@@ -207,7 +242,8 @@ export class Game {
       g.announced = true;
       if (g.item.rarity === 'rare' || g.item.rarity === 'unique') audio.drop(g.pos, g.item.rarity);
     }
-    if (m.elite) this.hud.showBanner(`${m.name} Is Slain`, 'The fields fall quiet, for now');
+    if (m.elite && !this.area.world.script) this.hud.showBanner(`${m.name} Is Slain`, 'The fields fall quiet, for now');
+    this.area.world.script?.onKill(m, this.scriptCtx());
   }
 
   private pickUp(g: GroundItem) {
@@ -384,6 +420,21 @@ export class Game {
     // Exits: labels over the gates, and travel when the hero walks in.
     const W = window.innerWidth;
     const H = window.innerHeight;
+    // Scripted areas: objectives, usable things, and exits that open up.
+    const script = w.script;
+    if (script) {
+      script.update(dt, this.scriptCtx());
+      this.hud.setObjectives(script.title, script.objectives());
+    }
+    for (const exit of w.exits ?? []) {
+      if (!a.exitLabels.some((x) => x.exit === exit)) a.exitLabels.push({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) });
+    }
+    for (const { it, el } of a.useLabels) {
+      this.v.set(it.pos.x, w.heightAt(it.pos.x, it.pos.z) + 2.2, it.pos.z).project(this.cam.camera);
+      const show = it.active() && this.v.z < 1 && p.position.distanceTo(it.pos) < 20;
+      el.hidden = !show;
+      if (show) el.style.transform = `translate(${Math.round((this.v.x * 0.5 + 0.5) * W)}px, ${Math.round((-this.v.y * 0.5 + 0.5) * H)}px) translate(-50%, -100%)`;
+    }
     for (const { exit, el } of a.exitLabels) {
       const y = w.heightAt(exit.pos.x, exit.pos.z);
       this.v.set(exit.pos.x, y + 3.2, exit.pos.z).project(this.cam.camera);
