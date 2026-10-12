@@ -13,6 +13,9 @@ import { buildCultist } from './monsters/cultist';
 import { buildCrawler } from './monsters/crawler';
 import { buildHorror } from './monsters/horror';
 import { buildWraith } from './monsters/wraith';
+import { buildAbomination } from './bosses/abomination';
+import { buildLich } from './bosses/lich';
+import { buildNightwing } from './bosses/nightwing';
 import { mulberry32 } from '../procgen/noise';
 
 // Monster behaviour: idle and wander near home, notice the player, chase
@@ -20,7 +23,7 @@ import { mulberry32 } from '../procgen/noise';
 // in range, flinch, die and leave a corpse. Casters keep their distance and
 // throw blood bolts. Packs wake together.
 
-export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith';
+export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing';
 
 interface KindDef {
   name: string;
@@ -148,6 +151,52 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     ranged: { min: 5, max: 11, boltSpeed: 12 },
     build: (m, seed, elite, boss) => buildWraith(m, mulberry32(seed), boss ? 2.2 : elite ? 1.45 : undefined),
   },
+  // Vault bosses (see Boss.ts). Radius and height here are before the boss multipliers.
+  abomination: {
+    name: 'Gorrath',
+    hp: 100,
+    dmg: [6, 10],
+    armor: 14,
+    speed: 2.9,
+    radius: 0.8,
+    height: 1.9,
+    reach: 2.4,
+    cooldown: 1.5,
+    aggro: 14,
+    xp: 420,
+    blood: new THREE.Color(0.24, 0.01, 0.008),
+    build: (m, seed) => buildAbomination(m, mulberry32(seed)),
+  },
+  lich: {
+    name: 'The Hollow King',
+    hp: 88,
+    dmg: [6, 10],
+    armor: 18,
+    speed: 3.2,
+    radius: 0.6,
+    height: 1.8,
+    reach: 2.5,
+    cooldown: 1.4,
+    aggro: 14,
+    xp: 420,
+    blood: new THREE.Color(0.08, 0.04, 0.14),
+    build: (m, seed) => buildLich(m, mulberry32(seed)),
+  },
+  nightwing: {
+    name: "Vhal'zereth",
+    hp: 82,
+    dmg: [6, 10],
+    armor: 10,
+    speed: 3.8,
+    radius: 0.65,
+    height: 1.7,
+    reach: 2.2,
+    cooldown: 1.2,
+    aggro: 14,
+    xp: 420,
+    blood: new THREE.Color(0.2, 0.01, 0.01),
+    build: (m, seed) => buildNightwing(m, mulberry32(seed)),
+  },
 };
 
 export interface MonsterSpawn {
@@ -176,6 +225,8 @@ export interface MonsterContext {
   floaters: FloatingText;
   onKilled: (m: Monster) => void;
   onPlayerHit: (amount: number, crit: boolean, from: THREE.Vector3) => void;
+  /** Big centred title (boss entrances). */
+  banner?(title: string, sub: string): void;
 }
 
 type State = 'idle' | 'chase' | 'attack' | 'return' | 'dead';
@@ -197,24 +248,26 @@ export class Monster implements Combatant {
   hp: number;
   maxHp: number;
   state: State = 'idle';
-  private yaw = Math.random() * Math.PI * 2;
-  private speed = 0;
-  private path: THREE.Vector2[] = [];
-  private repath = 0;
-  private cooldown = 0;
-  private idleTimer = 1 + Math.random() * 4;
-  private dmg: [number, number];
-  private armor: number;
-  private flinchCd = 0;
+  protected yaw = Math.random() * Math.PI * 2;
+  protected speed = 0;
+  protected path: THREE.Vector2[] = [];
+  protected repath = 0;
+  protected cooldown = 0;
+  protected idleTimer = 1 + Math.random() * 4;
+  protected dmg: [number, number];
+  protected armor: number;
+  protected flinchCd = 0;
   /** Seconds since death; corpses sink and are removed later. */
   deadFor = 0;
   removed = false;
   awake = false;
+  /** Kept out of sight by a script (a boss that vanished or flew off). */
+  hidden = false;
 
   constructor(
     readonly spawn: MonsterSpawn,
-    mats: MonsterMaterials,
-    private scene: THREE.Scene,
+    protected mats: MonsterMaterials,
+    protected scene: THREE.Scene,
   ) {
     this.def = KINDS[spawn.kind];
     this.elite = !!spawn.elite;
@@ -239,7 +292,7 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
-    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0 }[this.kind] * (this.elite ? 1.3 : 1);
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2 }[this.kind] * (this.elite ? 1.3 : 1);
     if (weight > 0) this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
@@ -380,7 +433,7 @@ export class Monster implements Combatant {
     this.dormant = false;
   }
 
-  private wake(ctx: MonsterContext) {
+  protected wake(ctx: MonsterContext) {
     if (this.dormant) return;
     this.state = 'chase';
     this.awake = true;
@@ -394,13 +447,13 @@ export class Monster implements Combatant {
   }
 
   /** How far (radians) we are from facing along `dir`. */
-  private facing(dir: THREE.Vector2) {
+  protected facing(dir: THREE.Vector2) {
     let d = Math.atan2(dir.x, dir.y) - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     return Math.abs(d);
   }
 
-  private steer(goal: THREE.Vector3, ctx: MonsterContext, speedMul = 1): THREE.Vector2 {
+  protected steer(goal: THREE.Vector3, ctx: MonsterContext, speedMul = 1): THREE.Vector2 {
     const here = new THREE.Vector2(this.position.x, this.position.z);
     if (ctx.nav.lineOfSight(here.x, here.y, goal.x, goal.z)) {
       this.path = [];
@@ -413,7 +466,7 @@ export class Monster implements Combatant {
     return this.follow(speedMul);
   }
 
-  private follow(speedMul: number): THREE.Vector2 {
+  protected follow(speedMul: number): THREE.Vector2 {
     while (this.path.length) {
       const n = this.path[0];
       const d = Math.hypot(n.x - this.position.x, n.y - this.position.z);
@@ -426,7 +479,7 @@ export class Monster implements Combatant {
     return new THREE.Vector2();
   }
 
-  private startAttack(ctx: MonsterContext) {
+  protected startAttack(ctx: MonsterContext) {
     this.cooldown = this.def.cooldown + 0.6 + Math.random() * 0.4;
     const ranged = this.def.ranged;
     if (!ranged) audio.voice(this.kind, 'attack', this.position, this.voiceSize);
@@ -466,7 +519,7 @@ export class Monster implements Combatant {
     });
   }
 
-  private get voiceSize() {
+  protected get voiceSize() {
     return (this.kind === 'brute' || this.kind === 'horror' ? 1.15 : this.kind === 'spider' ? 1.8 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
   }
 
@@ -474,13 +527,13 @@ export class Monster implements Combatant {
     return this.spawn.kind;
   }
 
-  private turn(target: number, dt: number, rate: number) {
+  protected turn(target: number, dt: number, rate: number) {
     let d = target - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += d * (1 - Math.exp(-dt * rate));
   }
 
-  private sync() {
+  protected sync() {
     const r = this.body.rig.root;
     r.position.copy(this.position);
     r.rotation.y = this.yaw;

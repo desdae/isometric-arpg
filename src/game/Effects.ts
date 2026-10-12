@@ -127,7 +127,7 @@ const dropMaterial = new THREE.ShaderMaterial({
 });
 
 type Drop = { pos: THREE.Vector3; vel: THREE.Vector3; age: number; life: number; size: number; color: THREE.Color; glow: boolean; landed: boolean };
-type Timed = { obj: THREE.Object3D; age: number; life: number; update: (k: number, dt: number) => void; dispose?: () => void };
+type Timed = { obj: THREE.Object3D; age: number; life: number; update: (k: number, dt: number) => unknown; dispose?: () => void };
 
 export interface Bolt {
   pos: THREE.Vector3;
@@ -209,6 +209,11 @@ export class Effects {
     }
   }
 
+  /** One particle: glowing motes float and fade, plain drops fall and land. */
+  mote(pos: THREE.Vector3, vel: THREE.Vector3, life: number, size: number, color: THREE.Color, glow = true) {
+    this.addDrop(pos, vel, life, size, color, glow);
+  }
+
   private addDrop(pos: THREE.Vector3, vel: THREE.Vector3, life: number, size: number, color: THREE.Color, glow: boolean) {
     if (this.drops.length >= MAX_DROPS) this.drops.shift();
     this.drops.push({ pos, vel, age: 0, life, size, color, glow, landed: false });
@@ -250,8 +255,8 @@ export class Effects {
     this.after(5, m, (k) => (spread.value = 0.08 + 0.88 * (1 - Math.pow(1 - k, 3))));
   }
 
-  /** Run `update(k)` for `life` seconds on an object (removed afterwards unless `keep`). */
-  after(life: number, obj: THREE.Object3D, update: (k: number, dt: number) => void, dispose?: () => void) {
+  /** Run `update(k)` for `life` seconds on an object, then remove it; `update` returning true ends it early. */
+  after(life: number, obj: THREE.Object3D, update: (k: number, dt: number) => unknown, dispose?: () => void) {
     this.timed.push({ obj, age: 0, life, update, dispose });
   }
 
@@ -457,8 +462,8 @@ export class Effects {
       const t = this.timed[i];
       t.age += dt;
       const k = Math.min(1, t.age / t.life);
-      t.update(k, dt);
-      if (k >= 1) {
+      const early = t.update(k, dt) === true;
+      if (k >= 1 || early) {
         this.timed.splice(i, 1);
         if (!this.splats.includes(t.obj as THREE.Mesh)) {
           t.obj.parent?.remove(t.obj);

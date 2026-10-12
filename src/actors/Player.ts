@@ -92,6 +92,7 @@ export class Player implements Combatant {
     this.target = null;
     this.queuedCleave = false;
     this.velocity.set(0, 0);
+    this.shove.set(0, 0);
     this.syncTransform();
   }
 
@@ -372,6 +373,11 @@ export class Player implements Combatant {
     }
     this.velocity.lerp(desired, 1 - Math.exp(-dt * 9));
     const step = this.velocity.clone().multiplyScalar(dt);
+    // A blow strong enough to throw the hero (a wing gust, a charge) slides them back.
+    if (this.shove.lengthSq() > 0.01) {
+      step.addScaledVector(this.shove, dt);
+      this.shove.multiplyScalar(Math.exp(-dt * 5));
+    }
     const nx = this.position.x + step.x;
     const nz = this.position.z + step.y;
     if (area.nav.walkable(nx, nz)) {
@@ -402,6 +408,15 @@ export class Player implements Combatant {
       this.marker.scale.setScalar(1 + t * 0.8);
       (this.marker.material as THREE.MeshBasicMaterial).opacity = 1 - t;
     }
+  }
+
+  private shove = new THREE.Vector2();
+
+  /** Throws the hero along `dir` (ground plane), about `metres` far. */
+  knock(dir: THREE.Vector2, metres: number) {
+    if (this.dead) return;
+    this.shove.copy(dir).normalize().multiplyScalar(metres * 5);
+    this.path = [];
   }
 
   faceToward(p: THREE.Vector3, dt: number, rate = 12) {

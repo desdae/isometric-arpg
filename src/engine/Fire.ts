@@ -9,7 +9,7 @@ const flameMaterial = new THREE.ShaderMaterial({
   depthWrite: false,
   blending: THREE.AdditiveBlending,
   fog: false,
-  uniforms: { time: { value: 0 } },
+  uniforms: { time: { value: 0 }, hot: { value: new THREE.Vector3(2.2, 1.25, 0.45) }, mid: { value: new THREE.Vector3(1.5, 0.42, 0.08) }, cool: { value: new THREE.Vector3(0.45, 0.05, 0.015) } },
   vertexShader: /* glsl */ `
     attribute float seed;
     varying vec2 vUv;
@@ -30,6 +30,7 @@ const flameMaterial = new THREE.ShaderMaterial({
   `,
   fragmentShader: /* glsl */ `
     uniform float time;
+    uniform vec3 hot, mid, cool;
     varying vec2 vUv;
     varying float vSeed;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -51,9 +52,6 @@ const flameMaterial = new THREE.ShaderMaterial({
       float base = smoothstep(0.0, 0.08, uv.y);
       float a = body * heightFade * base;
       a *= smoothstep(0.15, 0.55, n * 0.6 + n2 * 0.6 + (1.0 - uv.y) * 0.4);
-      vec3 hot = vec3(2.2, 1.25, 0.45);
-      vec3 mid = vec3(1.5, 0.42, 0.08);
-      vec3 cool = vec3(0.45, 0.05, 0.015);
       float heat = clamp(a * 1.6 - uv.y * 0.5, 0.0, 1.0);
       vec3 col = mix(cool, mid, smoothstep(0.0, 0.5, heat));
       col = mix(col, hot, smoothstep(0.5, 1.0, heat));
@@ -62,12 +60,18 @@ const flameMaterial = new THREE.ShaderMaterial({
   `,
 });
 
+/** Witch-fire for the Hollow King's vault: violet flames over a cold white core. */
+const ghostFlameMaterial = flameMaterial.clone();
+ghostFlameMaterial.uniforms.hot.value.set(1.6, 1.2, 2.4);
+ghostFlameMaterial.uniforms.mid.value.set(0.75, 0.16, 1.5);
+ghostFlameMaterial.uniforms.cool.value.set(0.16, 0.02, 0.4);
+
 const emberMaterial = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
   blending: THREE.AdditiveBlending,
   fog: false,
-  uniforms: { time: { value: 0 }, pixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+  uniforms: { time: { value: 0 }, pixelRatio: { value: Math.min(window.devicePixelRatio, 2) }, tint: { value: new THREE.Vector3(3.0, 0.9, 0.2) } },
   vertexShader: /* glsl */ `
     uniform float time, pixelRatio;
     attribute vec3 rnd;
@@ -85,14 +89,18 @@ const emberMaterial = new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: /* glsl */ `
+    uniform vec3 tint;
     varying float vLife;
     void main() {
       float d = length(gl_PointCoord - 0.5);
       float a = smoothstep(0.5, 0.0, d) * (1.0 - vLife);
-      gl_FragColor = vec4(vec3(3.0, 0.9, 0.2) * a, a);
+      gl_FragColor = vec4(tint * a, a);
     }
   `,
 });
+
+const ghostEmberMaterial = emberMaterial.clone();
+ghostEmberMaterial.uniforms.tint.value.set(1.6, 0.5, 3.0);
 
 // Smoke: soft dark puffs that rise from smouldering ruins, swell, drift
 // downwind and thin out. Each point's whole life is computed from time in the
@@ -182,13 +190,13 @@ export class Fire {
   private baseIntensity: number;
   private phase = Math.random() * 100;
 
-  constructor(size = 1, lightIntensity = 40, lightRange = 12) {
+  constructor(size = 1, lightIntensity = 40, lightRange = 12, ghost = false) {
     const cards = 3;
     for (let i = 0; i < cards; i++) {
       const geo = new THREE.PlaneGeometry(0.9, 1.6);
       geo.translate(0, 0.8, 0);
       geo.setAttribute('seed', new THREE.Float32BufferAttribute(new Array(4).fill(Math.random()), 1));
-      const card = new THREE.Mesh(geo, flameMaterial);
+      const card = new THREE.Mesh(geo, ghost ? ghostFlameMaterial : flameMaterial);
       card.scale.set(size * (1 - i * 0.18), size * (1 - i * 0.12), 1);
       card.position.set((i - 1) * 0.08 * size, 0, (i % 2) * 0.05 * size);
       card.renderOrder = 20;
@@ -210,7 +218,7 @@ export class Fire {
     const eg = new THREE.BufferGeometry();
     eg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     eg.setAttribute('rnd', new THREE.BufferAttribute(rnd, 3));
-    const embers = new THREE.Points(eg, emberMaterial);
+    const embers = new THREE.Points(eg, ghost ? ghostEmberMaterial : emberMaterial);
     embers.frustumCulled = false;
     embers.renderOrder = 21;
     this.group.add(embers);
@@ -229,7 +237,9 @@ export class Fire {
   /** Advance the shared shader clocks once per frame. */
   static tick(t: number) {
     flameMaterial.uniforms.time.value = t;
+    ghostFlameMaterial.uniforms.time.value = t;
     emberMaterial.uniforms.time.value = t;
+    ghostEmberMaterial.uniforms.time.value = t;
     smokeMaterial.uniforms.time.value = t;
   }
 }

@@ -105,7 +105,7 @@ if (sceneName === 'test' || sceneName === 'character') {
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.body);
-  game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9))) }, hero, cam, renderer, sky, environment);
+  game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
 }

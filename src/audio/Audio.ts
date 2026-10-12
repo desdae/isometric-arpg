@@ -8,7 +8,7 @@ import { Music, type Mood } from './Music';
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first click or key press.
 
-export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith';
+export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing';
 
 interface At {
   gain: number;
@@ -604,8 +604,95 @@ class AudioEngine {
         this.throat(o, t, { f0: 330 * p, f1: (what === 'die' ? 120 : 470) * p, dur: 0.9 * long, formants: [700, 1600], gain: 0.12, wobble: 0.03, breath: 0.12 });
         this.tone(o, t, { type: 'sine', f0: 660 * p, f1: (what === 'die' ? 200 : 880) * p, gain: 0.06, attack: 0.2, decay: 0.9 * long });
         break;
+      case 'abomination':
+        // Many throats at once: a wet, layered bellow, each mouth a little off.
+        for (const [f, fm] of [[48, 280], [62, 420], [80, 560], [105, 760]] as const) {
+          this.throat(o, t + Math.random() * 0.08, { f0: f * p, f1: (what === 'die' ? f * 0.5 : f * 1.3) * p, dur: 1.0 * long, formants: [fm, fm * 2.1], gain: 0.22, rough: 0.9, wobble: 0.1, drive: true });
+        }
+        this.burst(o, t, { type: 'lowpass', f0: 900, f1: 200, gain: 0.35, attack: 0.1, decay: 0.9 * long });
+        break;
+      case 'lich':
+        // A voice from inside a tomb: deep, doubled, with a whispering choir behind it.
+        this.throat(o, t, { f0: 62 * p, f1: (what === 'die' ? 30 : 55) * p, dur: 1.1 * long, formants: [380, 820], gain: 0.32, rough: 0.35, drive: true });
+        this.throat(o, t + 0.03, { f0: 93 * p, f1: (what === 'die' ? 45 : 82) * p, dur: 1.1 * long, formants: [500, 1200], gain: 0.16, breath: 0.2 });
+        this.burst(o, t, { f0: 2400, q: 6, gain: 0.18, attack: 0.3, decay: 0.9 * long });
+        break;
+      case 'nightwing':
+        // A shriek that tears up through the octaves, over leathery wing cracks.
+        this.throat(o, t, { f0: 500 * p, f1: (what === 'die' ? 160 : 1500) * p, dur: 0.7 * long, formants: [1800, 3200], gain: 0.16, rough: 0.4, wobble: 0.08 });
+        this.tone(o, t, { type: 'sawtooth', f0: 1800 * p, f1: 3600 * p, gain: 0.04, attack: 0.05, decay: 0.6 * long });
+        for (let i = 0; i < 3; i++) this.burst(o, t + i * 0.12, { type: 'lowpass', f0: 1400, f1: 250, gain: 0.3, decay: 0.08 });
+        break;
     }
     if (what === 'die' && kind !== 'wraith') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
+  }
+
+  /** A boss's great roar: the voice, a sub-bass swell under it and a long tail. */
+  roar(kind: Voice, pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 4) ?? { gain: 0.4, pan: 0 };
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.3, 0.9);
+    this.voice(kind, 'aggro', pos, 2.2);
+    this.tone(o, t, { f0: 38, f1: 30, gain: 0.7, attack: 0.25, decay: 2.2 });
+    this.burst(o, t, { type: 'lowpass', f0: 400, f1: 120, q: 1.5, gain: 0.4, attack: 0.4, decay: 1.8 });
+  }
+
+  /** Something heavy tearing through the air (charges, dives, wing beats). */
+  whoosh(pos: THREE.Vector3, size = 1) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.5);
+    this.burst(o, t, { type: 'bandpass', f0: 250 / size, f1: 1400 / size, q: 1.2, gain: 0.5, attack: 0.15, decay: 0.45 });
+    this.burst(o, t + 0.1, { type: 'bandpass', f0: 1400 / size, f1: 300 / size, q: 1.2, gain: 0.35, attack: 0.05, decay: 0.4 });
+  }
+
+  /** A ground-shaking boss impact: deeper and longer than the brute's slam. */
+  quake(pos: THREE.Vector3, size = 1) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 4) ?? { gain: 0.5, pan: 0 };
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.4, 0.8);
+    this.tone(o, t, { f0: 70 / size, f1: 22, gain: 1.0, decay: 1.1 });
+    this.burst(o, t, { type: 'lowpass', f0: 2600, f1: 120, gain: 0.8, decay: 0.9 });
+    for (let i = 0; i < 10; i++) this.burst(o, t + 0.1 + Math.random() * 0.8, { type: 'bandpass', f0: 600 + Math.random() * 1600, q: 4, gain: 0.08, decay: 0.07 }); // rubble
+  }
+
+  /** Dark magic gathering: a rising, detuned drone. */
+  charge(pos: THREE.Vector3, dur = 1, color: 'soul' | 'blood' = 'blood') {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.9, 0.7);
+    const base = color === 'soul' ? 110 : 70;
+    for (const det of [-15, 0, 15]) this.tone(o, t, { type: 'sawtooth', f0: base, f1: base * 2.5, gain: 0.04, attack: dur * 0.9, decay: dur * 0.3, detune: det });
+    this.burst(o, t, { type: 'bandpass', f0: 300, f1: 2500, q: 3, gain: 0.2, attack: dur, decay: 0.2 });
+  }
+
+  /** A burst of soul-fire or blood magic going off. */
+  blast(pos: THREE.Vector3, color: 'soul' | 'blood' = 'blood', size = 1) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.1, 0.9);
+    this.burst(o, t, { type: 'lowpass', f0: 5000, f1: 300, gain: 0.6 * size, decay: 0.7 });
+    this.tone(o, t, { f0: 120 / size, f1: 35, gain: 0.6 * size, decay: 0.8 });
+    if (color === 'soul') for (const f of [440, 523, 622]) this.tone(o, t, { type: 'triangle', f0: f * 2, f1: f, gain: 0.04, decay: 1.2 });
+  }
+
+  /** Wet splatter of bile or blood landing. */
+  splash(pos: THREE.Vector3) {
+    if (!this.ready() || this.busy('splash', 0.05)) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.9, 0.3);
+    this.burst(o, t, { type: 'lowpass', f0: 2200, f1: 300, q: 1.5, gain: 0.5, decay: 0.3 });
+    for (let i = 0; i < 4; i++) this.burst(o, t + 0.05 + i * 0.05, { f0: 700 + Math.random() * 900, q: 6, gain: 0.12, decay: 0.06 });
   }
 
   /** The brute's cleaver slamming into the ground. */

@@ -7,6 +7,7 @@ import { Mist, type Sky } from '../engine/Atmosphere';
 import { Dialogue } from '../engine/Dialogue';
 import { Player } from '../actors/Player';
 import { Monster } from '../actors/Monster';
+import { createMonster } from '../actors/Boss';
 import type { Npc } from '../actors/Npc';
 import { monsterMaterials, type MonsterMaterials } from '../actors/monsters/materials';
 import type { AreaName, Exit, Interactable, ScriptContext, World } from '../world/World';
@@ -157,7 +158,7 @@ export class Game {
       scene.add(loot.group);
       noAO.add(loot.group);
       await loading.step('Summoning the monsters', 0.97);
-      const monsters = (world.monsterSpawns ?? []).map((s) => new Monster(s, this.monsterMats, scene));
+      const monsters = (world.monsterSpawns ?? []).map((s) => createMonster(s, this.monsterMats, scene));
       const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
       const useLabels = (world.script?.interactables ?? []).map((it) => ({
         it,
@@ -291,7 +292,7 @@ export class Game {
     // Loot.
     const at = m.position.clone();
     const loot = this.area.loot;
-    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4 }[m.kind];
+    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4, abomination: 1, lich: 1, nightwing: 1 }[m.kind];
     if (Math.random() < (m.elite ? 1 : 0.55)) loot.drop(makeGold(m.level, m.elite ? 6 : m.kind === 'brute' ? 2.5 : 1), at);
     if (Math.random() < (m.kind === 'brute' ? 0.4 : 0.15) || (m.elite && Math.random() < 0.8)) loot.drop(makePotion(), at);
     if (m.elite) {
@@ -685,11 +686,12 @@ export class Game {
       onPlayerHit: (amount: number, crit: boolean, from: THREE.Vector3) => {
         this.onPlayerHit(amount, crit, from);
       },
+      banner: (title: string, sub: string) => this.hud.showBanner(title, sub),
     };
     for (const m of a.monsters) {
       if (m.removed) continue;
       const d = m.position.distanceTo(p.position);
-      m.body.rig.root.visible = d < 60;
+      m.body.rig.root.visible = d < 60 && !m.hidden;
       if (d < 46 || m.awake) m.update(dt, mctx);
     }
     // Music swells when something is hunting the hero.

@@ -8,6 +8,8 @@ import { barrel, crate, rock } from '../procgen/geometry';
 import { terrainMesh } from '../procgen/terrain';
 import { MeshBuilder, xf } from '../procgen/builder';
 import { bones, brazier } from '../procgen/props';
+import { prewarmTelegraph } from '../game/Telegraph';
+import { auraMaterial, prewarmBossFx } from '../game/BossFx';
 import { Fire } from '../engine/Fire';
 import { LightPool } from '../engine/LightPool';
 import { installCutaway } from '../engine/cutaway';
@@ -47,7 +49,13 @@ interface Room extends Rect {
 type Objective = 'runes' | 'warden' | 'key' | 'hearts' | 'brood';
 
 const NAMES = ['The Sunken Ossuary', 'The Weeping Crypt', 'The Charnel Vaults', 'The Red Catacomb', 'The Sepulchre of Thorns'];
-const BOSSES = ['The Hollow Bishop', 'Archdeacon Morrow', 'The Pale Confessor', 'Mother Vessa, Unweeping', 'The Choirless Saint'];
+type BossKind = 'abomination' | 'lich' | 'nightwing';
+/** The three vault bosses and how each one's room is lit and coloured. */
+const BOSS_THEMES: Record<BossKind, { name: string; rune: THREE.Color; mist: THREE.Color; light: number; ghost: boolean; wakes: string }> = {
+  abomination: { name: 'Gorrath the Many-Mouthed', rune: new THREE.Color(0.6, 0.04, 0.02), mist: new THREE.Color(0.11, 0.008, 0.005), light: 0xff3a1a, ghost: false, wakes: 'Something stirs beneath the blood' },
+  lich: { name: 'The Hollow King', rune: new THREE.Color(0.32, 0.08, 0.7), mist: new THREE.Color(0.05, 0.015, 0.1), light: 0x9a50ff, ghost: true, wakes: 'The Hollow King lifts his head' },
+  nightwing: { name: "Vhal'zereth", rune: new THREE.Color(0.55, 0.03, 0.04), mist: new THREE.Color(0.08, 0.01, 0.012), light: 0x9ab4ff, ghost: false, wakes: 'Wings unfold in the dark above' },
+};
 
 const cx = (i: number) => -HALF + (i + 0.5) * CELL;
 const overlap = (a: Rect, b: Rect, pad = 0) => a.x - pad < b.x + b.w && b.x - pad < a.x + a.w && a.y - pad < b.y + b.h && b.y - pad < a.y + a.h;
@@ -419,9 +427,94 @@ function sconce(b: MeshBuilder, face: THREE.Vector3, n: THREE.Vector3, y: number
   b.add('wood', new THREE.CylinderGeometry(0.03, 0.025, 0.42, 5), m.clone().multiply(xf(0, 0.05, 0.3, 0, 1, 1, 1, 0.15)), 0);
 }
 
+/** A thrown splash of blood: a ragged blot with droplets flung outward. */
+function splatTexture(seed: number): THREE.CanvasTexture {
+  const rng = mulberry32(seed);
+  return canvasTexture(256, (g, s) => {
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = '#fff';
+    g.translate(s / 2, s / 2);
+    for (let k = 0; k < 9; k++) {
+      g.beginPath();
+      g.arc(range(rng, -24, 24), range(rng, -24, 24), range(rng, 14, 34), 0, Math.PI * 2);
+      g.fill();
+    }
+    const dir = rng() * Math.PI * 2;
+    for (let k = 0; k < 40; k++) {
+      const a = dir + range(rng, -1.2, 1.2) * (rng() < 0.3 ? 2.6 : 1);
+      const r = range(rng, 40, s * 0.47);
+      g.beginPath();
+      g.ellipse(Math.cos(a) * r, Math.sin(a) * r, range(rng, 1.5, 6) * (1 - r / s), range(rng, 1.5, 3), a, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}
+
+/** Soft cloudy blots for mist and pooled light. */
+function mistTexture(seed: number): THREE.CanvasTexture {
+  const rng = mulberry32(seed);
+  return canvasTexture(256, (g, s) => {
+    g.clearRect(0, 0, s, s);
+    for (let k = 0; k < 26; k++) {
+      const a = rng() * Math.PI * 2;
+      const r = Math.sqrt(rng()) * s * 0.3;
+      const x = s / 2 + Math.cos(a) * r;
+      const y = s / 2 + Math.sin(a) * r;
+      const rad = range(rng, s * 0.08, s * 0.2);
+      const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+      grd.addColorStop(0, 'rgba(255,255,255,0.35)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, s, s);
+    }
+  });
+}
+
+/** Vertical fade for a shaft of light: bright at the floor, gone at the top. */
+function shaftTexture(): THREE.CanvasTexture {
+  return canvasTexture(64, (g, s) => {
+    const grd = g.createLinearGradient(0, 0, 0, s);
+    grd.addColorStop(0, 'rgba(255,255,255,0)');
+    grd.addColorStop(0.6, 'rgba(255,255,255,0.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,1)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, s, s);
+  });
+}
+
+/** A swollen, knotted lump of flesh about a metre across. */
+function fleshLump(rng: Rng): THREE.BufferGeometry {
+  const geo = new THREE.IcosahedronGeometry(1, 3);
+  const p = geo.getAttribute('position') as THREE.BufferAttribute;
+  const seed = Math.floor(rng() * 1000);
+  for (let v = 0; v < p.count; v++) {
+    const x = p.getX(v);
+    const y = p.getY(v);
+    const z = p.getZ(v);
+    const d = 1 + fbm2(x * 2.2 + seed, y * 2.2 + z * 1.7, 3, seed) * 0.45;
+    p.setXYZ(v, x * d, y * d, z * d);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A body bound in a shroud, hanging head down from its ankles. */
+function cocoon(): THREE.BufferGeometry {
+  const pts = [
+    [0.0, 0.0],
+    [0.12, 0.05],
+    [0.2, 0.3],
+    [0.24, 0.65],
+    [0.2, 1.0],
+    [0.12, 1.3],
+    [0.04, 1.45],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  return new THREE.LatheGeometry(pts, 10);
+}
+
 // ---- Build ------------------------------------------------------------------
 
-export async function buildDungeon(seed = 1): Promise<World> {
+export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promise<World> {
   const rng = mulberry32(seed);
   await loading.step('Carving rooms and passages', 0.02);
   const L = generate(rng);
@@ -712,33 +805,266 @@ export async function buildDungeon(seed = 1): Promise<World> {
 
   await loading.step('Sealing the vault', 0.82);
   // ---- Boss vault ---------------------------------------------------------
+  // A round ritual arena: the corners walled off into an octagon, a great
+  // layered rune circle, eight braziers on the rim, blood, chains and a low
+  // red mist. One of three bosses waits in it, and the room is dressed for
+  // whichever one it is.
   const vc = roomCentre(boss);
-  const bossName = BOSSES[Math.floor(rng() * BOSSES.length)];
-  const ritual = runeCircle(vc.x, vc.z, 5.2, new THREE.Color(0.5, 0.03, 0.02));
-  for (const [sx, sz] of [
-    [-1, -1],
-    [1, -1],
-    [-1, 1],
-    [1, 1],
-  ]) {
-    const x = vc.x + sx * 5.6;
-    const z = vc.z + sz * 5.6;
-    props.addBuilder(brazier(), xf(x, 0, z));
-    addFire(new THREE.Vector3(x, 1.15, z), 0.9, 26, 13);
-    nav.blockCircle(x, z, 0.6);
-    pillar(props, rng, vc.x + sx * 3.4, vc.z + sz * 6.4);
-    pillar(props, rng, vc.x + sx * 6.4, vc.z + sz * 3.4);
-    nav.blockCircle(vc.x + sx * 3.4, vc.z + sz * 6.4, 0.6);
-    nav.blockCircle(vc.x + sx * 6.4, vc.z + sz * 3.4, 0.6);
+  const bossKind: BossKind = forcedBoss && forcedBoss in BOSS_THEMES ? (forcedBoss as BossKind) : (Object.keys(BOSS_THEMES) as BossKind[])[Math.floor(rng() * 3)];
+  const theme = BOSS_THEMES[bossKind];
+  const bossName = theme.name;
+  const doorA = Math.atan2(dir[0], dir[1]);
+  const U = (a: number, r = 1, y = 0) => new THREE.Vector3(vc.x + Math.sin(a) * r, y, vc.z + Math.cos(a) * r);
+  const APO = BS; // octagon apothem: half the vault, in metres
+  const EDGE = 2 * APO * Math.tan(Math.PI / 8);
+  const vaultPool = new LightPool(scene, 3, theme.light);
+  mats.gore = new THREE.MeshStandardMaterial({ color: 0x4a0c08, roughness: 0.25, emissive: new THREE.Color(0.12, 0.0, 0.0) });
+  mats.bloodPool = new THREE.MeshStandardMaterial({ color: 0x1c0101, roughness: 0.05, metalness: 0.3, emissive: new THREE.Color(0.08, 0, 0) });
+  mats.shroud = new THREE.MeshStandardMaterial({ color: 0x6e665a, roughness: 0.95 });
+  mats.ghostCoal = new THREE.MeshStandardMaterial({ color: 0x08040c, emissive: new THREE.Color(0.9, 0.35, 2.6), roughness: 1 });
+  mats.splat = new THREE.MeshStandardMaterial({
+    map: splatTexture(seed + 11),
+    color: 0x5a0604,
+    roughness: 0.12,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+  });
+  // Corners walled off at 45 degrees: solid masonry with a capped top.
+  for (let k = 1; k < 8; k += 2) {
+    const a = doorA + (k * Math.PI) / 4;
+    const c = U(a, APO + 1.7);
+    props.add('wall', new THREE.BoxGeometry(EDGE + 0.3, WALL_H + 0.1, 3.4), xf(c.x, (WALL_H + 0.1) / 2, c.z, a), 0.5);
+    props.add('trim', new THREE.BoxGeometry(EDGE + 0.4, 0.16, 3.5), xf(c.x, WALL_H + 0.18, c.z, a), 0.6);
+    props.add('trim', new THREE.BoxGeometry(EDGE + 0.3, 0.35, 0.18), xf(...U(a, APO).toArray().map((v, i) => (i === 1 ? 0.17 : v)) as [number, number, number], a), 0.6);
+    for (const t of [-1, 1]) {
+      const q = U(a, APO).add(new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(t * EDGE * 0.32));
+      props.add('trim', new THREE.BoxGeometry(0.5, WALL_H, 0.24), xf(q.x, WALL_H / 2, q.z, a), 0.6);
+    }
+    nav.blockBox(c.x, c.z, EDGE / 2 + 0.4, 1.7 + 0.3, a);
+    // Big chains sagging across the face of each corner, with a hook in the middle.
+    const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+    const face = U(a, APO - 0.1);
+    const l = face.clone().addScaledVector(side, -EDGE * 0.42).setY(WALL_H - 0.15);
+    const r = face.clone().addScaledVector(side, EDGE * 0.42).setY(WALL_H - 0.15);
+    chain(props, l, r, 0.9);
+    const mid = face.clone().setY(WALL_H - 1.05);
+    chain(props, mid, mid.clone().setY(1.1 + rng() * 0.4), 0.0);
+    props.add('iron', new THREE.TorusGeometry(0.16, 0.025, 4, 10, Math.PI * 1.4), xf(mid.x, 1.0, mid.z, a, 1, 1, 1, 0, 2.2), 0);
   }
-  hangChains(boss, 4);
-  // Altar at the back of the vault, opposite the door.
-  const back = vc.clone().addScaledVector(new THREE.Vector3(dir[0], 0, dir[1]), -6.2);
-  const backYaw = Math.atan2(dir[0], dir[1]);
-  props.add('altar', new THREE.BoxGeometry(2.4, 1.0, 1.1), xf(back.x, 0.5, back.z, backYaw), 0.6);
-  props.add('altar', new THREE.BoxGeometry(2.7, 0.15, 1.35), xf(back.x, 1.07, back.z, backYaw), 0.6);
-  props.addBuilder(bones(rng), xf(back.x, 1.15, back.z, rng() * 6, 0.8));
-  nav.blockBox(back.x, back.z, 1.4, 0.75, backYaw);
+  // The circle itself: a wide outer ring of glyphs, the great circle and a
+  // small inner seal that turns the other way.
+  const ritual = runeCircle(vc.x, vc.z, 6.0, theme.rune.clone());
+  const ritualOuter = runeCircle(vc.x, vc.z, 7.6, theme.rune.clone().multiplyScalar(0.5));
+  const ritualInner = runeCircle(vc.x, vc.z, 2.6, theme.rune.clone());
+  // Eight braziers on stone plinths at the corners of the octagon.
+  const braziers: THREE.Vector3[] = [];
+  for (let k = 0; k < 8; k++) {
+    const a = doorA + Math.PI / 8 + (k * Math.PI) / 4;
+    const p = U(a, 6.55);
+    braziers.push(p);
+    props.add('trim', new THREE.CylinderGeometry(0.62, 0.72, 0.3, 8), xf(p.x, 0.15, p.z, 0), 0.6);
+    props.addBuilder(theme.ghost ? brazier().remap((m) => (m === 'coal' ? 'ghostCoal' : m)) : brazier(), xf(p.x, 0.28, p.z, rng() * 6));
+    const fp = new THREE.Vector3(p.x, 1.43, p.z);
+    if (theme.ghost) {
+      const f = new Fire(0.85, 0, 1, true);
+      f.group.remove(f.light);
+      f.group.position.copy(fp);
+      scene.add(f.group);
+      fires.push(f);
+      vaultPool.add(fp.clone().setY(1.8), 22, 12, 0.6);
+    } else addFire(fp, 0.85, 24, 12);
+    nav.blockCircle(p.x, p.z, 0.75);
+  }
+  // Blood thrown across the floor, thickest around the circle's heart.
+  for (let k = 0; k < 22; k++) {
+    const a = rng() * Math.PI * 2;
+    const r = k < 8 ? range(rng, 0.5, 3.2) : range(rng, 2, 7);
+    const p = U(a, r);
+    const sz = range(rng, 0.9, 2.6) * (k < 8 ? 1.3 : 1);
+    props.add('splat', new THREE.PlaneGeometry(sz, sz).rotateX(-Math.PI / 2), xf(p.x, 0.035 + k * 0.0004, p.z, rng() * 6), 0);
+  }
+  // Chains down the three real walls, bones and skulls at their feet.
+  for (const k of [2, 4, 6]) {
+    const a = doorA + (k * Math.PI) / 4;
+    const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+    for (const t of [-2.3, 2.3]) {
+      const f = U(a, APO - 0.08).addScaledVector(side, t);
+      for (const s2 of [-0.3, 0.3]) {
+        const top = f.clone().addScaledVector(side, s2).setY(WALL_H - 0.2);
+        const bottom = f.clone().addScaledVector(side, s2 * 0.5).add(U(a, -0.1).sub(vc).setY(0)).setY(range(rng, 0.8, 1.4));
+        chain(props, top, bottom, 0.02);
+        props.add('iron', new THREE.TorusGeometry(0.09, 0.02, 4, 10), xf(bottom.x, bottom.y - 0.08, bottom.z, a), 0);
+      }
+      const b = f.clone().addScaledVector(U(a, 1).sub(vc), -0.7);
+      props.addBuilder(bones(rng), xf(b.x, 0, b.z, rng() * 6));
+    }
+  }
+  for (let k = 0; k < 6; k++) {
+    const p = U(rng() * Math.PI * 2, range(rng, 4.5, 6.8));
+    if (nav.walkable(p.x, p.z)) props.addBuilder(bones(rng), xf(p.x, 0, p.z, rng() * 6));
+  }
+  // A low mist the colour of the room, drifting over the floor.
+  const mistMat = new THREE.MeshBasicMaterial({ map: mistTexture(seed + 13), color: theme.mist, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mists: THREE.Mesh[] = [];
+  for (let k = 0; k < 5; k++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(13 - k, 13 - k).rotateX(-Math.PI / 2), mistMat);
+    m.position.set(vc.x + range(rng, -1, 1), 0.2 + k * 0.17, vc.z + range(rng, -1, 1));
+    m.rotation.y = rng() * 6;
+    m.renderOrder = 6;
+    scene.add(m);
+    mists.push(m);
+  }
+  const back = U(doorA + Math.PI, APO - 1.6);
+  const backYaw = doorA;
+  const themed = { pool: null as THREE.Mesh | null, shaft: null as THREE.Mesh | null };
+  if (bossKind === 'abomination') {
+    // A pool of blood at the heart of the circle, the thing below it.
+    const g = new THREE.CircleGeometry(2.7, 40);
+    const gp = g.getAttribute('position') as THREE.BufferAttribute;
+    for (let v = 1; v < gp.count; v++) {
+      const x = gp.getX(v);
+      const y = gp.getY(v);
+      const d = 1 + fbm2(x * 0.9 + seed * 0.01, y * 0.9, 3, seed + 31) * 0.35;
+      gp.setXY(v, x * d, y * d);
+    }
+    const pm = new THREE.Mesh(g.rotateX(-Math.PI / 2), mats.bloodPool);
+    pm.position.set(vc.x, 0.04, vc.z);
+    pm.receiveShadow = true;
+    scene.add(pm);
+    themed.pool = pm;
+    vaultPool.add(vc.clone().setY(0.8), 9, 7, 0.2);
+    // Flesh grown over the walls: swollen lumps, sacs and veins climbing the stone.
+    for (let k = 1; k < 8; k++) {
+      const a = doorA + (k * Math.PI) / 4;
+      const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+      for (let q = 0; q < 4; q++) {
+        const f = U(a, APO - 0.25).addScaledVector(side, range(rng, -EDGE * 0.45, EDGE * 0.45));
+        const sz = range(rng, 0.35, 0.85);
+        props.add(rng() < 0.75 ? 'gore' : 'egg', fleshLump(rng), xf(f.x, sz * 0.4, f.z, rng() * 6, sz, sz * range(rng, 0.6, 1.1), sz), 0.5);
+      }
+      for (let q = 0; q < 3; q++) {
+        const f = U(a, APO - 0.06).addScaledVector(side, range(rng, -EDGE * 0.45, EDGE * 0.45));
+        const pts = [f.clone().setY(0)];
+        for (let h = 1; h <= 4; h++) pts.push(f.clone().addScaledVector(side, Math.sin(h * 1.7 + q) * 0.3).setY((h / 4) * range(rng, 1.6, 2.9)));
+        props.add('gore', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, range(rng, 0.03, 0.07), 5), undefined, 0);
+      }
+    }
+    // Butcher's hooks on iron arms over the rim, meat still on some of them.
+    for (const k of [2, 3, 5, 6]) {
+      const a = doorA + (k * Math.PI) / 4;
+      const f = U(a, APO - 0.05);
+      const tip = U(a, APO - 1.1, WALL_H - 0.25);
+      props.add('iron', new THREE.BoxGeometry(0.08, 0.08, 1.1), xf((f.x + tip.x) / 2, WALL_H - 0.25, (f.z + tip.z) / 2, a), 0);
+      const low = tip.clone().setY(range(rng, 1.3, 1.8));
+      chain(props, tip, low, 0);
+      props.add('iron', new THREE.TorusGeometry(0.14, 0.025, 4, 10, Math.PI * 1.3), xf(low.x, low.y - 0.12, low.z, a, 1, 1, 1, 0, 2.4), 0);
+      if (rng() < 0.75) props.add('gore', fleshLump(rng), xf(low.x, low.y - 0.55, low.z, rng() * 6, 0.32, 0.6, 0.28), 0.5);
+    }
+    // A slab at the back heaped with offal.
+    props.add('altar', new THREE.BoxGeometry(2.4, 0.9, 1.1), xf(back.x, 0.45, back.z, backYaw), 0.6);
+    for (let q = 0; q < 5; q++) props.add('gore', fleshLump(rng), xf(back.x + range(rng, -0.9, 0.9), 0.95, back.z + range(rng, -0.35, 0.35), rng() * 6, 0.3, 0.2, 0.25), 0.5);
+    nav.blockBox(back.x, back.z, 1.4, 0.75, backYaw);
+  } else if (bossKind === 'lich') {
+    // A throne on a dais at the back, empty while its king kneels in the circle.
+    const t = xf(back.x, 0, back.z, backYaw + Math.PI);
+    const at = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => t.clone().multiply(xf(x, y, z, 0, sx, sy, sz));
+    props.add('altar', new THREE.BoxGeometry(3.6, 0.25, 2.2), at(0, 0.125, 0), 0.6);
+    props.add('altar', new THREE.BoxGeometry(2.8, 0.25, 1.6), at(0, 0.375, -0.2), 0.6);
+    props.add('altar', new THREE.BoxGeometry(1.3, 0.5, 1.0), at(0, 0.75, -0.35), 0.6);
+    props.add('altar', new THREE.BoxGeometry(1.4, 2.6, 0.25), at(0, 1.8, -0.85), 0.6);
+    for (const sx of [-1, 1]) {
+      props.add('altar', new THREE.BoxGeometry(0.22, 0.6, 1.0), at(sx * 0.62, 1.2, -0.35), 0.6);
+      props.add('iron', new THREE.ConeGeometry(0.09, 0.9, 5), at(sx * 0.6, 3.5, -0.85), 0);
+    }
+    props.add('iron', new THREE.ConeGeometry(0.11, 1.2, 5), at(0, 3.7, -0.85), 0);
+    props.addBuilder(bones(rng), at(0, 0.5, 0.7));
+    nav.blockBox(back.x, back.z, 1.9, 1.2, backYaw);
+    // Sarcophagi along the side walls, one lid shoved aside.
+    for (const k of [2, 6]) {
+      const a = doorA + (k * Math.PI) / 4;
+      const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+      for (const s2 of [-1.7, 1.7]) {
+        const p = U(a, 6.7).addScaledVector(side, s2);
+        props.add('altar', new THREE.BoxGeometry(1.0, 0.75, 2.1), xf(p.x, 0.375, p.z, a), 0.6);
+        const open = rng() < 0.35;
+        props.add('trim', new THREE.BoxGeometry(1.15, 0.16, 2.25), xf(p.x + (open ? side.x * 0.4 : 0), 0.83, p.z + (open ? side.z * 0.4 : 0), a + (open ? 0.3 : 0)), 0.6);
+        props.add('trim', new THREE.BoxGeometry(0.5, 0.12, 0.5), xf(p.x, 0.97, p.z, a), 0.6);
+        nav.blockBox(p.x, p.z, 0.6, 1.15, a);
+      }
+    }
+    // Witch-light pooled in the circle.
+    vaultPool.add(vc.clone().setY(1.0), 8, 8, 0.3);
+  } else {
+    // Moonlight falling through a broken roof onto the circle.
+    const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTexture(), color: new THREE.Color(0.035, 0.05, 0.085), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.8, 14, 24, 1, true).translate(0, 7, 0), shaftMat);
+    shaft.position.copy(vc);
+    shaft.renderOrder = 7;
+    scene.add(shaft);
+    themed.shaft = shaft;
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(2.9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: mistTexture(seed + 17), color: new THREE.Color(0.06, 0.085, 0.14), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    disc.position.set(vc.x, 0.05, vc.z);
+    disc.renderOrder = 6;
+    scene.add(disc);
+    vaultPool.add(vc.clone().setY(6), 16, 14, 0);
+    // The ribs of something enormous arch out of the walls on both sides.
+    for (const k of [2, 6]) {
+      const a = doorA + (k * Math.PI) / 4;
+      const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+      const inward = U(a, -1).sub(vc).setY(0);
+      for (const s2 of [-2.6, -1.3, 0, 1.3, 2.6]) {
+        const base = U(a, APO - 0.3).addScaledVector(side, s2);
+        const h = 3.6 - Math.abs(s2) * 0.35;
+        const reach = 2.4 - Math.abs(s2) * 0.2;
+        const pts = [
+          base.clone(),
+          base.clone().addScaledVector(inward, reach * 0.1).setY(h * 0.55),
+          base.clone().addScaledVector(inward, reach * 0.55).setY(h),
+          base.clone().addScaledVector(inward, reach).setY(h * 0.8),
+        ];
+        props.add('bone', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.12, 6), undefined, 0);
+      }
+      // Its spine along the wall top.
+      const sp = U(a, APO - 0.2);
+      props.add('bone', new THREE.CylinderGeometry(0.2, 0.2, 7, 7).rotateZ(Math.PI / 2), xf(sp.x, WALL_H - 0.1, sp.z, a), 0);
+      for (let q = -3; q <= 3; q++) {
+        const v = sp.clone().addScaledVector(side, q);
+        props.add('bone', new THREE.SphereGeometry(0.3, 8, 6), xf(v.x, WALL_H - 0.1, v.z, a, 1, 0.8, 1), 0);
+      }
+    }
+    // The remains of its meals, wrapped and hung from the walls.
+    for (const k of [1, 3, 4, 5, 7]) {
+      const a = doorA + (k * Math.PI) / 4;
+      const tip = U(a, APO - 1.0, WALL_H - 0.2);
+      const f = U(a, APO - 0.05);
+      props.add('iron', new THREE.BoxGeometry(0.08, 0.08, 1.0), xf((f.x + tip.x) / 2, WALL_H - 0.2, (f.z + tip.z) / 2, a), 0);
+      const low = tip.clone().setY(range(rng, 2.1, 2.5));
+      chain(props, tip, low, 0);
+      props.add('shroud', cocoon(), xf(low.x, low.y - 1.45, low.z, rng() * 6, 1, 1, 1, range(rng, -0.08, 0.08)), 0.5);
+    }
+    // A great horned skull at the back in place of an altar.
+    const t = xf(back.x, 0, back.z, backYaw + Math.PI);
+    const at = (x: number, y: number, z: number, rx = 0, sx = 1, sy = 1, sz = 1) => t.clone().multiply(xf(x, y, z, 0, sx, sy, sz, rx));
+    props.add('bone', new THREE.SphereGeometry(1, 16, 12), at(0, 0.85, -0.2, 0, 1.1, 0.8, 1.3), 0);
+    props.add('bone', new THREE.BoxGeometry(1.4, 0.35, 1.4), at(0, 0.18, 0.75, 0.15), 0);
+    for (const sx of [-1, 1]) {
+      props.add('void', new THREE.SphereGeometry(0.24, 8, 6), at(sx * 0.42, 1.05, 0.8), 0);
+      props.add('bone', new THREE.ConeGeometry(0.22, 1.9, 7), at(sx * 0.9, 1.7, -0.5, -0.5, 1, 1, 1).multiply(xf(0, 0, 0, 0, 1, 1, 1, 0, -sx * 0.7)), 0);
+      props.add('bone', new THREE.ConeGeometry(0.06, 0.35, 5).rotateX(Math.PI), at(sx * 0.25, 0.42, 1.05), 0);
+    }
+    nav.blockCircle(back.x, back.z, 1.4);
+  }
+  // Keep the boss's shaders hot so the first ability doesn't hitch.
+  prewarmTelegraph(scene);
+  prewarmBossFx(scene);
+  {
+    const warm = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01), auraMaterial(new THREE.Color(1, 0, 1)));
+    warm.position.set(vc.x, -5, vc.z);
+    warm.frustumCulled = false;
+    scene.add(warm);
+  }
 
   // Sealed door: stone jambs, a lintel with the seal rune, and a portcullis
   // that grinds down into the floor when the seal breaks.
@@ -968,13 +1294,9 @@ export async function buildDungeon(seed = 1): Promise<World> {
       add(r, 'ghoul', 3);
     }
   }
-  // The vault: the boss and two shades, asleep behind the seal.
+  // The vault: the boss alone, asleep behind the seal (it brings its own help).
   pack++;
-  spawns.push({ kind: 'wraith', pos: vc.clone(), level: 7, pack, boss: true, elite: bossName, tag: 'boss', dormant: true, wander: 0 });
-  for (const s of [-1, 1]) {
-    const side = new THREE.Vector3(dir[1], 0, -dir[0]).multiplyScalar(s * 3.2);
-    spawns.push({ kind: 'wraith', pos: vc.clone().add(side).addScaledVector(new THREE.Vector3(dir[0], 0, dir[1]), -2), level: 6, pack, tag: 'boss', dormant: true, wander: 1.5 });
-  }
+  spawns.push({ kind: bossKind, pos: vc.clone(), level: 7, pack, boss: true, elite: bossName, tag: 'boss', dormant: true, wander: 0 });
 
   // ---- Script ------------------------------------------------------------
   const ctxRef: { current: ScriptContext | null } = { current: null };
@@ -993,7 +1315,7 @@ export async function buildDungeon(seed = 1): Promise<World> {
     state.doorT = 0;
     audio.doorOpen(doorPos);
     ctxRef.current?.effects.addShake(0.5);
-    setTimeout(() => ctxRef.current?.banner('The Seal Breaks', `${bossName} wakes in the vault`), 3600);
+    setTimeout(() => ctxRef.current?.banner('The Seal Breaks', theme.wakes), 3600);
   }
   const portal = new THREE.Mesh(
     new THREE.CylinderGeometry(0.9, 1.1, 7, 24, 1, true).translate(0, 3.5, 0),
@@ -1095,7 +1417,17 @@ export async function buildDungeon(seed = 1): Promise<World> {
         r.mat.color.setRGB(k, k * 0.1, k * 0.05);
       }
       const rk = state.sealBroken && !state.bossDead ? 1.3 + Math.sin(t * 4) * 0.4 : 0.45 + Math.sin(t * 1.3) * 0.12;
-      ritual.mat.color.setRGB(rk, rk * 0.06, rk * 0.04);
+      ritual.mat.color.copy(theme.rune).multiplyScalar(rk * 1.6);
+      ritualOuter.mat.color.copy(theme.rune).multiplyScalar(rk * 0.7);
+      ritualInner.mat.color.copy(theme.rune).multiplyScalar(rk * (1.4 + Math.sin(t * 2.2) * 0.4));
+      ritualOuter.mesh.rotation.y = t * 0.03;
+      ritualInner.mesh.rotation.y = -t * 0.15;
+      vaultPool.update(t);
+      mists.forEach((m, i) => {
+        m.rotation.y += dt * 0.04 * (i % 2 ? 1 : -1);
+        (m.material as THREE.MeshBasicMaterial).opacity = 1;
+      });
+      if (themed.shaft) (themed.shaft.material as THREE.MeshBasicMaterial).opacity = 0.85 + Math.sin(t * 0.7) * 0.15;
       for (const h of pulsing) {
         const b = 1 + Math.max(0, Math.sin(t * 5.5)) ** 6 * 0.12 + Math.max(0, Math.sin(t * 5.5 - 0.6)) ** 8 * 0.06;
         h.scale.setScalar(b);
