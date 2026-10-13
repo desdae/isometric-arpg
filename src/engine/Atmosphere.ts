@@ -62,7 +62,9 @@ export class Sky {
 /** Large soft cards lying near the ground, slowly drifting and turning. */
 export class Mist {
   readonly group = new THREE.Group();
-  private cards: { mesh: THREE.Mesh; vel: THREE.Vector2; spin: number; lift: number; half: number }[] = [];
+  private cards: { pos: THREE.Vector3; rot: number; size: number; vel: THREE.Vector2; spin: number; lift: number; half: number }[] = [];
+  /** All cards in one instanced draw; each card's opacity rides in its instance colour. */
+  private mesh: THREE.InstancedMesh;
 
   constructor(
     private extent: number,
@@ -73,23 +75,25 @@ export class Mist {
   ) {
     const rng = mulberry32(seed);
     const tex = mistTexture(256, seed);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, depthWrite: false, fog: false });
+    // The instance colour scales alpha instead of tinting.
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '#ifdef USE_COLOR\n\tdiffuseColor.a *= vColor.r;\n#endif');
+    };
+    this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat, count);
+    this.mesh.renderOrder = 10;
+    // Cards drift over the whole area; it is one draw either way.
+    this.mesh.frustumCulled = false;
+    this.group.add(this.mesh);
+    const opacity = new THREE.Color();
     for (let i = 0; i < count; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        map: tex,
-        color,
-        transparent: true,
-        opacity: range(rng, 0.07, 0.16),
-        depthWrite: false,
-        fog: false,
-      });
+      const a = range(rng, 0.07, 0.16);
+      this.mesh.setColorAt(i, opacity.setRGB(a, a, a));
       const s = range(rng, 6, 14);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(s, s), mat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.rotation.z = rng() * Math.PI * 2;
-      mesh.position.set(range(rng, -extent, extent), 0, range(rng, -extent, extent));
-      mesh.renderOrder = 10;
-      this.group.add(mesh);
-      this.cards.push({ mesh, vel: new THREE.Vector2(range(rng, 0.2, 0.6), range(rng, -0.15, 0.15)), spin: range(rng, -0.03, 0.03), lift: range(rng, 0.3, 1.4), half: s / 2 });
+      const rot = rng() * Math.PI * 2;
+      const pos = new THREE.Vector3(range(rng, -extent, extent), 0, range(rng, -extent, extent));
+      this.cards.push({ pos, rot, size: s, vel: new THREE.Vector2(range(rng, 0.2, 0.6), range(rng, -0.15, 0.15)), spin: range(rng, -0.03, 0.03), lift: range(rng, 0.3, 1.4), half: s / 2 });
+      this.place(i);
     }
   }
 
@@ -111,14 +115,15 @@ export class Mist {
 
   update(dt: number) {
     const e = this.extent;
-    for (const c of this.cards) {
-      const p = c.mesh.position;
+    for (let i = 0; i < this.cards.length; i++) {
+      const c = this.cards[i];
+      const p = c.pos;
       p.x += c.vel.x * dt;
       p.z += c.vel.y * dt;
       if (p.x > e) p.x -= 2 * e;
       if (p.z > e) p.z -= 2 * e;
       if (p.z < -e) p.z += 2 * e;
-      c.mesh.rotation.z += c.spin * dt;
+      c.rot += c.spin * dt;
       // Ride above the highest ground under the card so it never slices into
       // the terrain (which shows as hard, drifting lines).
       const h = c.half;
@@ -134,6 +139,18 @@ export class Mist {
         this.ground(p.x, p.z + h),
       );
       p.y = p.y === 0 ? top + c.lift : p.y + (top + c.lift - p.y) * Math.min(1, dt * 2);
+      this.place(i);
     }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private static q = new THREE.Quaternion();
+  private static m = new THREE.Matrix4();
+  private static s = new THREE.Vector3();
+  private static up = new THREE.Vector3(0, 1, 0);
+  private place(i: number) {
+    const c = this.cards[i];
+    Mist.q.setFromAxisAngle(Mist.up, c.rot);
+    this.mesh.setMatrixAt(i, Mist.m.compose(c.pos, Mist.q, Mist.s.set(c.size, 1, c.size)));
   }
 }

@@ -40,10 +40,18 @@ export function addSilhouette(root: THREE.Object3D, color = new THREE.Color(1.0,
     const m = o as THREE.Mesh;
     if (m.isMesh && !Array.isArray(m.material)) meshes.push(m);
   });
+  // A baked rig's shadow-only mesh holds every part of its skinned meshes in
+  // one geometry: one twin from it stands in for theirs.
+  const covered = new Set<THREE.Object3D>();
+  for (const m of meshes) if (m.userData.shadowOnly) for (const c of m.userData.covers as THREE.Object3D[]) covered.add(c);
   for (const m of meshes) {
     // Parts folded into a skinned mesh no longer draw; their skinned mesh gets the twin.
-    if (!(m.material as THREE.Material).visible || m.layers.mask === 0 || m.userData.shadowOnly) continue;
-    m.renderOrder = 2;
+    if (covered.has(m)) {
+      m.renderOrder = 2;
+      continue;
+    }
+    if (!(m.material as THREE.Material).visible || (m.layers.mask === 0 && !m.userData.shadowOnly)) continue;
+    if (!m.userData.shadowOnly) m.renderOrder = 2;
     const sm = m as THREE.SkinnedMesh;
     let twin: THREE.Mesh;
     if (sm.isSkinnedMesh) {

@@ -133,7 +133,14 @@ export function skinRig(root: THREE.Object3D) {
       geo.computeBoundingSphere();
       shadow.boundingSphere = geo.boundingSphere!.clone();
       shadow.boundingSphere.radius *= 1.6;
-      for (const c of root.children) if ((c as THREE.SkinnedMesh).isSkinnedMesh && c !== shadow && casters.includes((c as THREE.Mesh).geometry)) c.castShadow = false;
+      const covers: THREE.Object3D[] = [];
+      for (const c of root.children)
+        if ((c as THREE.SkinnedMesh).isSkinnedMesh && c !== shadow && casters.includes((c as THREE.Mesh).geometry)) {
+          c.castShadow = false;
+          covers.push(c);
+        }
+      // The silhouette can draw from this mesh too (one draw for all of them).
+      shadow.userData.covers = covers;
     }
   }
 }

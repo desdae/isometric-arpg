@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { perlin2 } from '../procgen/noise';
 
 // Procedural fire: camera-facing flame cards shaded with scrolling noise,
@@ -191,18 +192,22 @@ export class Fire {
   private phase = Math.random() * 100;
 
   constructor(size = 1, lightIntensity = 40, lightRange = 12, ghost = false) {
-    const cards = 3;
-    for (let i = 0; i < cards; i++) {
+    // Three flame cards of falling size, baked into one mesh (one draw). The
+    // shader billboards around the mesh origin, so each card's size and
+    // sideways offset live in its vertices.
+    const cards: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < 3; i++) {
       const geo = new THREE.PlaneGeometry(0.9, 1.6);
       geo.translate(0, 0.8, 0);
+      geo.scale(size * (1 - i * 0.18), size * (1 - i * 0.12), 1);
+      geo.translate((i - 1) * 0.08 * size, 0, 0);
       geo.setAttribute('seed', new THREE.Float32BufferAttribute(new Array(4).fill(Math.random()), 1));
-      const card = new THREE.Mesh(geo, ghost ? ghostFlameMaterial : flameMaterial);
-      card.scale.set(size * (1 - i * 0.18), size * (1 - i * 0.12), 1);
-      card.position.set((i - 1) * 0.08 * size, 0, (i % 2) * 0.05 * size);
-      // The card turns about its own upright axis, so its plain bounds still hold it.
-      card.renderOrder = 20;
-      this.group.add(card);
+      cards.push(geo);
     }
+    const flame = new THREE.Mesh(mergeGeometries(cards)!, ghost ? ghostFlameMaterial : flameMaterial);
+    // The cards turn about the upright axis, which their plain bounds already allow for.
+    flame.renderOrder = 20;
+    this.group.add(flame);
 
     const count = 24;
     const pos = new Float32Array(count * 3);
