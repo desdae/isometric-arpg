@@ -178,7 +178,7 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound · <b>F3</b> debug<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
       <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>

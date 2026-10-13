@@ -4,6 +4,7 @@ import { loading } from './engine/Loading';
 import { installHeightFog } from './engine/fog';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
+import { DebugOverlay } from './engine/DebugOverlay';
 import { Sky } from './engine/Atmosphere';
 import { buildEnvironment } from './engine/environment';
 import { buildTestScene } from './scenes/testScene';
@@ -137,6 +138,26 @@ const shadowFocus = new THREE.Vector3();
 const ORIGIN = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const clock = new THREE.Clock();
+const debug = new DebugOverlay(renderer, () => {
+  const p = game?.player.position;
+  const a = game?.area;
+  const rows: [string, string][] = [
+    ['camera distance', cam.distance.toFixed(1)],
+    ['generated in', `${genMs.toFixed(0)} ms`],
+  ];
+  if (a && p) {
+    const alive = a.monsters.filter((m) => m.alive);
+    rows.unshift(
+      ['area', a.name],
+      ['hero at', `${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`],
+      ['monsters (alive / awake)', `${a.monsters.length} (${alive.length} / ${alive.filter((m) => m.awake).length})`],
+      ['effects live', String(a.effects.group.children.length)],
+      ['loot on ground', String(a.loot.items.length)],
+    );
+  }
+  return [['Game', rows]];
+});
+if (params.has('debug')) debug.toggle(true);
 let frames = 0;
 let fpsTime = 0;
 let attackTimer = 0;
@@ -144,6 +165,7 @@ let attackTimer = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
+  debug.begin();
   if (game) {
     world = game.world!;
     game.update(dt, t);
@@ -181,7 +203,9 @@ function frame() {
   moon.position.copy(shadowFocus).add(MOON_OFFSET);
   (world.scene.fog as THREE.FogExp2).density = (0.42 / cam.distance) * (world.fogScale ?? 1);
   sky.update(t, cam.camera.position);
+  debug.updated();
   renderer.render(t);
+  debug.end(world.scene, dt);
 
   frames++;
   fpsTime += dt;
