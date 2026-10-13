@@ -337,6 +337,16 @@ export class Monster implements Combatant {
       }
       return;
     }
+    if (this.stunned > 0) {
+      // Dazed: stands swaying, does nothing.
+      this.stunned -= dt;
+      rig.update(dt, 0);
+      this.position.y = ctx.height(this.position.x, this.position.z);
+      this.sync();
+      rig.root.rotation.z = Math.sin(this.stunned * 9) * 0.06;
+      if (this.stunned <= 0) rig.root.rotation.z = 0;
+      return;
+    }
     this.cooldown -= dt;
     this.flinchCd -= dt;
     this.repath -= dt;
@@ -423,6 +433,19 @@ export class Monster implements Combatant {
     this.position.y = ctx.height(this.position.x, this.position.z);
     rig.update(dt, this.speed);
     this.sync();
+  }
+
+  /** Seconds left dazed by a hero's skill. */
+  stunned = 0;
+
+  /** Dazes it for `secs` (and wakes it: being stunned is a fight). Returns whether it took. */
+  stun(secs: number): boolean {
+    if (!this.alive || this.dormant) return false;
+    this.stunned = Math.max(this.stunned, secs);
+    this.body.rig.cancelAction();
+    this.awake = true;
+    if (this.state === 'idle' || this.state === 'return') this.state = 'chase';
+    return true;
   }
 
   /** Sleeping behind a seal until a script rouses it. */

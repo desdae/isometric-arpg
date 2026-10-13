@@ -163,7 +163,7 @@ export class Effects {
   private lights: THREE.PointLight[] = [];
   private freeLights: THREE.PointLight[] = [];
 
-  constructor(private height: HeightFn) {
+  constructor(readonly height: HeightFn) {
     this.dropGeo.setAttribute('position', new THREE.BufferAttribute(this.dropPos, 3).setUsage(THREE.DynamicDrawUsage));
     this.dropGeo.setAttribute('dropColor', new THREE.BufferAttribute(this.dropCol, 4).setUsage(THREE.DynamicDrawUsage));
     this.dropGeo.setAttribute('dropSize', new THREE.BufferAttribute(this.dropSize, 1).setUsage(THREE.DynamicDrawUsage));

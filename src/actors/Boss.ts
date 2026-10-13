@@ -96,6 +96,11 @@ export class Boss extends Monster {
     return this.script !== null;
   }
 
+  /** Bosses shrug off stuns: a skill cannot interrupt a playbook. */
+  stun(): boolean {
+    return false;
+  }
+
   takeDamage(amount: number, crit: boolean, from: THREE.Vector3): number {
     if (this.invulnerable || !this.introduced) return 0;
     return super.takeDamage(amount, crit, from);

@@ -1,5 +1,5 @@
 import type { Stats } from './Stats';
-import { CLEAVE_COST } from '../actors/Player';
+import { BELT_KEYS, SKILL, type SkillId } from './Skills';
 
 // The in-game HUD: life and mana orbs, the skill belt with potions and the
 // experience bar, gold, the target frame, area banners, the hurt vignette,
@@ -35,7 +35,13 @@ const CSS = `
   .slot .key { position: absolute; left: 3px; top: 2px; font: 600 11px/1 'EB Garamond', Georgia, serif; color: #b89a78; }
   .slot .count { position: absolute; right: 3px; bottom: 2px; font: 600 13px/1 'EB Garamond', Georgia, serif; color: #f0e0c8; text-shadow: 0 1px 2px #000; }
   .slot.dim { filter: grayscale(.8) brightness(.55); }
-  .slot .cd { position: absolute; inset: 0; background: rgba(0,0,0,.6); transform-origin: bottom; transform: scaleY(0); }
+  .slot .cd { position: absolute; inset: 0; background: rgba(0,0,0,.62); transform-origin: bottom; transform: scaleY(0); pointer-events: none; }
+  .slot.empty { opacity: .45; cursor: default; }
+  .slot.empty svg { display: none; }
+  .slots .gap { width: 6px; }
+  .menu button .badge { display: inline-block; min-width: 16px; margin-left: 5px; padding: 2px 4px; border-radius: 8px; background: #b02a18; color: #fff0d8;
+    font: 600 11px/1 'EB Garamond', Georgia, serif; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 8px 2px rgba(255,120,60,.6); } }
   .level { font: 600 12px/1 'Cinzel', Georgia, serif; color: #c8a878; letter-spacing: .08em; }
   .gold { position: absolute; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); font: 600 15px/1 'Cinzel', Georgia, serif;
     color: #e8c060; text-shadow: 0 1px 2px #000; display: flex; gap: 6px; align-items: center; font-variant-numeric: tabular-nums; }
@@ -99,15 +105,17 @@ const CSS = `
   @media (max-width: 560px) {
     .tracker { top: calc(48px + env(safe-area-inset-top, 0px)); font-size: 13px; }
     .orb { width: 78px; height: 78px; }
-    .slot { width: 42px; height: 42px; }
-    .slot svg { width: 26px; height: 26px; }
+    .slot { width: 36px; height: 36px; }
+    .slot svg { width: 24px; height: 24px; }
+    .slots { gap: 4px; flex-wrap: wrap; justify-content: center; max-width: 220px; }
+    .slots .gap { display: none; }
+    .menu button { padding: 6px 7px; }
     .hud-bottom { gap: 8px; }
     .help { display: none; }
   }
 `;
 
 const ICON_SWORD = `<svg viewBox="0 0 32 32"><path d="M24 4l4 0 0 4-13 13-3-1-1-3z" fill="#c8c0b8" stroke="#3a2a20"/><path d="M8 18l6 6-2 2-2-1-3 3-2-2 3-3-1-2z" fill="#6a4020" stroke="#2a1a10"/></svg>`;
-const ICON_CLEAVE = `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="none" stroke="#e08050" stroke-width="2.5" stroke-dasharray="40 10"/><path d="M16 5l3 4h-6z" fill="#e08050"/><circle cx="16" cy="16" r="3" fill="#c8c0b8"/></svg>`;
 const ICON_POTION = `<svg viewBox="0 0 32 32"><path d="M13 4h6v5l5 6v9a4 4 0 0 1-4 4h-8a4 4 0 0 1-4-4v-9l5-6z" fill="#2a1010" stroke="#8a6a50"/><path d="M9 17h14v7a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3z" fill="#c01810"/><rect x="12" y="2" width="8" height="3" fill="#6a4a30"/></svg>`;
 
 const ICON_PORTAL = `<svg viewBox="0 0 32 32"><ellipse cx="16" cy="16" rx="8" ry="12" fill="#0a1a3a" stroke="#6aa0ff" stroke-width="2"/><path d="M16 8c-4 3-4 13 0 16M16 8c4 3 4 13 0 16" fill="none" stroke="#a8d0ff" stroke-width="1.2" opacity=".8"/><path d="M6 28h20" stroke="#6a5040" stroke-width="2"/></svg>`;
@@ -130,7 +138,10 @@ export class Hud {
   private levelEl: HTMLDivElement;
   private goldEl: HTMLDivElement;
   private potionCount: HTMLSpanElement;
-  private cleaveSlot: HTMLDivElement;
+  private skillSlots: HTMLDivElement[];
+  private skillCds: HTMLDivElement[];
+  private beltKey = '';
+  private skillsBadge: HTMLSpanElement;
   private potionSlot: HTMLDivElement;
   private target: HTMLDivElement;
   private targetName: HTMLDivElement;
@@ -151,7 +162,9 @@ export class Hud {
     this.muteBtn.setAttribute('aria-pressed', String(muted));
   }
   onPotion: () => void = () => {};
-  onCleave: () => void = () => {};
+  /** A belt skill slot was clicked (0 is right click, 1 to 4 are keys 2 to 5). */
+  onSkill: (slot: number) => void = () => {};
+  onSkills: () => void = () => {};
   onRevive: () => void = () => {};
   onPortal: () => void = () => {};
   onJournal: () => void = () => {};
@@ -165,12 +178,12 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click</b> Cleave · <b>1</b> potion · <b>T</b> town portal<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
       <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>
       <div class="journal" hidden></div>
-      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
@@ -178,7 +191,8 @@ export class Hud {
           <div class="xp"><div class="xp-fill"></div></div>
           <div class="slots">
             <div class="slot" title="Strike (left click a foe)"><span class="key">LMB</span>${ICON_SWORD}</div>
-            <div class="slot" data-act="cleave" title="Cleave: spin and hit everything around you (${CLEAVE_COST} mana)"><span class="key">RMB</span>${ICON_CLEAVE}</div>
+            ${BELT_KEYS.map((k, i) => `<div class="slot skill empty" data-skill="${i}"><span class="key">${k}</span><div class="cd"></div></div>`).join('')}
+            <div class="gap"></div>
             <div class="slot" data-act="potion" title="Healing Draught"><span class="key">1</span>${ICON_POTION}<span class="count"></span></div>
             <div class="slot" data-act="portal" title="Town Portal: open a way home, and back again"><span class="key">T</span>${ICON_PORTAL}</div>
           </div>
@@ -197,7 +211,9 @@ export class Hud {
     this.levelEl = q('.level');
     this.goldEl = q('.gold');
     this.potionCount = q('.slot[data-act="potion"] .count');
-    this.cleaveSlot = q('.slot[data-act="cleave"]');
+    this.skillSlots = [...root.querySelectorAll<HTMLDivElement>('.slot.skill')];
+    this.skillCds = this.skillSlots.map((el) => el.querySelector<HTMLDivElement>('.cd')!);
+    this.skillsBadge = q('[data-act="skills"] .badge');
     this.potionSlot = q('.slot[data-act="potion"]');
     this.target = q('.target');
     this.targetName = q('.target-name');
@@ -211,7 +227,8 @@ export class Hud {
     this.muteBtn = q<HTMLButtonElement>('[data-act="mute"]');
     this.muteBtn.addEventListener('click', () => this.onMute());
     this.potionSlot.addEventListener('click', () => this.onPotion());
-    this.cleaveSlot.addEventListener('click', () => this.onCleave());
+    this.skillSlots.forEach((el, i) => el.addEventListener('click', () => this.onSkill(i)));
+    q<HTMLButtonElement>('[data-act="skills"]').addEventListener('click', () => this.onSkills());
     q<HTMLDivElement>('.slot[data-act="portal"]').addEventListener('click', () => this.onPortal());
     q<HTMLButtonElement>('[data-act="quests"]').addEventListener('click', () => this.onJournal());
     const quests = q<HTMLDivElement>('.quests');
@@ -235,7 +252,7 @@ export class Hud {
     setTimeout(() => (this.help.style.opacity = '0.55'), 20000);
   }
 
-  update(dt: number, s: Stats) {
+  update(dt: number, s: Stats, cooldown: (id: SkillId) => number) {
     this.lifeFill.style.height = `${(s.hp / s.maxHp) * 100}%`;
     this.manaFill.style.height = `${(s.mana / s.maxMana) * 100}%`;
     this.lifeText.textContent = `${Math.ceil(s.hp)}`;
@@ -244,12 +261,41 @@ export class Hud {
     this.levelEl.textContent = `Level ${s.level}`;
     this.goldEl.textContent = String(s.gold);
     this.potionCount.textContent = String(s.potions);
-    this.cleaveSlot.classList.toggle('dim', s.mana < CLEAVE_COST);
+    this.updateBelt(s, cooldown);
+    this.skillsBadge.hidden = s.skillPoints <= 0;
+    this.skillsBadge.textContent = String(s.skillPoints);
     this.potionSlot.classList.toggle('dim', s.potions <= 0);
     // Vignette: flashes on hits, pulses when close to death.
     this.hurtLevel = Math.max(0, this.hurtLevel - dt * 2.2);
     const low = s.hp / s.maxHp < 0.3 ? 0.35 + Math.sin(performance.now() / 260) * 0.2 : 0;
     this.hurt.style.opacity = String(Math.min(1, Math.max(this.hurtLevel, low)));
+  }
+
+  private updateBelt(s: Stats, cooldown: (id: SkillId) => number) {
+    const key = s.belt.map((id) => (id ? `${id}${s.rank(id)}` : '-')).join('|');
+    if (key !== this.beltKey) {
+      this.beltKey = key;
+      s.belt.forEach((id, i) => {
+        const el = this.skillSlots[i];
+        el.querySelector('svg')?.remove();
+        el.classList.toggle('empty', !id);
+        if (!id) {
+          el.title = 'Empty: learn an active skill in the skill tree (K)';
+          return;
+        }
+        const d = SKILL[id];
+        const r = s.rank(id);
+        el.insertAdjacentHTML('afterbegin', d.icon);
+        el.title = `${d.name} (rank ${r}): ${d.text(r)} · ${d.cost?.(r) ?? 0} mana${d.cooldown?.(r) ? `, ${d.cooldown(r)}s cooldown` : ''}`;
+      });
+    }
+    s.belt.forEach((id, i) => {
+      const el = this.skillSlots[i];
+      if (!id) return;
+      const d = SKILL[id];
+      el.classList.toggle('dim', s.mana < (d.cost?.(s.rank(id)) ?? 0));
+      this.skillCds[i].style.transform = `scaleY(${cooldown(id)})`;
+    });
   }
 
   flashHurt(amount: number) {

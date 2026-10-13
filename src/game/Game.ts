@@ -17,6 +17,8 @@ import { LootLayer, type GroundItem } from './Loot';
 import { Hud } from './Hud';
 import { Inventory } from './Inventory';
 import { Stats } from './Stats';
+import { SkillTree } from './SkillTree';
+import { SK } from './Skills';
 import { cutaway } from '../engine/cutaway';
 import { noAO } from '../engine/Renderer';
 import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
@@ -57,6 +59,9 @@ export class Game {
   readonly floaters = new FloatingText();
   readonly dialogue = new Dialogue();
   readonly inventory: Inventory;
+  readonly tree: SkillTree;
+  /** Where the cursor last was, to aim skills at. */
+  private pointer = { clientX: -1, clientY: -1 };
   readonly quests = new QuestLog();
   readonly shop: Shop;
   /** The open town portal: one end out in the world, the other in the square. */
@@ -90,7 +95,12 @@ export class Game {
   ) {
     this.player = new Player(hero, this.stats);
     this.inventory = new Inventory(this.stats);
-    this.inventory.onChange = () => this.hud.update(0, this.stats);
+    this.inventory.onChange = () => this.hud.update(0, this.stats, (id) => this.player.cooldownFrac(id));
+    this.tree = new SkillTree(this.stats);
+    this.tree.onLearn = () => {
+      audio.click();
+      this.inventory.render();
+    };
     this.shop = new Shop(this.stats, this.inventory);
     this.shop.onTrade = (kind, item) => {
       if (kind === 'poor') {
@@ -104,7 +114,8 @@ export class Game {
     this.hud.onJournal = () => this.toggleJournal();
     this.hud.onInventory = () => this.inventory.toggle();
     this.hud.onPotion = () => this.player.drinkPotion(this.playerCtx());
-    this.hud.onCleave = () => this.player.cleave(this.playerCtx());
+    this.hud.onSkill = (i) => this.castSlot(i);
+    this.hud.onSkills = () => this.toggleTree();
     this.hud.onRevive = () => this.revive();
     this.hud.onMute = () => audio.toggleMute();
     audio.onMuteChange = (m) => this.hud.setMuted(m);
@@ -283,10 +294,12 @@ export class Game {
     const diff = m.level - s.level;
     const xp = Math.round(m.def.xp * (1 + (m.level - 1) * 0.3) * (m.elite ? 5 : 1) * Math.max(0.2, Math.min(1.5, 1 + diff * 0.15)));
     const levels = s.gainXp(xp);
+    const siphon = SK.siphon(s.rank('siphon'));
+    if (siphon) s.mana = Math.min(s.maxMana, s.mana + siphon);
     if (levels > 0) {
       this.area.effects.pillar(this.player.position.clone());
       audio.levelUp();
-      this.floaters.spawn(`Level ${s.level}`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
+      this.floaters.spawn(`Level ${s.level} · skill point`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
       this.inventory.render();
     }
     // Loot.
@@ -426,7 +439,7 @@ export class Game {
     if (levels > 0) {
       this.area.effects.pillar(this.player.position.clone());
       audio.levelUp();
-      this.floaters.spawn(`Level ${s.level}`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
+      this.floaters.spawn(`Level ${s.level} · skill point`, this.player.position.clone().setY(this.player.position.y + 2.6), 'info', 2.2);
     }
     this.say(`+${r.gold} gold · +${r.xp} experience`, 2);
     this.inventory.render();
@@ -593,6 +606,31 @@ export class Game {
     };
   }
 
+  private toggleTree() {
+    this.tree.toggle();
+    audio.click();
+  }
+
+  private aimAt(hit: { monster: Monster | null; ground: THREE.Vector3 | null }) {
+    const p = hit.monster ? hit.monster.position : hit.ground;
+    if (p) this.player.aim.copy(p);
+  }
+
+  /** Uses the skill on belt slot `i` (0 is right click), aimed at the cursor. */
+  private castSlot(i: number) {
+    if (this.travelling || !this.area || this.player.dead) return;
+    const id = this.stats.belt[i];
+    const above = this.player.position.clone().setY(this.player.position.y + 2.3);
+    if (!id) {
+      this.floaters.spawn('No skill on that key', above, 'info', 1);
+      return;
+    }
+    if (this.pointer.clientX >= 0) this.aimAt(this.pick(this.pointer as PointerEvent));
+    else this.player.aim.copy(this.player.position);
+    const why = this.player.cast(id, this.playerCtx());
+    if (why) this.floaters.spawn(why, above, 'info', 1);
+  }
+
   private bindInput() {
     const dom = this.renderer.renderer.domElement;
     let held = false;
@@ -603,10 +641,10 @@ export class Game {
     dom.addEventListener('pointerdown', (e) => {
       if (this.travelling || !this.area || this.player.dead) return;
       const hit = this.pick(e);
+      this.pointer = { clientX: e.clientX, clientY: e.clientY };
       if (e.button === 2) {
-        // Cleave: turn toward the cursor and spin.
-        if (hit.ground) this.player.faceToward(hit.ground, 1, 100);
-        if (!this.player.cleave(this.playerCtx())) this.floaters.spawn('Not enough mana', this.player.position.clone().setY(this.player.position.y + 2.3), 'info', 1);
+        // Right click: the skill on the first belt slot, aimed at the cursor.
+        this.castSlot(0);
         return;
       }
       if (e.button !== 0) return;
@@ -634,8 +672,10 @@ export class Game {
     });
     dom.addEventListener('pointermove', (e) => {
       if (!this.area || this.travelling) return;
+      this.pointer = { clientX: e.clientX, clientY: e.clientY };
       const hit = this.pick(e);
       this.hovered = hit.monster;
+      if (this.player.busyAiming) this.aimAt(hit);
       dom.style.cursor = hit.monster ? 'crosshair' : hit.npc ? 'pointer' : '';
       if (!held) return;
       const now = performance.now();
@@ -647,6 +687,8 @@ export class Game {
       if (e.repeat) return;
       const k = e.key.toLowerCase();
       if (k === '1') this.player.drinkPotion(this.playerCtx());
+      if (k >= '2' && k <= '5') this.castSlot(Number(k) - 1);
+      if (k === 'k') this.toggleTree();
       if (k === 'i' || k === 'b') {
         this.inventory.toggle();
         audio.click();
@@ -657,6 +699,7 @@ export class Game {
       if (k === 'escape') {
         this.inventory.toggle(false);
         this.hud.showJournal(null);
+        this.tree.toggle(false);
       }
     });
   }
@@ -755,7 +798,7 @@ export class Game {
     const shown = this.hovered?.alive ? this.hovered : this.lastHit && t - this.lastHit.t < 3 && this.lastHit.m.alive ? this.lastHit.m : null;
     this.hud.showTarget(shown ? { name: shown.name, hp: shown.hp, maxHp: shown.maxHp, level: shown.level, elite: shown.elite, kind: shown.def.name } : null);
     this.floaters.update(dt, this.cam.camera);
-    this.hud.update(dt, this.stats);
+    this.hud.update(dt, this.stats, (id) => this.player.cooldownFrac(id));
     if (this.deathTimer > 0) {
       this.deathTimer -= dt;
       if (this.deathTimer <= 0) this.hud.showDeath(true);

@@ -154,7 +154,9 @@ export class BossFx {
 
   /** Advance shared shader clocks. */
   tick(dt: number) {
-    this.time += dt;
+    // Wall clock, so several users ticking in one frame don't speed it up.
+    void dt;
+    this.time = performance.now() / 1000;
     columnMat.uniforms.time.value = this.time;
     novaMat.uniforms.time.value = this.time;
   }
@@ -366,9 +368,12 @@ export class BossFx {
         }
       `,
     });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.3, radius * 2.3).rotateX(-Math.PI / 2), mat);
-    m.position.copy(at).setY(at.y + 0.05);
-    m.rotation.y = Math.random() * 6;
+    // Draped over the floor so slopes and steps don't cut it off.
+    const geo = new THREE.PlaneGeometry(radius * 2.3, radius * 2.3, 16, 16).rotateX(-Math.PI / 2).rotateY(Math.random() * 6);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, this.fx.height(at.x + pos.getX(i), at.z + pos.getZ(i)) - at.y + 0.06);
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(at);
     m.renderOrder = 3;
     this.fx.group.add(m);
     let gone = false;
