@@ -73,6 +73,9 @@ export class Renderer {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The composer renders the scene more than once a frame (AO needs its own
+    // normal pass); draw the shadow map only once, in render().
+    renderer.shadowMap.autoUpdate = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -143,6 +146,7 @@ export class Renderer {
 
   render(time: number) {
     this.grade.uniforms.time.value = time % 100;
+    this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
   }
 }

@@ -105,7 +105,7 @@ if (sceneName === 'test' || sceneName === 'character') {
   const hero = await knight();
   loading.range(0.12, 0.22);
   heroLight(hero.root);
-  addSilhouette(hero.body);
+  addSilhouette(hero.root);
   game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
@@ -126,6 +126,7 @@ if (params.has('ty')) cam.target.y += Number(params.get('ty'));
 // Scripting hooks for automated screenshots.
 (window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
 (window as unknown as { __THREE: typeof THREE }).__THREE = THREE;
+(window as unknown as { __renderer: Renderer }).__renderer = renderer;
 (window as unknown as { __audio: typeof audio }).__audio = audio;
 if (params.has('walk') && game) {
   const [wx, wz] = params.get('walk')!.split(',').map(Number);
@@ -135,6 +136,8 @@ if (params.has('walk') && game) {
 const shadowBasis = new THREE.Matrix4();
 const shadowInv = new THREE.Matrix4();
 const shadowFocus = new THREE.Vector3();
+const footRay = new THREE.Ray();
+const footPt = new THREE.Vector3();
 const ORIGIN = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const clock = new THREE.Clock();
@@ -182,8 +185,27 @@ function frame() {
   cam.update(dt);
   if (game) cam.camera.position.add(game.shake());
   const moon = world.moon;
-  // Keep the shadow frustum centred on what the camera sees, sized to the zoom.
-  const half = Math.ceil(cam.distance * 1.25);
+  // Fit the shadow box to the ground the camera actually sees (with headroom
+  // for tall casters), so nothing off screen is drawn into the shadow map.
+  shadowBasis.lookAt(MOON_OFFSET, ORIGIN, UP);
+  shadowInv.copy(shadowBasis).invert();
+  cam.camera.updateMatrixWorld();
+  const lo = new THREE.Vector2(Infinity, Infinity);
+  const hi = new THREE.Vector2(-Infinity, -Infinity);
+  for (const [nx, ny] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    footRay.origin.copy(cam.camera.position);
+    footRay.direction.set(nx, ny, 0.5).unproject(cam.camera).sub(cam.camera.position).normalize();
+    for (const y of [cam.target.y - 1, cam.target.y + 7]) {
+      // Rays at or above the horizon are clamped to a far point.
+      const dy = footRay.direction.y;
+      const tHit = dy < -0.01 ? (y - footRay.origin.y) / dy : 200;
+      footRay.at(Math.min(Math.max(tHit, 0), 200), footPt).applyMatrix4(shadowInv);
+      lo.min(new THREE.Vector2(footPt.x, footPt.y));
+      hi.max(new THREE.Vector2(footPt.x, footPt.y));
+    }
+  }
+  // Square box in whole 2 m steps, so the projection rarely changes.
+  const half = Math.ceil((Math.max(hi.x - lo.x, hi.y - lo.y) / 2 + 1.5) / 2) * 2;
   const sc = moon.shadow.camera;
   if (sc.right !== half) {
     sc.left = sc.bottom = -half;
@@ -193,11 +215,9 @@ function frame() {
   // Snap the shadow focus to whole shadow-map texels in light space so shadow
   // edges stay put instead of crawling as the camera moves.
   const texel = (2 * half) / moon.shadow.mapSize.x;
-  shadowBasis.lookAt(MOON_OFFSET, ORIGIN, UP);
-  shadowInv.copy(shadowBasis).invert();
   shadowFocus.copy(cam.target).applyMatrix4(shadowInv);
-  shadowFocus.x = Math.round(shadowFocus.x / texel) * texel;
-  shadowFocus.y = Math.round(shadowFocus.y / texel) * texel;
+  shadowFocus.x = Math.round(((lo.x + hi.x) / 2) / texel) * texel;
+  shadowFocus.y = Math.round(((lo.y + hi.y) / 2) / texel) * texel;
   shadowFocus.applyMatrix4(shadowBasis);
   moon.target.position.copy(shadowFocus);
   moon.position.copy(shadowFocus).add(MOON_OFFSET);
