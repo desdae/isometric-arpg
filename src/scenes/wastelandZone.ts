@@ -13,6 +13,7 @@ import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterSpawn } from '../actors/Monster';
 import { installCutaway } from '../engine/cutaway';
+import { mountainRim } from '../procgen/mountains';
 
 // The first combat zone: a blighted wasteland outside the spired walls of the
 // town. A cobbled road leaves the gatehouse and peters out into cracked earth
@@ -110,6 +111,12 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     nav.blockCircle(i, HALF - 1, 2);
     nav.blockCircle(HALF - 1, i, 2);
   }
+
+  // Black mountains seal off the north, south and east, lava glowing through
+  // their cracks and red fog drifting between the peaks. The south faces the
+  // camera, so its foothills climb more gently.
+  const rim = mountainRim({ half: HALF, sides: ['n', 's', 'e'], gentle: ['s'], seed: seed + 400 });
+  scene.add(rim.group);
 
   // The gatehouse towers and the buttresses along the wall are solid; only
   // the gate arch itself is open (walking into it leads back to town).
@@ -459,6 +466,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     extent: HALF,
     update(_dt, t) {
       wind.value = t;
+      rim.update(_dt, t);
       Fire.tick(t);
       fires.forEach((f) => f.update(t));
       if (redGlow) redGlow.intensity = 14 * (0.75 + 0.25 * Math.sin(t * 1.7) * Math.sin(t * 0.63 + 1));
