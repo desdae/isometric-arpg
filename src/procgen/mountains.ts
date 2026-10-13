@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, perlin2, range, smoothstep, type Rng } from './noise';
-import { mistTexture } from './textures';
+import { mistTexture, type PbrSet } from './textures';
 import { installCutaway } from '../engine/cutaway';
 
 // The impassable rim of an outdoor area: jagged black mountains rising from
@@ -20,6 +20,14 @@ export interface RimOptions {
   inset?: number;
   /** Sides that face the camera get lower foothills so the hero stays in view. */
   gentle?: Side[];
+  /** Stone surface wrapped over the rock (triplanar), for grain and bump. */
+  rock?: PbrSet;
+  /** The area's ground, laid on ledges and the foot so the rim grows out of the floor. */
+  earth?: PbrSet;
+  /** Ground texture repeats per metre, to line the foot up with the floor. */
+  earthScale?: number;
+  /** World x/z where the ground's texture origin sits. */
+  earthOrigin?: number;
 }
 
 export interface Rim {
@@ -71,7 +79,7 @@ export function mountainRim(o: RimOptions): Rim {
     return best;
   };
 
-  const mat = rockMaterial(lavaTime);
+  const mat = rockMaterial(lavaTime, o);
 
   // ---- Massif heightfield ------------------------------------------------
   {
@@ -253,21 +261,56 @@ function spire(rng: Rng, h: number, r: number, rings: number): THREE.BufferGeome
 }
 
 /** Near-black faceted rock with thin veins of lava glowing through it. */
-function rockMaterial(time: { value: number }): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x221816, roughness: 0.85, metalness: 0, flatShading: true });
+function rockMaterial(time: { value: number }, o: RimOptions): THREE.MeshStandardMaterial {
+  // Fully rough: with no texture the facets caught a broad sheen and read as plastic.
+  const mat = new THREE.MeshStandardMaterial({ color: 0x2a1c19, roughness: 1, metalness: 0 });
+  const textured = !!(o.rock && o.earth);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.lavaTime = time;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLavaW;').replace(
+    if (textured) {
+      shader.uniforms.rockMap = { value: o.rock!.map };
+      shader.uniforms.rockNormal = { value: o.rock!.normalMap };
+      shader.uniforms.earthMap = { value: o.earth!.map };
+      shader.uniforms.earthNormal = { value: o.earth!.normalMap };
+      shader.uniforms.earthScale = { value: o.earthScale ?? 0.32 };
+      shader.uniforms.earthOrigin = { value: o.earthOrigin ?? 0 };
+    }
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLavaW;\nvarying vec3 vRockN;').replace(
       '#include <worldpos_vertex>',
       `#include <worldpos_vertex>
-      vLavaW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;`,
+      vLavaW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+      vRockN = normalize( mat3( modelMatrix ) * objectNormal );`,
     );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>
+        `${textured ? '#define ROCK_TEX' : ''}
+        #include <common>
         varying vec3 vLavaW;
+        varying vec3 vRockN;
         uniform float lavaTime;
+        #ifdef ROCK_TEX
+          uniform sampler2D rockMap, rockNormal, earthMap, earthNormal;
+          uniform float earthScale, earthOrigin;
+          // Triplanar weights, sharpened so each face takes mostly one projection.
+          vec3 rockBlend( vec3 n ) { vec3 b = pow( abs( n ), vec3( 4.0 ) ); return b / ( b.x + b.y + b.z ); }
+          vec3 rockTri( sampler2D t, vec3 p, vec3 b, float s ) {
+            return texture2D( t, p.zy * s ).rgb * b.x + texture2D( t, p.xz * s ).rgb * b.y + texture2D( t, p.xy * s ).rgb * b.z;
+          }
+          // Triplanar tangent-space normals, whiteout-blended onto the face normal.
+          vec3 rockTriN( sampler2D t, vec3 p, vec3 n, vec3 b, float s, float k ) {
+            vec3 tx = texture2D( t, p.zy * s ).xyz * 2.0 - 1.0;
+            vec3 ty = texture2D( t, p.xz * s ).xyz * 2.0 - 1.0;
+            vec3 tz = texture2D( t, p.xy * s ).xyz * 2.0 - 1.0;
+            tx = vec3( tx.xy * k + n.zy, n.x );
+            ty = vec3( ty.xy * k + n.xz, n.y );
+            tz = vec3( tz.xy * k + n.xy, n.z );
+            return normalize( tx.zyx * b.x + ty.xzy * b.y + tz.xyz * b.z );
+          }
+          float rockEarthW;
+          vec3 rockNW;
+          float rockLum;
+        #endif
         float lavaHash( vec3 p ) { return fract( sin( dot( p, vec3( 127.1, 311.7, 74.7 ) ) ) * 43758.5453 ); }
         float lavaNoise( vec3 p ) {
           vec3 i = floor( p ); vec3 f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
@@ -295,8 +338,44 @@ function rockMaterial(time: { value: number }): THREE.MeshStandardMaterial {
           // Strata and grit so big facets read as stone, not as flat polygons.
           float g = lavaNoise( vLavaW * 1.7 ) * 0.6 + lavaNoise( vLavaW * 5.0 ) * 0.4;
           float strata = 0.85 + 0.15 * sin( vLavaW.y * 2.3 + lavaNoise( vLavaW * 0.3 ) * 6.0 );
-          diffuseColor.rgb *= ( 0.55 + g * 0.8 ) * strata;
+          #ifdef ROCK_TEX
+            vec3 rn = normalize( vRockN );
+            vec3 rb = rockBlend( rn );
+            // Stone grain at two scales, so near faces show chips and far
+            // faces still break into patches instead of flat polygons.
+            // The last mip is the texture's average, so dividing by it keeps
+            // the rock's own tone and only takes the stone's contrast.
+            vec3 stoneAvg = max( texture2D( rockMap, vec2( 0.5 ), 16.0 ).rgb, vec3( 0.01 ) );
+            float stone = dot( rockTri( rockMap, vLavaW, rb, 0.28 ) / stoneAvg, vec3( 0.333 ) );
+            float macro = dot( rockTri( rockMap, vLavaW * 0.16 + 31.0, rb, 0.28 ) / stoneAvg, vec3( 0.333 ) );
+            stone = pow( max( stone, 0.0 ), 1.6 ) * ( 0.6 + 0.4 * macro );
+            vec3 rock = diffuseColor.rgb * stone * ( 0.75 + g * 0.5 ) * strata * 1.5;
+            // Ground creeps up onto ledges and the foot, with a ragged edge.
+            vec3 earth = texture2D( earthMap, ( vLavaW.xz - earthOrigin ) * earthScale ).rgb;
+            float rag = lavaNoise( vLavaW * 0.9 ) - 0.5;
+            float ledge = smoothstep( 0.72, 0.92, rn.y + rag * 0.25 ) * ( 1.0 - smoothstep( 6.0, 22.0, vLavaW.y ) );
+            float foot = 1.0 - smoothstep( 0.6, 2.8, vLavaW.y + rag * 2.0 );
+            rockEarthW = clamp( max( ledge * 0.85, foot ), 0.0, 1.0 );
+            diffuseColor.rgb = mix( rock, earth, rockEarthW );
+            rockLum = stone * ( 0.75 + g * 0.5 ) * strata;
+          #else
+            diffuseColor.rgb *= ( 0.55 + g * 0.8 ) * strata;
+          #endif
         }`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        #ifdef ROCK_TEX
+        {
+          vec3 rn = normalize( vRockN );
+          vec3 rb = rockBlend( rn );
+          vec3 nr = rockTriN( rockNormal, vLavaW, rn, rb, 0.28, 1.3 );
+          vec3 ne = rockTriN( earthNormal, vLavaW, rn, rb, earthScale, 1.0 );
+          rockNW = normalize( mix( nr, ne, rockEarthW ) );
+          normal = normalize( ( viewMatrix * vec4( rockNW, 0.0 ) ).xyz );
+        }
+        #endif`,
       )
       .replace(
         '#include <emissivemap_fragment>',
@@ -320,10 +399,17 @@ function rockMaterial(time: { value: number }): THREE.MeshStandardMaterial {
           }
           // Red glow of the burning sky on faces turned up to it, so the
           // peaks read as dark rock with lit ledges rather than a black hole.
-          vec3 wn = normalize( cross( dFdx( p ), dFdy( p ) ) );
-          float up = clamp( wn.y, 0.0, 1.0 );
           float hgt = smoothstep( 0.0, 30.0, p.y );
-          totalEmissiveRadiance += vec3( 0.075, 0.014, 0.01 ) * ( 0.2 + up * up * 1.2 ) * ( 0.6 + hgt * 0.8 );
+          #ifdef ROCK_TEX
+            // Follow the bumped normal and the stone's grain, or the glow
+            // would paint over the texture as a flat wash.
+            float up = clamp( rockNW.y, 0.0, 1.0 );
+            totalEmissiveRadiance += vec3( 0.075, 0.014, 0.01 ) * ( 0.1 + up * up * 1.3 ) * ( 0.6 + hgt * 0.8 ) * rockLum * 1.3 * ( 1.0 - rockEarthW );
+          #else
+            vec3 wn = normalize( cross( dFdx( p ), dFdy( p ) ) );
+            float up = clamp( wn.y, 0.0, 1.0 );
+            totalEmissiveRadiance += vec3( 0.075, 0.014, 0.01 ) * ( 0.2 + up * up * 1.2 ) * ( 0.6 + hgt * 0.8 );
+          #endif
         }`,
       );
   };

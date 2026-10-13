@@ -117,7 +117,10 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   // Black mountains seal off the north, south and east, lava glowing through
   // their cracks and red fog drifting between the peaks. The south faces the
   // camera, so its foothills climb more gently.
-  const rim = mountainRim({ half: HALF, sides: ['n', 's', 'e'], gentle: ['s'], seed: seed + 400 });
+  const rim = mountainRim({
+    half: HALF, sides: ['n', 's', 'e'], gentle: ['s'], seed: seed + 400,
+    rock: rockSet, earth: earthSet, earthScale: 45 / SIZE, earthOrigin: -HALF,
+  });
   scene.add(rim.group);
 
   // The gatehouse towers and the buttresses along the wall are solid; only
