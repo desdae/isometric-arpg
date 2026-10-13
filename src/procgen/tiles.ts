@@ -4,8 +4,7 @@ import * as THREE from 'three';
  * Splits a big scatter of instances (grass across a whole map) into one
  * InstancedMesh per square tile, so the camera only draws the tiles it can
  * see. Each tile uses one of the shape variants; random turns and sizes hide
- * the repeat. Tiles are left out of the AO pass, where they would only add
- * fine noise at half resolution.
+ * the repeat.
  */
 export function tiledInstances(
   scene: THREE.Object3D,
@@ -31,7 +30,6 @@ export function tiledInstances(
     im.instanceMatrix.needsUpdate = true;
     im.computeBoundingSphere();
     im.receiveShadow = true;
-    im.userData.noAO = true;
     scene.add(im);
     out.push(im);
   }

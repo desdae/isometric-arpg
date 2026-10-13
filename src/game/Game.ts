@@ -20,7 +20,6 @@ import { Stats } from './Stats';
 import { SkillTree } from './SkillTree';
 import { SK } from './Skills';
 import { cutaway } from '../engine/cutaway';
-import { noAO } from '../engine/Renderer';
 import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
 import { QuestLog, type Quest } from './Quests';
 import { Shop } from './Shop';
@@ -149,7 +148,18 @@ export class Game {
     await this.enter(name, entry, false);
     // Build the other area in the background so the first trip is quick.
     const other: AreaName = name === 'town' ? 'zone' : 'town';
-    setTimeout(() => void this.load(other), 1500);
+    this.preloadSoon(other, 1500);
+  }
+
+  /** Background building pauses while this is false (the benchmark holds it off so builds don't skew the run). */
+  private preloadOn = true;
+  private preloadQueue: AreaName[] = [];
+  private preloadSoon(name: AreaName, ms: number) {
+    setTimeout(() => (this.preloadOn ? void this.load(name) : this.preloadQueue.push(name)), ms);
+  }
+  set preload(on: boolean) {
+    this.preloadOn = on;
+    if (on) for (const n of this.preloadQueue.splice(0)) void this.load(n);
   }
 
   private load(name: AreaName): Promise<AreaState> {
@@ -166,16 +176,19 @@ export class Game {
         ? new Mist(Math.min(world.extent, 60), world.heightAt, 90, new THREE.Color(0.42, 0.05, 0.035), 13)
         : new Mist(Math.min(world.extent, 60), world.heightAt, 110);
       scene.add(mist.group);
-      noAO.add(mist.group);
       const effects = new Effects(world.heightAt);
       scene.add(effects.group);
-      noAO.add(effects.group);
       const loot = new LootLayer(world.heightAt, (g) => this.pickUp(g), world.nav);
       loot.setVisible(false);
       scene.add(loot.group);
-      noAO.add(loot.group);
       await loading.step('Summoning the monsters', 0.97);
-      const monsters = (world.monsterSpawns ?? []).map((s) => createMonster(s, this.monsterMats, scene));
+      // A few monsters at a time, so building an area in the background
+      // doesn't freeze the one being played.
+      const monsters: Monster[] = [];
+      for (const s of world.monsterSpawns ?? []) {
+        monsters.push(createMonster(s, this.monsterMats, scene));
+        if (monsters.length % 4 === 0) await loading.step('Summoning the monsters', 0.97);
+      }
       const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
       const useLabels = (world.script?.interactables ?? []).map((it) => ({
         it,
@@ -281,7 +294,7 @@ export class Game {
     // Stepping back through from town closes the portal behind you.
     if (entry === 'portal' && name !== 'town') this.closePortal();
     // Dig the crypt while the hero is out in the fields, so going down is quick.
-    if (name === 'zone') setTimeout(() => void this.load('dungeon'), 4000);
+    if (name === 'zone') this.preloadSoon('dungeon', 4000);
     this.travelling = false;
   }
 
@@ -558,8 +571,6 @@ export class Game {
       const home = new PortalFx(homePos);
       a.world.scene.add(there.group);
       tw.scene.add(home.group);
-      noAO.add(there.group);
-      noAO.add(home.group);
       const exitThere: Exit = { pos, radius: 0.7, to: 'town', entry: 'portal', label: 'Town Portal' };
       const exitHome: Exit = { pos: homePos, radius: 0.7, to: a.name, entry: 'portal', label: `Portal to ${AREA_TITLES[a.name][0]}` };
       (a.world.exits ??= []).push(exitThere);
@@ -582,8 +593,6 @@ export class Game {
     this.portal = null;
     pt.there.dispose();
     pt.home.dispose();
-    noAO.delete(pt.there.group);
-    noAO.delete(pt.home.group);
     const there = this.areas.get(pt.area)?.world;
     const town = this.areas.get('town')?.world;
     if (there?.exits) there.exits.splice(there.exits.indexOf(pt.exitThere) >>> 0, 1);

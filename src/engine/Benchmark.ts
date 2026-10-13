@@ -69,6 +69,7 @@ export class Benchmark {
     document.querySelector<HTMLElement>('.help')?.style.setProperty('display', 'none');
     const p = game.player;
     p.takeDamage = () => 0;
+    game.preload = false;
     // Switches apply before the first frame, so shaders compile only once.
     if (flags.has('noao')) r.ao.enabled = false;
     if (flags.has('nobloom')) r.bloom.enabled = false;
@@ -111,6 +112,7 @@ export class Benchmark {
   private finish() {
     this.done = true;
     this.bar.remove();
+    this.game.preload = true;
     const n = this.frames.length;
     const total = this.frames.reduce((a, b) => a + b, 0);
     const sorted = [...this.frames].sort((a, b) => a - b);
