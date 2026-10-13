@@ -199,8 +199,8 @@ export class Fire {
       const card = new THREE.Mesh(geo, ghost ? ghostFlameMaterial : flameMaterial);
       card.scale.set(size * (1 - i * 0.18), size * (1 - i * 0.12), 1);
       card.position.set((i - 1) * 0.08 * size, 0, (i % 2) * 0.05 * size);
+      // The card turns about its own upright axis, so its plain bounds still hold it.
       card.renderOrder = 20;
-      card.frustumCulled = false;
       this.group.add(card);
     }
 
@@ -219,14 +219,17 @@ export class Fire {
     eg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     eg.setAttribute('rnd', new THREE.BufferAttribute(rnd, 3));
     const embers = new THREE.Points(eg, ghost ? ghostEmberMaterial : emberMaterial);
-    embers.frustumCulled = false;
+    // Embers rise up to 4.5 m and drift sideways in the shader; bound that column.
+    eg.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3 * size + 2.25, 0), 2.7 + 0.3 * size);
     embers.renderOrder = 21;
     this.group.add(embers);
 
     this.baseIntensity = lightIntensity;
     this.light = new THREE.PointLight(0xff7a2a, lightIntensity, lightRange, 2);
     this.light.position.y = 0.7 * size;
-    this.group.add(this.light);
+    // Zero intensity means the scene lights this flame from a LightPool, so
+    // the fire adds no light of its own (every light costs every pixel).
+    if (lightIntensity > 0) this.group.add(this.light);
   }
 
   update(t: number) {

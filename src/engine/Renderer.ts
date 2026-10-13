@@ -47,6 +47,16 @@ const GradeShader = {
   `,
 };
 
+// three shades every point light at every pixel, even where it is out of
+// range. Skip the lighting maths for a light that cannot reach this pixel;
+// neighbouring pixels agree, so the branch is nearly free on the GPU.
+{
+  const chunk = THREE.ShaderChunk.lights_fragment_begin;
+  const call = 'RE_Direct( directLight, geometryPosition';
+  const at = chunk.indexOf(call, chunk.indexOf('NUM_POINT_LIGHTS > 0'));
+  if (at > 0) THREE.ShaderChunk.lights_fragment_begin = chunk.slice(0, at) + 'if ( directLight.visible ) ' + chunk.slice(at);
+}
+
 /**
  * Objects kept out of the ambient-occlusion pass. GTAO renders the scene's
  * depth and normals with an override material, so see-through things (mist
@@ -88,10 +98,17 @@ export class Renderer {
     this.renderPass = new RenderPass(scene, camera);
     composer.addPass(this.renderPass);
 
-    this.ao = new GTAOPass(scene, camera, size.x, size.y);
+    // AO is soft and low frequency: half resolution looks the same at a quarter of the cost.
+    this.ao = new GTAOPass(scene, camera, Math.ceil(size.x / 2), Math.ceil(size.y / 2));
+    const aoSize = this.ao.setSize.bind(this.ao);
+    this.ao.setSize = (w: number, h: number) => aoSize(Math.ceil(w / 2), Math.ceil(h / 2));
     this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
     this.ao.blendIntensity = 0.85;
     composer.addPass(this.ao);
+    // GTAO walks the whole scene every frame to hide points and lines; aoHidden()
+    // below already hides points, and the game draws no lines.
+    this.ao.overrideVisibility = () => {};
+    this.ao.restoreVisibility = () => {};
     // Hide transparent and registered objects while the AO pass draws depth.
     const aoRender = this.ao.render.bind(this.ao);
     this.ao.render = (...args: Parameters<GTAOPass['render']>) => {
@@ -123,7 +140,7 @@ export class Renderer {
       scene.traverse((o) => {
         const m = o as THREE.Mesh;
         const mat = m.material as THREE.Material | undefined;
-        if ((o as THREE.Points).isPoints || (mat && !Array.isArray(mat) && mat.transparent)) list!.push(o);
+        if ((o as THREE.Points).isPoints || o.userData.noAO || (mat && !Array.isArray(mat) && mat.transparent)) list!.push(o);
       });
       this.aoCache.set(scene, list);
     }
@@ -147,6 +164,11 @@ export class Renderer {
   render(time: number) {
     this.grade.uniforms.time.value = time % 100;
     this.renderer.shadowMap.needsUpdate = true;
+    // The composer renders the scene twice (colour, then AO normals) and each
+    // render would walk the whole scene graph to update matrices. Do it once.
+    const scene = this.renderPass.scene;
+    scene.matrixWorldAutoUpdate = false;
+    scene.updateMatrixWorld();
     this.composer.render();
   }
 }

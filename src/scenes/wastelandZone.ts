@@ -9,11 +9,13 @@ import { MeshBuilder, xf } from '../procgen/builder';
 import { curtainWall, gatehouse, pinnacle, pointedArch, spireTower } from '../procgen/gothic';
 import { bones, brazier, brokenWagon, grassTuft, stakes } from '../procgen/props';
 import { Fire } from '../engine/Fire';
+import { LightPool } from '../engine/LightPool';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterSpawn } from '../actors/Monster';
 import { installCutaway } from '../engine/cutaway';
 import { mountainRim } from '../procgen/mountains';
+import { tiledInstances } from '../procgen/tiles';
 
 // The first combat zone: a blighted wasteland outside the spired walls of the
 // town. A cobbled road leaves the gatehouse and peters out into cracked earth
@@ -178,18 +180,18 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   scene.add(skyline.build(mats, false));
 
   // ---- Fires -----------------------------------------------------------
-  const fires: Fire[] = [];
-  let redGlow: THREE.PointLight | null = null;
+  // A handful of real lights handed to the braziers nearest the hero.
+  const firePool = new LightPool(scene, 6, 0xff7a2a);
   const brazierB = brazier();
   const placeBrazier = (x: number, z: number) => {
     const y = height(x, z);
     const g = brazierB.build(mats);
     g.position.set(x, y, z);
     scene.add(g);
-    const f = new Fire(0.9, 35, 13);
+    const f = new Fire(0.9, 0, 1);
     f.group.position.set(x, y + 1.15, z);
     scene.add(f.group);
-    fires.push(f);
+    firePool.add(new THREE.Vector3(x, y + 1.78, z), 35, 13, 1);
     nav.blockCircle(x, z, 0.6);
   };
   placeBrazier(WALL_X + 4, 5);
@@ -259,10 +261,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     nav.unblockRect(dIn.x, dIn.z, 0.6, 0.6);
     nav.unblockRect(cryptDoor.x, cryptDoor.z, 0.8, 0.8);
     // Red light welling up out of the stairwell.
-    const glowL = new THREE.PointLight(0xff2a10, 14, 9, 2);
-    glowL.position.copy(dIn).setY(cy + 1.4);
-    scene.add(glowL);
-    redGlow = glowL;
+    firePool.add(dIn.clone().setY(cy + 1.4), 14, 9, 0.3, 0xff2a10);
     for (const s of [-1, 1]) {
       const bp = crypt.clone().add(new THREE.Vector3(Math.cos(cryptYaw) * s * 2.6 + Math.sin(cryptYaw) * (D / 2 + 1.8), 0, -Math.sin(cryptYaw) * s * 2.6 + Math.cos(cryptYaw) * (D / 2 + 1.8)));
       placeBrazier(bp.x, bp.z);
@@ -354,32 +353,18 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   };
   const grassGeos = Array.from({ length: 4 }, () => grassTuft(rng));
   const grassCount = 16000;
-  const grassMeshes = grassGeos.map((g) => {
-    const im = new THREE.InstancedMesh(g, grassMat, Math.ceil(grassCount / grassGeos.length));
-    im.count = 0;
-    im.receiveShadow = true;
-    scene.add(im);
-    return im;
-  });
   {
-    const m = new THREE.Matrix4();
-    let placed = 0;
-    for (let tries = 0; placed < grassCount && tries < grassCount * 6; tries++) {
+    const xforms: THREE.Matrix4[] = [];
+    for (let tries = 0; xforms.length < grassCount && tries < grassCount * 6; tries++) {
       const x = range(rng, WALL_X + 3, HALF - 2);
       const z = range(rng, -HALF + 2, HALF - 2);
       // Clumped: grass grows in patches, thinning near the road.
       const patch = fbm2(x * 0.06, z * 0.06, 3, seed + 200);
       if (patch < 0.05 || roadDist(x, z) < 2.6 || rng() > smoothstep(0.05, 0.4, patch)) continue;
-      const im = grassMeshes[placed % grassMeshes.length];
       const s = range(rng, 0.7, 1.5);
-      m.compose(new THREE.Vector3(x, height(x, z), z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28), new THREE.Vector3(s, s, s));
-      im.setMatrixAt(im.count++, m);
-      placed++;
+      xforms.push(new THREE.Matrix4().compose(new THREE.Vector3(x, height(x, z), z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28), new THREE.Vector3(s, s, s)));
     }
-    grassMeshes.forEach((im) => {
-      im.instanceMatrix.needsUpdate = true;
-      im.computeBoundingSphere();
-    });
+    tiledInstances(scene, grassGeos, grassMat, xforms);
   }
 
   await loading.step('Raising the dead', 0.92);
@@ -468,8 +453,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       wind.value = t;
       rim.update(_dt, t);
       Fire.tick(t);
-      fires.forEach((f) => f.update(t));
-      if (redGlow) redGlow.intensity = 14 * (0.75 + 0.25 * Math.sin(t * 1.7) * Math.sin(t * 0.63 + 1));
+      firePool.update(t);
     },
   };
 }

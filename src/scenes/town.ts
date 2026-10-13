@@ -4,6 +4,7 @@ import { bakeSurfaces, leadedGlassTextures, pbrMaterial } from '../procgen/textu
 import { maskTexture, splatMaterial } from '../procgen/splat';
 import { fbm2, mulberry32, range, smoothstep } from '../procgen/noise';
 import { barrel, brokenFence, crate, deadTree, lanternPost, type Lantern } from '../procgen/geometry';
+import { tiledInstances } from '../procgen/tiles';
 import { terrainMesh, type HeightFn } from '../procgen/terrain';
 import { MeshBuilder, xf } from '../procgen/builder';
 import { curtainWall, gatehouse, spireTower } from '../procgen/gothic';
@@ -59,9 +60,9 @@ export async function buildTown(seed = 31): Promise<World> {
     installFlicker(m);
     return m;
   };
-  // Hearth and lamp flames inside lit houses: a few real lights handed to the
-  // nearest flames as the hero walks the streets.
-  const houseLights = new LightPool(scene, 6, 0xff8a3a);
+  // Hearths, lamps, lanterns, braziers and embers: a few real lights handed
+  // to the nearest flames as the hero walks the streets.
+  const houseLights = new LightPool(scene, 10, 0xff8a3a);
   const mats: Record<string, THREE.Material> = {
     stone: pbrMaterial(stoneSet, 1),
     trim: pbrMaterial(trimSet, 1, { color: 0x9a9090 }),
@@ -149,7 +150,6 @@ export async function buildTown(seed = 31): Promise<World> {
 
   const nav = new NavGrid(-HALF, -HALF, SIZE, SIZE, 0.5);
   const lights: { update: (t: number) => void }[] = [];
-  const fires: Fire[] = [];
 
   // Wall ring, gate and cathedral positions (built further down, but houses
   // need to keep clear of them).
@@ -179,17 +179,13 @@ export async function buildTown(seed = 31): Promise<World> {
       smoke.points.rotation.y = faceYaw;
       scene.add(smoke.points);
       // Low red glow from the embers, breathing slowly.
-      const glowLight = new THREE.PointLight(0xff4a14, 14, 9, 2);
-      glowLight.position.set(x, y + 0.6, z);
-      scene.add(glowLight);
-      const phase = rng() * 100;
-      lights.push({ update: (t) => (glowLight.intensity = 14 * (0.7 + 0.3 * perlin2(t * 1.3 + phase, phase) + 0.08 * perlin2(t * 9, phase))) });
+      houseLights.add(new THREE.Vector3(x, y + 0.6, z), 14, 9, 0.3, 0xff4a14);
       // Sometimes a last tongue of flame still licks at the timbers.
       if (rng() < 0.6) {
-        const f = new Fire(0.5, 8, 6);
+        const f = new Fire(0.5, 0, 1);
         f.group.position.set(x + range(rng, -w / 4, w / 4), y + 0.15, z + range(rng, -d / 4, d / 4));
         scene.add(f.group);
-        fires.push(f);
+        houseLights.add(f.group.position.clone().setY(f.group.position.y + 0.35), 8, 6, 1);
       }
     }
     houses.addBuilder(b, xf(x, height(x, z), z, faceYaw));
@@ -354,10 +350,10 @@ export async function buildTown(seed = 31): Promise<World> {
   const brazierB = brazier();
   const placeBrazier = (x: number, z: number) => {
     place(brazierB, x, z, 0);
-    const f = new Fire(0.9, 35, 13);
+    const f = new Fire(0.9, 0, 1);
     f.group.position.set(x, height(x, z) + 1.15, z);
     scene.add(f.group);
-    fires.push(f);
+    houseLights.add(f.group.position.clone().setY(f.group.position.y + 0.63), 35, 13, 1);
     nav.blockCircle(x, z, 0.6);
   };
   placeBrazier(4.5, 4.5);
@@ -381,6 +377,9 @@ export async function buildTown(seed = 31): Promise<World> {
       l.group.position.set(x, height(x, z), z);
       l.group.rotation.y = Math.atan2(-n.x * side, -n.y * side) - Math.PI / 2;
       scene.add(l.group);
+      l.group.remove(l.light);
+      l.group.updateMatrixWorld(true);
+      houseLights.add(l.light.getWorldPosition(new THREE.Vector3()), 30, 10, 0.4);
       lanterns.push(l);
       nav.blockCircle(x, z, 0.3);
       side = -side;
@@ -390,7 +389,6 @@ export async function buildTown(seed = 31): Promise<World> {
     update: (t) =>
       lanterns.forEach((l, i) => {
         const f = 0.8 + 0.2 * perlin2(t * 6, i * 10) + 0.08 * perlin2(t * 23, i * 7);
-        l.light.intensity = 30 * f;
         l.flame.scale.set(1, 1.5 * (0.9 + 0.2 * f), 1);
       }),
   });
@@ -434,23 +432,19 @@ export async function buildTown(seed = 31): Promise<World> {
 
   // Sparse dead grass in yards.
   const grassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.2, 0.15, 0.08), vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
-  const tuft = grassTuft(rng);
-  const grass = new THREE.InstancedMesh(tuft, grassMat, 5000);
-  grass.count = 0;
   {
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < 20000 && grass.count < 5000; i++) {
+    // The extra tuft shapes draw from their own stream so the rest of the town keeps its layout.
+    const tuftRng = mulberry32(seed + 77);
+    const tufts = [grassTuft(rng), grassTuft(tuftRng), grassTuft(tuftRng)];
+    const xforms: THREE.Matrix4[] = [];
+    for (let i = 0; i < 20000 && xforms.length < 5000; i++) {
       const x = range(rng, -HALF + 4, HALF - 4);
       const z = range(rng, -HALF + 4, HALF - 4);
       if (paved(x, z) > 0.1 || !nav.walkable(x, z) || fbm2(x * 0.08, z * 0.08, 3, seed + 200) < 0.05) continue;
       const s = range(rng, 0.6, 1.3);
-      m.compose(new THREE.Vector3(x, height(x, z), z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28), new THREE.Vector3(s, s, s));
-      grass.setMatrixAt(grass.count++, m);
+      xforms.push(new THREE.Matrix4().compose(new THREE.Vector3(x, height(x, z), z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6.28), new THREE.Vector3(s, s, s)));
     }
-    grass.instanceMatrix.needsUpdate = true;
-    grass.computeBoundingSphere();
-    grass.receiveShadow = true;
-    scene.add(grass);
+    tiledInstances(scene, tufts, grassMat, xforms);
   }
 
   await loading.step('Waking the townsfolk', 0.88);
@@ -567,9 +561,10 @@ export async function buildTown(seed = 31): Promise<World> {
     npcs.push(new Npc(d, c, nav, height, scene));
   }
   // Ilja's lantern actually gives light.
-  const watchLight = new THREE.PointLight(0xffa060, 8, 7, 1.8);
-  watchLight.position.set(0.3, 1.2, 0.4);
-  npcs[5].character.root.add(watchLight);
+  const watchLamp = new THREE.Object3D();
+  watchLamp.position.set(0.3, 1.2, 0.4);
+  npcs[5].character.root.add(watchLamp);
+  const watchLight = houseLights.add(new THREE.Vector3(), 8, 7, 0, 0xffa060);
 
   const spawnPt = streetAt(streets[0], SQUARE_R + 4).p;
   return {
@@ -593,9 +588,9 @@ export async function buildTown(seed = 31): Promise<World> {
     extent: HALF,
     update(_dt, t) {
       Fire.tick(t);
-      fires.forEach((f) => f.update(t));
       lights.forEach((l) => l.update(t));
       flickerTime.value = t;
+      watchLamp.getWorldPosition(watchLight.pos);
       houseLights.update(t);
     },
   };

@@ -633,7 +633,6 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   const fires: Fire[] = [];
   const addFire = (pos: THREE.Vector3, size: number, intensity: number, rangeM: number) => {
     const f = new Fire(size, 0, 1);
-    f.group.remove(f.light);
     f.group.position.copy(pos);
     scene.add(f.group);
     fires.push(f);
@@ -869,8 +868,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     const fp = new THREE.Vector3(p.x, 1.43, p.z);
     if (theme.ghost) {
       const f = new Fire(0.85, 0, 1, true);
-      f.group.remove(f.light);
-      f.group.position.copy(fp);
+        f.group.position.copy(fp);
       scene.add(f.group);
       fires.push(f);
       vaultPool.add(fp.clone().setY(1.8), 22, 12, 0.6);

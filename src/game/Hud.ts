@@ -128,6 +128,17 @@ export interface JournalEntry {
   reward: string;
 }
 
+/** Last value written per element and property, so per-frame HUD updates only touch the DOM when something changed. */
+const written = new WeakMap<HTMLElement, Record<string, string>>();
+function put(el: HTMLElement, prop: string, value: string) {
+  let w = written.get(el);
+  if (!w) written.set(el, (w = {}));
+  if (w[prop] === value) return;
+  w[prop] = value;
+  if (prop === 'text') el.textContent = value;
+  else el.style.setProperty(prop, value);
+}
+
 export class Hud {
   readonly root: HTMLDivElement;
   private lifeFill: HTMLDivElement;
@@ -253,22 +264,22 @@ export class Hud {
   }
 
   update(dt: number, s: Stats, cooldown: (id: SkillId) => number) {
-    this.lifeFill.style.height = `${(s.hp / s.maxHp) * 100}%`;
-    this.manaFill.style.height = `${(s.mana / s.maxMana) * 100}%`;
-    this.lifeText.textContent = `${Math.ceil(s.hp)}`;
-    this.manaText.textContent = `${Math.floor(s.mana)}`;
-    this.xpFill.style.width = `${(s.xp / s.xpToNext()) * 100}%`;
-    this.levelEl.textContent = `Level ${s.level}`;
-    this.goldEl.textContent = String(s.gold);
-    this.potionCount.textContent = String(s.potions);
+    put(this.lifeFill, 'height', `${((s.hp / s.maxHp) * 100).toFixed(1)}%`);
+    put(this.manaFill, 'height', `${((s.mana / s.maxMana) * 100).toFixed(1)}%`);
+    put(this.lifeText, 'text', `${Math.ceil(s.hp)}`);
+    put(this.manaText, 'text', `${Math.floor(s.mana)}`);
+    put(this.xpFill, 'width', `${(s.xp / s.xpToNext()) * 100}%`);
+    put(this.levelEl, 'text', `Level ${s.level}`);
+    put(this.goldEl, 'text', String(s.gold));
+    put(this.potionCount, 'text', String(s.potions));
     this.updateBelt(s, cooldown);
     this.skillsBadge.hidden = s.skillPoints <= 0;
-    this.skillsBadge.textContent = String(s.skillPoints);
+    put(this.skillsBadge, 'text', String(s.skillPoints));
     this.potionSlot.classList.toggle('dim', s.potions <= 0);
     // Vignette: flashes on hits, pulses when close to death.
     this.hurtLevel = Math.max(0, this.hurtLevel - dt * 2.2);
     const low = s.hp / s.maxHp < 0.3 ? 0.35 + Math.sin(performance.now() / 260) * 0.2 : 0;
-    this.hurt.style.opacity = String(Math.min(1, Math.max(this.hurtLevel, low)));
+    put(this.hurt, 'opacity', Math.min(1, Math.max(this.hurtLevel, low)).toFixed(2));
   }
 
   private updateBelt(s: Stats, cooldown: (id: SkillId) => number) {
@@ -294,7 +305,7 @@ export class Hud {
       if (!id) return;
       const d = SKILL[id];
       el.classList.toggle('dim', s.mana < (d.cost?.(s.rank(id)) ?? 0));
-      this.skillCds[i].style.transform = `scaleY(${cooldown(id)})`;
+      put(this.skillCds[i], 'transform', `scaleY(${cooldown(id).toFixed(3)})`);
     });
   }
 
@@ -304,14 +315,14 @@ export class Hud {
 
   showTarget(t: { name: string; hp: number; maxHp: number; level: number; elite: boolean; kind: string } | null) {
     if (!t) {
-      this.target.style.opacity = '0';
+      put(this.target, 'opacity', '0');
       return;
     }
-    this.target.style.opacity = '1';
-    this.targetName.textContent = t.name;
+    put(this.target, 'opacity', '1');
+    put(this.targetName, 'text', t.name);
     this.targetName.classList.toggle('elite', t.elite);
-    this.targetFill.style.width = `${Math.max(0, t.hp / t.maxHp) * 100}%`;
-    this.targetSub.textContent = t.elite ? `Champion ${t.kind} · Level ${t.level}` : `Level ${t.level}`;
+    put(this.targetFill, 'width', `${Math.max(0, t.hp / t.maxHp) * 100}%`);
+    put(this.targetSub, 'text', t.elite ? `Champion ${t.kind} · Level ${t.level}` : `Level ${t.level}`);
   }
 
   private objKey = '';

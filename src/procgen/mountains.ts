@@ -305,16 +305,19 @@ function rockMaterial(time: { value: number }): THREE.MeshStandardMaterial {
           vec3 p = vLavaW;
           // Cracks run along the borders of 3D Voronoi cells, warped a
           // little so they wander like split stone.
-          vec3 q = p * 0.42 + vec3( lavaNoise( p * 0.8 ), lavaNoise( p * 0.8 + 5.0 ), lavaNoise( p * 0.8 + 9.0 ) ) * 0.6;
-          float v = lavaEdge( q );
-          float n = lavaNoise( p * 0.5 );
-          float crack = 1.0 - smoothstep( 0.008, 0.03, v );
-          float halo = ( 1.0 - smoothstep( 0.0, 0.15, v ) ) * 0.04;
+          // Most rock has no cracks; skip the costly Voronoi search there.
           float patchy = smoothstep( 0.6, 0.9, lavaNoise( p * 0.11 + 11.0 ) );
           float low = 1.0 - smoothstep( 1.0, 14.0, p.y );
-          float glow = ( crack + halo ) * clamp( patchy * ( 0.5 + low ), 0.0, 1.0 );
-          float pulse = 0.7 + 0.3 * sin( lavaTime * 1.1 + n * 9.0 );
-          totalEmissiveRadiance += vec3( 2.1, 0.36, 0.06 ) * glow * pulse;
+          float mask = clamp( patchy * ( 0.5 + low ), 0.0, 1.0 );
+          if ( mask > 0.0 ) {
+            vec3 q = p * 0.42 + vec3( lavaNoise( p * 0.8 ), lavaNoise( p * 0.8 + 5.0 ), lavaNoise( p * 0.8 + 9.0 ) ) * 0.6;
+            float v = lavaEdge( q );
+            float n = lavaNoise( p * 0.5 );
+            float crack = 1.0 - smoothstep( 0.008, 0.03, v );
+            float halo = ( 1.0 - smoothstep( 0.0, 0.15, v ) ) * 0.04;
+            float pulse = 0.7 + 0.3 * sin( lavaTime * 1.1 + n * 9.0 );
+            totalEmissiveRadiance += vec3( 2.1, 0.36, 0.06 ) * ( crack + halo ) * mask * pulse;
+          }
           // Red glow of the burning sky on faces turned up to it, so the
           // peaks read as dark rock with lit ledges rather than a black hole.
           vec3 wn = normalize( cross( dFdx( p ), dFdy( p ) ) );

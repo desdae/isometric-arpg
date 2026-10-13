@@ -14,14 +14,18 @@ export interface Emitter {
   phase: number;
   /** 0 = steady oil flame, 1 = lively open fire. */
   lively: number;
+  /** Light colour, when it differs from the pool's. */
+  color?: THREE.Color;
 }
 
 export class LightPool {
   readonly emitters: Emitter[] = [];
   private lights: THREE.PointLight[] = [];
   private order: { e: Emitter; d: number }[] = [];
+  private color: THREE.Color;
 
   constructor(scene: THREE.Scene, count: number, color: THREE.ColorRepresentation = 0xff7a30) {
+    this.color = new THREE.Color(color);
     for (let i = 0; i < count; i++) {
       const l = new THREE.PointLight(color, 0, 8, 2);
       scene.add(l);
@@ -29,8 +33,8 @@ export class LightPool {
     }
   }
 
-  add(pos: THREE.Vector3, intensity: number, range: number, lively = 1): Emitter {
-    const e = { pos: pos.clone(), intensity, range, phase: Math.random() * 100, lively };
+  add(pos: THREE.Vector3, intensity: number, range: number, lively = 1, color?: THREE.ColorRepresentation): Emitter {
+    const e: Emitter = { pos: pos.clone(), intensity, range, phase: Math.random() * 100, lively, color: color === undefined ? undefined : new THREE.Color(color) };
     this.emitters.push(e);
     return e;
   }
@@ -56,6 +60,7 @@ export class LightPool {
       const k = e.lively;
       const flick = 0.82 + (0.12 + 0.1 * k) * perlin2(t * (2.5 + 4 * k) + e.phase, e.phase) + 0.06 * k * perlin2(t * 19, e.phase * 3);
       l.position.copy(e.pos);
+      l.color.copy(e.color ?? this.color);
       l.distance = e.range;
       l.intensity = e.intensity * flick * fade;
     }

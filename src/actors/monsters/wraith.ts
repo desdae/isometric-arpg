@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gridNormals } from '../cloth';
 import { joint, lathe, mesh } from '../Character';
 import { bakeRig } from '../bake';
 import { range, type Rng } from '../../procgen/noise';
@@ -142,7 +143,7 @@ class Wraith implements Rig {
         p.setXYZ(k, x + wave * 0.6, y + f * f * this.lean * 0.18, -wave - f * f * this.lean * 0.45);
       }
       p.needsUpdate = true;
-      r.geo.computeVertexNormals();
+      gridNormals(r.geo, 1, 10);
     }
     if (this.action) {
       const a = this.action;

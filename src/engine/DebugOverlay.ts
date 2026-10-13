@@ -22,6 +22,9 @@ const CSS = `
   .dbg h5 { margin: 7px 0 0; font: 700 10px/1 ui-monospace, Menlo, monospace; letter-spacing: .12em; color: #8fb8d0; text-transform: uppercase;
     border-top: 1px solid rgba(120,160,190,.2); padding-top: 5px; grid-column: 1 / -1; }
   .dbg .warn { color: #ffb060; }
+  .dbg .tg { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; pointer-events: auto; }
+  .dbg .tg button { font: 11px/1 ui-monospace, Menlo, monospace; color: #cfe0ea; background: #13202a; border: 1px solid #3a5566; padding: 4px 6px; cursor: pointer; }
+  .dbg .tg button.off { color: #6d7a82; background: #0b1014; text-decoration: line-through; }
   .dbg .bad { color: #ff6a5a; }
 `;
 
@@ -63,6 +66,9 @@ export class DebugOverlay {
   private timer: TimerExt | null;
   private queries: { q: WebGLQuery; slot: number }[] = [];
   private openQuery: WebGLQuery | null = null;
+  private lastScene: THREE.Scene | null = null;
+  private finishN = 0;
+  private gpuWait = -1;
 
   constructor(
     private r: Renderer,
@@ -74,9 +80,10 @@ export class DebugOverlay {
     this.el = document.createElement('div');
     this.el.className = 'dbg';
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="hd"></div><canvas data-c="fps"></canvas><div class="lg"><span><i style="background:#6fe08a"></i>FPS (60 line)</span><span>${N / 4}s</span></div><canvas data-c="ms"></canvas><div class="lg"><span><i style="background:#4fb4ff"></i>update</span><span><i style="background:#ffa040"></i>render CPU</span><span><i style="background:#c080ff"></i>GPU</span><span><i style="background:#56636b"></i>frame</span></div><div class="body"></div>`;
+    this.el.innerHTML = `<div class="hd"></div><canvas data-c="fps"></canvas><div class="lg"><span><i style="background:#6fe08a"></i>FPS (60 line)</span><span>${N / 4}s</span></div><canvas data-c="ms"></canvas><div class="lg"><span><i style="background:#4fb4ff"></i>update</span><span><i style="background:#ffa040"></i>render CPU</span><span><i style="background:#c080ff"></i>GPU</span><span><i style="background:#56636b"></i>frame</span></div><div class="tg"></div><div class="body"></div>`;
     document.body.appendChild(this.el);
     this.head = this.el.querySelector('.hd')!;
+    this.buildToggles();
     this.body = this.el.querySelector('.body')!;
     this.fpsCanvas = this.el.querySelector('[data-c="fps"]')!;
     this.msCanvas = this.el.querySelector('[data-c="ms"]')!;
@@ -104,6 +111,67 @@ export class DebugOverlay {
       this.mainPass.calls = info.calls - c0;
       this.mainPass.tris = info.triangles - t0;
     };
+  }
+
+  /** Live switches for the expensive passes, to see what each one costs. */
+  private buildToggles() {
+    const tg = this.el.querySelector<HTMLDivElement>('.tg')!;
+    tg.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const r = this.r;
+    const basePR = r.renderer.getPixelRatio();
+    const scales = [1, 0.75, 0.5];
+    let si = 0;
+    const items: { label: () => string; on: () => boolean; flip: () => void }[] = [
+      { label: () => 'AO', on: () => r.ao.enabled, flip: () => (r.ao.enabled = !r.ao.enabled) },
+      { label: () => 'Bloom', on: () => r.bloom.enabled, flip: () => (r.bloom.enabled = !r.bloom.enabled) },
+      {
+        label: () => 'Shadows',
+        on: () => r.renderer.shadowMap.enabled,
+        flip: () => {
+          r.renderer.shadowMap.enabled = !r.renderer.shadowMap.enabled;
+          this.lastScene?.traverse((o) => {
+            const m = (o as THREE.Mesh).material;
+            if (m) for (const x of Array.isArray(m) ? m : [m]) x.needsUpdate = true;
+          });
+        },
+      },
+      {
+        label: () => 'MSAA',
+        on: () => r.composer.renderTarget1.samples > 0,
+        flip: () => {
+          const n = r.composer.renderTarget1.samples > 0 ? 0 : 4;
+          for (const t of [r.composer.renderTarget1, r.composer.renderTarget2]) {
+            t.samples = n;
+            t.dispose();
+          }
+        },
+      },
+      {
+        label: () => `Res ${Math.round(scales[si] * 100)}%`,
+        on: () => true,
+        flip: () => {
+          si = (si + 1) % scales.length;
+          r.renderer.setPixelRatio(basePR * scales[si]);
+          r.composer.setPixelRatio(basePR * scales[si]);
+        },
+      },
+    ];
+    const draw = () => {
+      tg.replaceChildren(
+        ...items.map((it) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = it.label();
+          b.classList.toggle('off', !it.on());
+          b.addEventListener('click', () => {
+            it.flip();
+            draw();
+          });
+          return b;
+        }),
+      );
+    };
+    draw();
   }
 
   get open() {
@@ -139,6 +207,14 @@ export class DebugOverlay {
 
   /** Rendering submitted; `scene` is what was drawn (for the object census). */
   end(scene: THREE.Scene, dt: number) {
+    this.lastScene = scene;
+    // Without GPU timer queries (Firefox hides them), sample how long the
+    // GPU still needs after the frame is submitted, now and then.
+    if (!this.timer && this.open && ++this.finishN % 20 === 0) {
+      const t = performance.now();
+      this.gl.finish();
+      this.gpuWait = performance.now() - t;
+    }
     if (this.openQuery && this.timer) {
       this.gl.endQuery(this.timer.TIME_ELAPSED_EXT);
       this.openQuery = null;
@@ -212,7 +288,9 @@ export class DebugOverlay {
         [
           ['update', mean(this.updMs).toFixed(2)],
           ['render CPU', mean(this.renMs).toFixed(2)],
-          ['GPU', gpu >= 0 ? gpu.toFixed(2) : this.timer ? '…' : 'n/a'],
+          this.timer
+            ? ['GPU', gpu >= 0 ? gpu.toFixed(2) : '…']
+            : ['GPU wait after submit', this.gpuWait >= 0 ? this.gpuWait.toFixed(2) : '…'],
         ],
       ],
       [

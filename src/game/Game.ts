@@ -52,6 +52,9 @@ const AREA_TITLES: Record<AreaName, [string, string]> = {
   dungeon: ['Into the Crypt', 'A new dark is dug for every soul that descends'],
 };
 
+/** Stands in for a frozen rig's updateMatrixWorld, so scene updates skip it. */
+const frozenMatrices = () => {};
+
 export class Game {
   readonly stats = new Stats();
   readonly player: Player;
@@ -83,6 +86,9 @@ export class Game {
   private ndc = new THREE.Vector2();
   private exitLayer: HTMLDivElement;
   private v = new THREE.Vector3();
+  private viewFrustum = new THREE.Frustum();
+  private viewMat = new THREE.Matrix4();
+  private viewSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   private deathTimer = -1;
 
   constructor(
@@ -485,7 +491,7 @@ export class Game {
       const show = mark !== '' && this.v.z < 1 && n.position.distanceTo(this.player.position) < 34 && !this.travelling;
       el.hidden = !show;
       if (!show) continue;
-      el.textContent = mark;
+      if (el.textContent !== mark) el.textContent = mark;
       el.classList.toggle('wait', mark === '?' && !ready);
       el.style.transform = `translate(${Math.round((this.v.x * 0.5 + 0.5) * W)}px, ${Math.round((-this.v.y * 0.5 + 0.5) * H)}px) translate(-50%, -100%)`;
     }
@@ -731,11 +737,26 @@ export class Game {
       },
       banner: (title: string, sub: string) => this.hud.showBanner(title, sub),
     };
+    // Sleeping monsters off screen and away from the hero just wait: no AI,
+    // no animation. Near ones still update so they can spot the hero.
+    const cam = this.cam.camera;
+    this.viewFrustum.setFromProjectionMatrix(this.viewMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     for (const m of a.monsters) {
       if (m.removed) continue;
       const d = m.position.distanceTo(p.position);
       m.body.rig.root.visible = d < 60 && !m.hidden;
-      if (d < 46 || m.awake) m.update(dt, mctx);
+      this.viewSphere.center.copy(m.position);
+      const root = m.body.rig.root;
+      if (m.awake || !m.alive || d < 16 || (d < 46 && this.viewFrustum.intersectsSphere(this.viewSphere))) {
+        if (root.updateMatrixWorld === frozenMatrices) Reflect.deleteProperty(root, 'updateMatrixWorld');
+        m.update(dt, mctx);
+      } else if (root.updateMatrixWorld !== frozenMatrices) {
+        // A waiting monster holds its pose, so its ~85 rig nodes need no
+        // matrix updates until it moves again: settle them once, then let the
+        // per-frame scene walk skip the whole rig.
+        root.updateMatrixWorld(true);
+        root.updateMatrixWorld = frozenMatrices;
+      }
     }
     // Music swells when something is hunting the hero.
     const hunted = a.monsters.some((m) => m.alive && m.awake && (m.state === 'chase' || m.state === 'attack') && m.position.distanceTo(p.position) < 26);

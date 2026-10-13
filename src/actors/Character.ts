@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gridNormals } from './cloth';
 
 // Humanoid joint rig with a procedural gait (no keyframes). Outfits (knight,
 // villager, ...) hang generated meshes on the joints; the rig only moves them.
@@ -223,7 +224,7 @@ export function clothPanel(
       p.setXYZ(i, x, y + lift * 0.35, z - lift - ripple - t * 0.05);
     }
     p.needsUpdate = true;
-    geo.computeVertexNormals();
+    gridNormals(geo, 8, 14);
   });
   return m;
 }

@@ -93,6 +93,22 @@ export class Mist {
     }
   }
 
+  // Ground heights on a 2 m grid, filled in as cards drift over it: the
+  // terrain functions are noise sums, too slow to call 600 times a frame.
+  private cells = new Map<number, number>();
+  private cell(i: number, j: number) {
+    const key = i * 4096 + j;
+    let v = this.cells.get(key);
+    if (v === undefined) this.cells.set(key, (v = this.heightAt(i * 2, j * 2)));
+    return v;
+  }
+  /** Highest grid corner around a point: never below the ground it covers. */
+  private ground(x: number, z: number) {
+    const i = Math.floor(x / 2);
+    const j = Math.floor(z / 2);
+    return Math.max(this.cell(i, j), this.cell(i + 1, j), this.cell(i, j + 1), this.cell(i + 1, j + 1));
+  }
+
   update(dt: number) {
     const e = this.extent;
     for (const c of this.cards) {
@@ -107,15 +123,15 @@ export class Mist {
       // the terrain (which shows as hard, drifting lines).
       const h = c.half;
       const top = Math.max(
-        this.heightAt(p.x, p.z),
-        this.heightAt(p.x - h, p.z - h),
-        this.heightAt(p.x + h, p.z - h),
-        this.heightAt(p.x - h, p.z + h),
-        this.heightAt(p.x + h, p.z + h),
-        this.heightAt(p.x - h, p.z),
-        this.heightAt(p.x + h, p.z),
-        this.heightAt(p.x, p.z - h),
-        this.heightAt(p.x, p.z + h),
+        this.ground(p.x, p.z),
+        this.ground(p.x - h, p.z - h),
+        this.ground(p.x + h, p.z - h),
+        this.ground(p.x - h, p.z + h),
+        this.ground(p.x + h, p.z + h),
+        this.ground(p.x - h, p.z),
+        this.ground(p.x + h, p.z),
+        this.ground(p.x, p.z - h),
+        this.ground(p.x, p.z + h),
       );
       p.y = p.y === 0 ? top + c.lift : p.y + (top + c.lift - p.y) * Math.min(1, dt * 2);
     }
