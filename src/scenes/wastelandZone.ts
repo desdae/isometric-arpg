@@ -10,6 +10,7 @@ import { curtainWall, gatehouse, pinnacle, pointedArch, spireTower } from '../pr
 import { bones, brazier, brokenWagon, grassTuft, stakes } from '../procgen/props';
 import { Fire } from '../engine/Fire';
 import { LightPool } from '../engine/LightPool';
+import { buildWaypoint } from '../world/Waypoint';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterSpawn } from '../actors/Monster';
@@ -80,6 +81,18 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     return new THREE.Vector3(30, 0, -40);
   })();
   const cryptYaw = range(crng, -0.35, 0.35); // door faces roughly +Z, toward the camera
+  // The waypoint moves with it, somewhere open in the middle of the fields.
+  const wp = (() => {
+    for (let i = 0; i < 300; i++) {
+      const x = range(crng, WALL_X + 22, HALF - 14);
+      const z = range(crng, -HALF + 16, HALF - 16);
+      if (roadDist(x, z) < 7) continue;
+      if (craters.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 6)) continue;
+      if (Math.hypot(x - crypt.x, z - crypt.z) < 18 || Math.hypot(x - MIRE_X, z - MIRE_Z) < 18) continue;
+      return new THREE.Vector3(x, 0, z);
+    }
+    return new THREE.Vector3(0, 0, 30);
+  })();
   const cryptDoor = crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(3.4));
   const height: HeightFn = (x, z) => {
     let h = fbm2(x * 0.02, z * 0.02, 5, seed + 100) * 4.5 + fbm2(x * 0.08, z * 0.08, 3, seed + 101) * 0.45;
@@ -88,7 +101,8 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     const road = (1 - smoothstep(2.5, 9, roadDist(x, z))) * (0.4 + 0.6 * roadFade(x));
     const cryptPad = 1 - smoothstep(6, 12, Math.hypot(x - crypt.x, z - crypt.z));
     const mirePad = 1 - smoothstep(7, 15, Math.hypot(x - MIRE_X, z - MIRE_Z));
-    h *= 1 - Math.max(nearWall, road, cryptPad, mirePad);
+    const wpPad = 1 - smoothstep(3.5, 8, Math.hypot(x - wp.x, z - wp.z));
+    h *= 1 - Math.max(nearWall, road, cryptPad, mirePad, wpPad);
     for (const c of craters) {
       const d = Math.hypot(x - c.x, z - c.z) / c.r;
       if (d < 1.4) h += -Math.cos(Math.min(d, 1) * Math.PI * 0.5) * 0.9 * (d < 1 ? 1 : 0) + (d > 0.8 && d < 1.4 ? Math.sin(((d - 0.8) / 0.6) * Math.PI) * 0.35 : 0);
@@ -305,6 +319,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   const free = (x: number, z: number, r: number) =>
     Math.hypot(x - crypt.x, z - crypt.z) > 8 + r &&
     Math.hypot(x - MIRE_X, z - MIRE_Z) > 10 + r &&
+    Math.hypot(x - wp.x, z - wp.z) > 4.5 + r &&
     x > WALL_X + 6 && roadDist(x, z) > 3.5 + r && nav.walkable(x, z) && Math.abs(x) < HALF - 3 && Math.abs(z) < HALF - 3;
   const scatter = (count: number, r: number, fn: (x: number, z: number, rng: Rng) => void) => {
     let placed = 0;
@@ -434,7 +449,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     for (let i = 0; i < 60; i++) {
       const x = range(rng, minX, maxX);
       const z = range(rng, -HALF + 10, HALF - 10);
-      if (farFromGate(x, z) && Math.hypot(x - crypt.x, z - crypt.z) > 14 && Math.hypot(x - MIRE_X, z - MIRE_Z) > 14 && nav.walkable(x, z)) return [x, z];
+      if (farFromGate(x, z) && Math.hypot(x - crypt.x, z - crypt.z) > 14 && Math.hypot(x - MIRE_X, z - MIRE_Z) > 14 && Math.hypot(x - wp.x, z - wp.z) > 12 && nav.walkable(x, z)) return [x, z];
     }
     return [range(rng, minX, maxX), range(rng, -20, 20)];
   };
@@ -459,6 +474,8 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     spawns.filter((s) => s.pack >= pack - 2).forEach((s) => (s.pack = pack));
   }
 
+  const waypoint = buildWaypoint(scene, height, nav, wp.x, wp.z, mats.stone, seed + 61);
+
   const spawnX = WALL_X + 7;
   return {
     scene,
@@ -481,6 +498,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       crypt: { pos: crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(6.2)), yaw: cryptYaw },
     },
     monsterSpawns: spawns,
+    waypoint,
     // Walls on the left of the screen, the wasteland opening out to the right.
     cameraYaw: THREE.MathUtils.degToRad(20),
     extent: HALF,
@@ -489,6 +507,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       rim.update(_dt, t);
       Fire.tick(t);
       firePool.update(t);
+      waypoint.update(t);
     },
   };
 }

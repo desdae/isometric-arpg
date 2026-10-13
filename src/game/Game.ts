@@ -22,6 +22,7 @@ import { SK } from './Skills';
 import { cutaway } from '../engine/cutaway';
 import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
 import { QuestLog, type Quest } from './Quests';
+import { WaypointMenu } from './WaypointMenu';
 import { GameMenu } from './GameMenu';
 import { applySave, captureSave, writeSave, type CharacterSave } from './Save';
 import { Shop } from './Shop';
@@ -47,6 +48,9 @@ interface AreaState {
 export type AreaBuilder = () => Promise<World>;
 
 /** What the loading splash says while an area is generated. */
+/** Areas with a waypoint, in the order the travel list shows them. */
+const WAYPOINT_AREAS: AreaName[] = ['town', 'zone', 'swamp'];
+
 const AREA_TITLES: Record<AreaName, [string, string]> = {
   town: ['Saint Orsolya', 'The last lit town at the edge of the blight'],
   zone: ['The Blighted Fields', 'Where the dead were buried, they do not rest'],
@@ -93,10 +97,11 @@ export class Game {
   private viewSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   private deathTimer = -1;
   readonly menu = new GameMenu();
+  private waypointMenu = new WaypointMenu();
   /** The hero being played; null for views opened straight from the URL, which never save. */
   private character: CharacterSave | null = null;
   /** The hero's mire seed and when they last left it (the save's copy, or a scratch one for unsaved views). */
-  private worldState: CharacterSave['world'] = { swampSeed: Math.floor(Math.random() * 1e9), swampLeftAt: null };
+  private worldState: CharacterSave['world'] = { swampSeed: Math.floor(Math.random() * 1e9), swampLeftAt: null, waypoints: ['town'] };
   get swampSeed(): number {
     return this.worldState.swampSeed;
   }
@@ -140,6 +145,9 @@ export class Game {
     this.hud.onRevive = () => this.revive();
     this.hud.onMute = () => audio.toggleMute();
     this.hud.onMenu = () => this.toggleMenu();
+    this.waypointMenu.onTravel = (to) => {
+      if (!this.travelling && !this.player.dead) void this.enter(to as AreaName, 'waypoint');
+    };
     this.menu.onQuit = () => {
       this.saveNow();
       location.reload();
@@ -238,7 +246,10 @@ export class Game {
         if (monsters.length % 4 === 0) await loading.step('Summoning the monsters', 0.97);
       }
       const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
-      const useLabels = (world.script?.interactables ?? []).map((it) => ({
+      const usable = [...(world.script?.interactables ?? [])];
+      const wp = world.waypoint;
+      if (wp) usable.push({ pos: wp.pos, radius: 2.6, label: 'Waypoint', active: () => true, use: () => this.openWaypoints() });
+      const useLabels = usable.map((it) => ({
         it,
         el: this.label(it.label, () => this.player.interact(it.pos, it.radius, () => it.active() && it.use())),
       }));
@@ -342,6 +353,7 @@ export class Game {
     audio.setArea(name);
     this.dialogue.close();
     this.shop.close();
+    this.waypointMenu.toggle(false);
     this.floaters.clear();
     if (name === 'town') this.townVisits++;
     const w = area.world;
@@ -352,7 +364,8 @@ export class Game {
     // Monsters regroup whenever you come back (underground, the dead stay dead).
     if (!w.indoor) for (const m of area.monsters) m.reset();
     this.hud.setObjectives(w.script ? w.script.title : null, w.script?.objectives());
-    const e = w.entries?.[entry] ?? { pos: w.spawn ?? new THREE.Vector3(), yaw: w.spawnYaw ?? 0 };
+    w.waypoint?.setActive(this.worldState.waypoints.includes(name));
+    const e = (entry === 'waypoint' && w.waypoint ? this.besideWaypoint(w) : w.entries?.[entry]) ?? { pos: w.spawn ?? new THREE.Vector3(), yaw: w.spawnYaw ?? 0 };
     this.player.enter({ scene: w.scene, nav: w.nav!, heightAt: w.heightAt }, e.pos, e.yaw);
     if (w.cameraYaw !== undefined) this.cam.yaw = this.cam.targetYawValue = w.cameraYaw;
     this.cam.target.copy(this.player.position);
@@ -385,6 +398,43 @@ export class Game {
     }
     this.travelling = false;
     this.saveNow();
+  }
+
+  // ---- Waypoints ---------------------------------------------------------
+
+  /** Where a hero stepping off a waypoint stands: just in front of the dais, facing the camera. */
+  private besideWaypoint(w: AreaState['world']): { pos: THREE.Vector3; yaw: number } {
+    const at = w.waypoint!.pos;
+    let x = at.x;
+    let z = at.z + 2.9;
+    if (w.nav && !w.nav.walkable(x, z)) {
+      const n = w.nav.nearestWalkable(x, z);
+      if (n) [x, z] = [n.x, n.y];
+    }
+    return { pos: new THREE.Vector3(x, 0, z), yaw: 0 };
+  }
+
+  /** Walking up to a waypoint for the first time marks it found, for good. */
+  private discoverWaypoint() {
+    const a = this.area;
+    const wp = a.world.waypoint;
+    const found = this.worldState.waypoints;
+    if (!wp || found.includes(a.name) || this.player.dead) return;
+    if (Math.hypot(this.player.position.x - wp.pos.x, this.player.position.z - wp.pos.z) > 3.2) return;
+    found.push(a.name);
+    wp.setActive(true);
+    audio.runeLit(wp.pos);
+    this.hud.showBanner('Waypoint found', AREA_TITLES[a.name][0]);
+    this.saveNow();
+  }
+
+  private openWaypoints() {
+    if (this.travelling) return;
+    audio.click();
+    const found = this.worldState.waypoints;
+    this.waypointMenu.show(
+      WAYPOINT_AREAS.map((area) => ({ area, name: AREA_TITLES[area][0], found: found.includes(area), here: this.area.name === area })),
+    );
   }
 
   /**
@@ -823,7 +873,8 @@ export class Game {
       if (k === 'l' || k === 'j') this.toggleJournal();
       if (k === 'escape') {
         // Escape closes whatever is open; with nothing open it brings up the menu.
-        const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open;
+        const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open || this.waypointMenu.open;
+        this.waypointMenu.toggle(false);
         this.inventory.toggle(false);
         this.hud.showJournal(null);
         this.tree.toggle(false);
@@ -923,6 +974,8 @@ export class Game {
     if (this.portal) for (const fx of [this.portal.there, this.portal.home]) fx.update(dt, this.cam.camera);
     this.updateMarkers(W, H);
     this.hud.setQuests(this.quests.lines());
+    this.discoverWaypoint();
+    if (this.waypointMenu.open && w.waypoint && p.position.distanceTo(w.waypoint.pos) > 5) this.waypointMenu.toggle(false);
     // Walking off ends a conversation or a trade.
     if (this.talkingTo && this.talkingTo.position.distanceTo(p.position) > 4.5) {
       this.dialogue.close();

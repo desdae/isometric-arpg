@@ -58,8 +58,10 @@ export interface CharacterSave {
    * This hero's world. The mire keeps its layout until the hero has spent
    * a while (in play time) away from it; `swampLeftAt` is the play time when
    * they last walked out, or null if they haven't been since it was laid out.
+   * `waypoints` lists the areas whose waypoint the hero has found; town's is
+   * known from the start.
    */
-  world: { swampSeed: number; swampLeftAt: number | null };
+  world: { swampSeed: number; swampLeftAt: number | null; waypoints: string[] };
   /** Room for systems that don't exist yet (a stash, achievements, a second act). */
   ext: Json;
 }
@@ -129,9 +131,16 @@ export function upgrade(raw: unknown): CharacterSave {
       ...obj(d.world),
       swampSeed: Math.floor(num(obj(d.world).swampSeed, newSeed(), 0)),
       swampLeftAt: typeof obj(d.world).swampLeftAt === 'number' ? num(obj(d.world).swampLeftAt, 0, 0) : null,
+      waypoints: waypointList(obj(d.world).waypoints),
     },
     ext: obj(d.ext),
   };
+}
+
+/** Found waypoints: known area names only, town always first. */
+function waypointList(v: unknown): string[] {
+  const found = Array.isArray(v) ? v.filter((a): a is string => typeof a === 'string') : [];
+  return ['town', ...new Set(found.filter((a) => a !== 'town'))];
 }
 
 function newSeed() {
@@ -219,7 +228,7 @@ export function newCharacter(slot: number, name: string, classId: string, tabard
     hero: { level: 1, xp: 0, gold: 0, potions: 3, ranks: { ...cls.startRanks }, belt: [...cls.startBelt], equipped: {}, bag: [] },
     quests: { active: [], done: [] },
     area: 'town',
-    world: { swampSeed: newSeed(), swampLeftAt: null },
+    world: { swampSeed: newSeed(), swampLeftAt: null, waypoints: ['town'] },
     ext: {},
   });
 }

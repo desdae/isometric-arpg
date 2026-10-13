@@ -11,6 +11,7 @@ import { curtainWall, gatehouse, spireTower } from '../procgen/gothic';
 import { marketStall, ruinedHouse, well } from '../procgen/building';
 import { brazier, brokenWagon, grassTuft } from '../procgen/props';
 import { Fire, Smoke } from '../engine/Fire';
+import { buildWaypoint } from '../world/Waypoint';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import { Character } from '../actors/Character';
@@ -566,6 +567,9 @@ export async function buildTown(seed = 31): Promise<World> {
   npcs[5].character.root.add(watchLamp);
   const watchLight = houseLights.add(new THREE.Vector3(), 8, 7, 0, 0xffa060);
 
+  // The town's waypoint, on the north side of the square below the cathedral street.
+  const waypoint = buildWaypoint(scene, height, nav, 0, -7.6, mats.stone, seed + 61);
+
   const spawnPt = streetAt(streets[0], SQUARE_R + 4).p;
   return {
     scene,
@@ -574,6 +578,7 @@ export async function buildTown(seed = 31): Promise<World> {
     heightAt: height,
     nav,
     npcs,
+    waypoint,
     spawn: new THREE.Vector3(spawnPt.x, height(spawnPt.x, spawnPt.y), spawnPt.y),
     title: 'Saint Orsolya',
     subtitle: 'The bells have fallen silent',
@@ -592,6 +597,7 @@ export async function buildTown(seed = 31): Promise<World> {
       flickerTime.value = t;
       watchLamp.getWorldPosition(watchLight.pos);
       houseLights.update(t);
+      waypoint.update(t);
     },
   };
 }

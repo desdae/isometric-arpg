@@ -10,6 +10,7 @@ import { archPath, gatehouse, pointedArch } from '../procgen/gothic';
 import { bones, brazier, grassTuft } from '../procgen/props';
 import { Fire } from '../engine/Fire';
 import { LightPool } from '../engine/LightPool';
+import { buildWaypoint } from '../world/Waypoint';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterKind, MonsterSpawn } from '../actors/Monster';
@@ -854,7 +855,26 @@ export async function buildSwamp(seed: number): Promise<World> {
     const cz = Math.floor((z + HALF) / 0.5);
     return cx >= 0 && cz >= 0 && cx < nav.cols && cz < nav.rows && reach[cz * nav.cols + cx] === 1;
   };
-  const spawns: MonsterSpawn[] = [];
+  // The waypoint: open, reachable ground well out from the gate, laid out
+  // with the rest of the mire so it moves when the mire does.
+  const wp = (() => {
+    const wrng = mulberry32(seed + 77);
+    let best: THREE.Vector2 | null = null;
+    for (let i = 0; i < 3000; i++) {
+      const x = range(wrng, -HALF + 14, HALF - 14);
+      const z = range(wrng, gateZ + 30, HALF - 14);
+      const d = Math.hypot(x - gateX, z - gateZ);
+      if (d < 40 || d > 110 || nearSite(x, z, 3)) continue;
+      let ok = reachable(x, z);
+      for (let a = 0; ok && a < 12; a++) for (const r of [1.2, 2.4]) if (!reachable(x + Math.cos(a * 0.5236) * r, z + Math.sin(a * 0.5236) * r)) ok = false;
+      if (ok) return new THREE.Vector2(x, z);
+      if (!best && reachable(x, z)) best = new THREE.Vector2(x, z);
+    }
+    return best ?? new THREE.Vector2(gateX, gateZ + 20);
+  })();
+  const waypoint = buildWaypoint(scene, height, nav, wp.x, wp.y, mats.stone, seed + 61);
+
+  let spawns: MonsterSpawn[] = [];
   let pack = 0;
   // Deeper in (further from the gate) is deadlier.
   const levelAt = (x: number, z: number) => 3 + Math.min(3, Math.floor(Math.hypot(x - gateX, z - gateZ) / 45));
@@ -922,6 +942,8 @@ export async function buildSwamp(seed: number): Promise<World> {
   }
   group(lair.x, lair.z, [['rootHorror', 2], ['toad', 3], ['mireWraith', 2]], lair.r * 0.6, { kind: 'rootHorror', name: 'Mother Rot' });
 
+  spawns = spawns.filter((m) => Math.hypot(m.pos.x - wp.x, m.pos.z - wp.y) > 9);
+
   const entryZ = gateZ + 10;
   return {
     scene,
@@ -936,6 +958,7 @@ export async function buildSwamp(seed: number): Promise<World> {
     exits: [{ pos: new THREE.Vector3(gateX, 0, gateZ - 0.4), radius: 1.6, to: 'zone', entry: 'mire', label: 'To the Blighted Fields' }],
     entries: { gate: { pos: new THREE.Vector3(gateX, 0, entryZ), yaw: 0 } },
     monsterSpawns: spawns,
+    waypoint,
     cameraYaw: THREE.MathUtils.degToRad(20),
     extent: HALF,
     fogScale: 0.85,
@@ -945,6 +968,7 @@ export async function buildSwamp(seed: number): Promise<World> {
       rim.update(dt, t);
       Fire.tick(t);
       firePool.update(t);
+      waypoint.update(t);
     },
   };
 }

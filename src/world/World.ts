@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Waypoint } from './Waypoint';
 import type { HeightFn } from '../procgen/terrain';
 import type { NavGrid } from './NavGrid';
 import type { Npc } from '../actors/Npc';
@@ -70,6 +71,8 @@ export interface World {
   /** Named arrival points (other areas' exits lead to these). */
   entries?: Record<string, { pos: THREE.Vector3; yaw: number }>;
   monsterSpawns?: MonsterSpawn[];
+  /** This area's waypoint, if it has one. */
+  waypoint?: Waypoint;
   /** Underground: no sky, denser fog, the dead stay dead. */
   indoor?: boolean;
   /** Multiplies the distance fog density. */
