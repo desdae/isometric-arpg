@@ -42,6 +42,10 @@ export function bakeRig(root: THREE.Object3D) {
   skinRig(root);
 }
 
+/** Layer for meshes only shadow cameras draw; lights that cast shadows enable it on their shadow camera. */
+export const SHADOW_LAYER = 5;
+const shadowOnlyMaterial = new THREE.MeshBasicMaterial();
+
 /**
  * Turns a whole rigid rig into one skinned mesh per material: every node
  * (joints, and part meshes that are themselves animated) becomes a bone, and
@@ -75,6 +79,7 @@ export function skinRig(root: THREE.Object3D) {
   });
   if (!groups.size) return;
   const skeleton = new THREE.Skeleton(bones as THREE.Bone[]);
+  const casters: THREE.BufferGeometry[] = [];
   for (const { mat, cast, parts } of groups.values()) {
     const wantColor = (mat as THREE.MeshStandardMaterial).vertexColors;
     const geos = parts.map((m) => {
@@ -105,5 +110,30 @@ export function skinRig(root: THREE.Object3D) {
     sm.boundingSphere.radius *= 1.6;
     // The parts keep moving as bones but no longer draw (children still do).
     for (const m of parts) m.layers.disableAll();
+    if (cast) casters.push(merged);
+  }
+  // The shadow pass ignores materials, so all casting parts share one
+  // shadow-only mesh, on a layer only the shadow cameras see.
+  if (casters.length > 1) {
+    const geo = mergeGeometries(
+      casters.map((g) => {
+        const c = new THREE.BufferGeometry();
+        for (const name of ['position', 'skinIndex', 'skinWeight']) c.setAttribute(name, g.getAttribute(name));
+        return c;
+      }),
+    );
+    if (geo) {
+      const shadow = new THREE.SkinnedMesh(geo, shadowOnlyMaterial);
+      shadow.castShadow = true;
+      shadow.layers.set(SHADOW_LAYER);
+      shadow.userData.shadowOnly = true;
+      root.add(shadow);
+      shadow.updateMatrixWorld(true);
+      shadow.bind(skeleton, shadow.matrixWorld);
+      geo.computeBoundingSphere();
+      shadow.boundingSphere = geo.boundingSphere!.clone();
+      shadow.boundingSphere.radius *= 1.6;
+      for (const c of root.children) if ((c as THREE.SkinnedMesh).isSkinnedMesh && c !== shadow && casters.includes((c as THREE.Mesh).geometry)) c.castShadow = false;
+    }
   }
 }

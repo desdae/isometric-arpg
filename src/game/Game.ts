@@ -287,15 +287,40 @@ export class Game {
       } catch {
         /* compiled lazily on first draw instead */
       }
+      this.warmUp(area);
       if (fade) void this.hud.fade(false);
       await loading.hide();
-    } else if (fade) await this.hud.fade(false);
+    } else if (fade) {
+      this.warmUp(area);
+      await this.hud.fade(false);
+    }
     if (w.title && entry !== 'portal') this.hud.showBanner(w.title, w.subtitle ?? '');
     // Stepping back through from town closes the portal behind you.
     if (entry === 'portal' && name !== 'town') this.closePortal();
     // Dig the crypt while the hero is out in the fields, so going down is quick.
     if (name === 'zone') this.preloadSoon('dungeon', 4000);
     this.travelling = false;
+  }
+
+  /**
+   * Draws one frame with everything in the area forced into view, while the
+   * screen is covered. Some browsers (Firefox on Windows) only finish building
+   * a shader on its first real draw, which otherwise stalls play for seconds
+   * the first time each kind of monster comes into view.
+   */
+  private warmUp(area: AreaState) {
+    const roots = area.monsters.map((m) => [m.body.rig.root, m.body.rig.root.visible] as const);
+    for (const [r] of roots) r.visible = true;
+    const culled: THREE.Object3D[] = [];
+    area.world.scene.traverse((o) => {
+      if (o.frustumCulled) {
+        o.frustumCulled = false;
+        culled.push(o);
+      }
+    });
+    this.renderer.render(this.time);
+    for (const o of culled) o.frustumCulled = true;
+    for (const [r, v] of roots) r.visible = v;
   }
 
   private playerCtx() {

@@ -17,7 +17,7 @@ import { buildDungeon } from './scenes/dungeon';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { dressKnight } from './actors/outfits/knight';
-import { bakeRig } from './actors/bake';
+import { bakeRig, SHADOW_LAYER } from './actors/bake';
 import { addSilhouette } from './actors/silhouette';
 import { KINDS, type MonsterKind } from './actors/Monster';
 import { monsterMaterials } from './actors/monsters/materials';
@@ -193,6 +193,8 @@ function frame() {
   cam.update(dt);
   if (game) cam.camera.position.add(game.shake());
   const moon = world.moon;
+  // Characters cast through shadow-only meshes on their own layer (see skinRig).
+  moon.shadow.camera.layers.enable(SHADOW_LAYER);
   // Fit the shadow box to the ground the camera actually sees (with headroom
   // for tall casters), so nothing off screen is drawn into the shadow map.
   shadowBasis.lookAt(MOON_OFFSET, ORIGIN, UP);

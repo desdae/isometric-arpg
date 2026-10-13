@@ -47,6 +47,8 @@ const CSS = `
 
 export class Benchmark {
   private t = 0;
+  private start = -1;
+  private warmFrames = 0;
   private leg = 0;
   private legTime = 0;
   private frames: number[] = [];
@@ -88,8 +90,11 @@ export class Benchmark {
     if (this.done) return;
     this.t += dt;
     const p = this.game.player;
-    if (this.t < WARMUP) {
-      this.bar.textContent = `Benchmark: warming up… ${Math.ceil(WARMUP - this.t)}`;
+    // Warm up for a while and a number of frames; the frame that ends the
+    // warm-up (often a long shader-compile frame) is not counted either.
+    if (this.start < 0) {
+      if (this.t >= WARMUP && ++this.warmFrames >= 60) this.start = this.t;
+      else this.bar.textContent = `Benchmark: warming up… ${Math.max(1, Math.ceil(WARMUP - this.t))}`;
       return;
     }
     // Walk the route; a waypoint the hero can't reach is skipped after a while.
@@ -104,7 +109,7 @@ export class Benchmark {
     this.frames.push(dt * 1000);
     this.update.push(updateMs);
     this.render.push(renderMs);
-    const left = WARMUP + LENGTH - this.t;
+    const left = LENGTH - (this.t - this.start);
     this.bar.textContent = `Benchmark running · ${Math.ceil(left)} s left · don't touch the mouse`;
     if (left <= 0) this.finish();
   }
@@ -134,6 +139,7 @@ export class Benchmark {
       `switches off/changed: ${flags}`,
       `avg FPS ${fps.toFixed(1)} · 1% low ${low1.toFixed(1)} · frames ${n}`,
       `frame ms: avg ${(total / n).toFixed(2)} · median ${pct(0.5).toFixed(2)} · p95 ${pct(0.95).toFixed(2)} · p99 ${pct(0.99).toFixed(2)} · max ${sorted[n - 1].toFixed(2)}`,
+      `hitches over 50 ms: ${this.frames.filter((f) => f > 50).length}`,
       `CPU ms per frame: update ${upd.toFixed(2)} · render submit ${ren.toFixed(2)} · total p95 ${cpu[Math.floor(0.95 * cpu.length)].toFixed(2)}`,
       `GPU-bound share: ${Math.max(0, 100 - ((upd + ren) / (total / n)) * 100).toFixed(0)}% of the frame is spent waiting (GPU or vsync)`,
       `buffer ${size.x}×${size.y} @ dpr ${devicePixelRatio} · ${gpu}`,

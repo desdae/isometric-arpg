@@ -42,7 +42,7 @@ export function addSilhouette(root: THREE.Object3D, color = new THREE.Color(1.0,
   });
   for (const m of meshes) {
     // Parts folded into a skinned mesh no longer draw; their skinned mesh gets the twin.
-    if (!(m.material as THREE.Material).visible || m.layers.mask === 0) continue;
+    if (!(m.material as THREE.Material).visible || m.layers.mask === 0 || m.userData.shadowOnly) continue;
     m.renderOrder = 2;
     const sm = m as THREE.SkinnedMesh;
     let twin: THREE.Mesh;
