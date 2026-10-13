@@ -54,6 +54,8 @@ export interface CharacterSave {
   quests: { active: { id: string; progress: number }[]; done: string[] };
   /** Where the hero was last; play resumes in town. */
   area: string;
+  /** This hero's world: random once, when the hero is made, then kept. */
+  world: { swampSeed: number };
   /** Room for systems that don't exist yet (a stash, achievements, a second act). */
   ext: Json;
 }
@@ -118,8 +120,14 @@ export function upgrade(raw: unknown): CharacterSave {
     },
     quests: { ...quests, active: Array.isArray(quests.active) ? (quests.active as CharacterSave['quests']['active']) : [], done: Array.isArray(quests.done) ? (quests.done as string[]) : [] },
     area: str(d.area, 'town'),
+    // Saves from before the mire get theirs now; it is kept from then on.
+    world: { ...obj(d.world), swampSeed: Math.floor(num(obj(d.world).swampSeed, newSeed(), 0)) },
     ext: obj(d.ext),
   };
+}
+
+function newSeed() {
+  return Math.floor(Math.random() * 1e9);
 }
 
 function newId() {
@@ -203,6 +211,7 @@ export function newCharacter(slot: number, name: string, classId: string, tabard
     hero: { level: 1, xp: 0, gold: 0, potions: 3, ranks: { ...cls.startRanks }, belt: [...cls.startBelt], equipped: {}, bag: [] },
     quests: { active: [], done: [] },
     area: 'town',
+    world: { swampSeed: newSeed() },
     ext: {},
   });
 }

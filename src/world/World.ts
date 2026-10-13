@@ -75,10 +75,6 @@ export interface World {
   /** Multiplies the distance fog density. */
   fogScale?: number;
   script?: AreaScript;
-  /** Laid out anew on every visit: forgotten as soon as the hero leaves. */
-  fresh?: boolean;
-  /** Frees the area's GPU resources once it has been left for good. */
-  dispose?(): void;
   update(dt: number, t: number): void;
 }
 

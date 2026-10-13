@@ -17,8 +17,8 @@ import { installCutaway } from '../engine/cutaway';
 import { mountainRim } from '../procgen/mountains';
 import { tiledInstances } from '../procgen/tiles';
 
-// The Bleeding Mire: a drowned ruin of a city in a swamp of blood. Every visit
-// lays it out anew from a fresh seed: islands of sodden mud and moss, each
+// The Bleeding Mire: a drowned ruin of a city in a swamp of blood. Each hero
+// gets their own, laid out from a seed rolled when the hero is made: islands of sodden mud and moss, each
 // crowned with a ruin (a roofless chapel, a broken arcade, a tower stump, a
 // blood altar, a grove of dead trees), joined by winding brick causeways
 // over red water that glows where something stirs beneath it.
@@ -923,19 +923,6 @@ export async function buildSwamp(seed: number): Promise<World> {
   group(lair.x, lair.z, [['rootHorror', 2], ['toad', 3], ['mireWraith', 2]], lair.r * 0.6, { kind: 'rootHorror', name: 'Mother Rot' });
 
   const entryZ = gateZ + 10;
-  // Everything the area made, so it can all be freed once it is left behind.
-  const owned = { geos: new Set<THREE.BufferGeometry>(), mats: new Set<THREE.Material>(), tex: new Set<THREE.Texture>() };
-  scene.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    owned.geos.add(m.geometry);
-    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
-      owned.mats.add(mat);
-      for (const v of Object.values(mat)) if (v instanceof THREE.Texture) owned.tex.add(v);
-    }
-  });
-  owned.tex.add(mask);
-  owned.tex.add(depthTex);
   return {
     scene,
     moon,
@@ -951,13 +938,7 @@ export async function buildSwamp(seed: number): Promise<World> {
     monsterSpawns: spawns,
     cameraYaw: THREE.MathUtils.degToRad(20),
     extent: HALF,
-    fresh: true,
     fogScale: 0.85,
-    dispose() {
-      for (const g of owned.geos) g.dispose();
-      for (const m of owned.mats) m.dispose();
-      for (const t of owned.tex) t.dispose();
-    },
     update(dt, t) {
       wind.value = t;
       waterTime.value = t;

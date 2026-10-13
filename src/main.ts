@@ -152,7 +152,8 @@ if (sceneName === 'test' || sceneName === 'character') {
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.root);
-  game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(Number(params.get('sseed') ?? Math.floor(Math.random() * 1e9))), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
+  game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(game!.swampSeed), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
+  if (params.has('sseed')) game.swampSeed = Number(params.get('sseed'));
   if (character) game.useCharacter(character);
   else game.stats.setClass(classId);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');

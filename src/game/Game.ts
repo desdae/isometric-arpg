@@ -95,6 +95,15 @@ export class Game {
   readonly menu = new GameMenu();
   /** The hero being played; null for views opened straight from the URL, which never save. */
   private character: CharacterSave | null = null;
+  /** The mire's layout for views opened straight from the URL (no saved hero). */
+  private directSwampSeed = Math.floor(Math.random() * 1e9);
+  /** The hero's own mire: the same layout on every visit and after reloading. */
+  get swampSeed(): number {
+    return this.character?.world.swampSeed ?? this.directSwampSeed;
+  }
+  set swampSeed(v: number) {
+    this.directSwampSeed = v;
+  }
   private playTime = 0;
   private saveTimer = 0;
 
@@ -259,23 +268,12 @@ export class Game {
     this.floaters.spawn(text, this.player.position.clone().setY(this.player.position.y + 2.3), 'info', life);
   }
 
-  /**
-   * Forgets an area so it is generated afresh next time (a cleared dungeon,
-   * or the mire, which is new on every visit). A portal into a fresh area
-   * stays open: stepping back through it leads into the new layout.
-   */
+  /** Forgets an area so it is generated afresh next time (a cleared dungeon). */
   private discard(a: AreaState) {
-    if (this.portal?.area === a.name && !a.world.fresh) this.closePortal();
+    if (this.portal?.area === a.name) this.closePortal();
     for (const x of [...a.exitLabels, ...a.useLabels]) x.el.remove();
     this.areas.delete(a.name);
     this.building.delete(a.name);
-    if (a.world.fresh) {
-      // Free its GPU memory once nothing can still be drawing it.
-      setTimeout(() => {
-        a.world.dispose?.();
-        for (const m of a.monsters) m.body.rig.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
-      }, 3000);
-    }
   }
 
   private scriptCtx(): ScriptContext {
@@ -305,7 +303,7 @@ export class Game {
       prev.loot.setVisible(false);
       for (const x of [...prev.exitLabels, ...prev.useLabels]) x.el.hidden = true;
       prev.effects.group.visible = false;
-      if (prev !== area && (prev.world.fresh || (prev.world.indoor && prev.world.script?.finished))) this.discard(prev);
+      if (prev !== area && prev.world.indoor && prev.world.script?.finished) this.discard(prev);
     }
     this.area = area;
     audio.setArea(name);
@@ -349,7 +347,6 @@ export class Game {
     // Dig the crypt while the hero is out in the fields, so going down is quick.
     if (name === 'zone') {
       this.preloadSoon('dungeon', 4000);
-      // A mire laid out ahead of time is still a new one: it is thrown away when left.
       this.preloadSoon('swamp', 10000);
     }
     this.travelling = false;
