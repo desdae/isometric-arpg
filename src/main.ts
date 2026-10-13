@@ -23,6 +23,9 @@ import { KINDS, type MonsterKind } from './actors/Monster';
 import { monsterMaterials } from './actors/monsters/materials';
 import type { Rig } from './actors/Rig';
 import { Game } from './game/Game';
+import { chooseCharacter } from './game/CharacterSelect';
+import { tabard } from './game/Classes';
+import type { CharacterSave } from './game/Save';
 import { MOON_OFFSET, type World } from './world/World';
 
 installHeightFog();
@@ -45,7 +48,7 @@ const environment = buildEnvironment(renderer.renderer);
 const sky = new Sky();
 window.addEventListener('resize', () => cam.resize(window.innerWidth / window.innerHeight));
 
-async function knight(): Promise<Character> {
+async function knight(tabardRgb: [number, number, number] = tabard(undefined).rgb): Promise<Character> {
   const [metal, cloth, mail] = await bakeSurfaces([
     { kind: 'wornMetal', seed: 21, size: 512, normalStrength: 2 },
     { kind: 'cloth', seed: 22, size: 512, normalStrength: 1.5 },
@@ -58,7 +61,7 @@ async function knight(): Promise<Character> {
     cloth: pbrMaterial(cloth, 2),
     dark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
     brass: new THREE.MeshStandardMaterial({ color: 0x9a7438, metalness: 1, roughness: 0.42 }),
-    tabard: pbrMaterial(cloth, 3, { color: new THREE.Color(0.55, 0.06, 0.05), metalness: 0 }),
+    tabard: pbrMaterial(cloth, 3, { color: new THREE.Color(...tabardRgb), metalness: 0 }),
     mail: pbrMaterial(mail, 6, { color: 0x56524d }),
   });
   bakeRig(c.root);
@@ -103,15 +106,25 @@ if (sceneName === 'test' || sceneName === 'character') {
     cam.target.copy(world.spawn).add(new THREE.Vector3(0, 1, 0));
   }
 } else {
-  const startArea = sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
+  // Normal play starts at the character roster. Views opened straight to an
+  // area (?scene=, #zone, the benchmark) skip it and play an unsaved hero.
+  const direct = !!bench || params.has('scene') || location.hash.length > 1;
+  let character: CharacterSave | null = null;
+  if (!direct) {
+    document.getElementById('boot')?.remove();
+    character = await chooseCharacter();
+  }
+  // Saved heroes always wake in town.
+  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
   await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : 'Into the Crypt', 'Forging a world out of nothing');
   loading.range(0, 0.12);
   await loading.step("Forging the knight's armour", 0);
-  const hero = await knight();
+  const hero = await knight(character ? tabard(character.look.tabard).rgb : undefined);
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.root);
   game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
+  if (character) game.useCharacter(character);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
 }

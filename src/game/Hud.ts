@@ -165,6 +165,7 @@ export class Hud {
   private help: HTMLDivElement;
   private hurtLevel = 0;
   onInventory: () => void = () => {};
+  onMenu: () => void = () => {};
   onMute: () => void = () => {};
   private muteBtn!: HTMLButtonElement;
 
@@ -194,7 +195,7 @@ export class Hud {
       <div class="banner"><h2></h2><p></p></div>
       <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>
       <div class="journal" hidden></div>
-      <div class="menu"><button type="button" data-act="mute">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="menu"><button type="button" data-act="menu">Menu</button><button type="button" data-act="mute">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
@@ -235,6 +236,7 @@ export class Hud {
     this.help = q('.help');
     for (const el of root.querySelectorAll<HTMLElement>('.orb, .slot, .menu')) el.addEventListener('pointerdown', (e) => e.stopPropagation());
     q<HTMLButtonElement>('[data-act="inv"]').addEventListener('click', () => this.onInventory());
+    q<HTMLButtonElement>('[data-act="menu"]').addEventListener('click', () => this.onMenu());
     this.muteBtn = q<HTMLButtonElement>('[data-act="mute"]');
     this.muteBtn.addEventListener('click', () => this.onMute());
     this.potionSlot.addEventListener('click', () => this.onPotion());

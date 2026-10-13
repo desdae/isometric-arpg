@@ -194,3 +194,47 @@ export function statLines(s: ItemStats): string[] {
   if (s.regen) out.push(`+${s.regen.toFixed(1)} Life per Second`);
   return out;
 }
+
+const ITEM_SLOTS = new Set<Item['slot']>(['weapon', 'armor', 'helm', 'gloves', 'boots', 'ring', 'amulet', 'potion', 'gold', 'quest']);
+const STAT_KEYS: (keyof ItemStats)[] = ['dmgMin', 'dmgMax', 'armor', 'life', 'mana', 'crit', 'attackSpeed', 'lifeSteal', 'regen'];
+
+/**
+ * Rebuilds an item from saved data, or null when it can't be used. Items are
+ * saved with their rolled numbers, not with the affixes that made them, so an
+ * item keeps working after its base or affix is renamed, rebalanced or
+ * removed. Stats this version doesn't know are dropped, unknown fields ignored.
+ */
+export function restoreItem(raw: unknown): Item | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const slot = o.slot as Item['slot'];
+  if (!ITEM_SLOTS.has(slot)) return null;
+  const name = typeof o.name === 'string' && o.name ? o.name.slice(0, 80) : null;
+  if (!name) return null;
+  const stats: ItemStats = {};
+  if (o.stats && typeof o.stats === 'object') {
+    for (const k of STAT_KEYS) {
+      const v = (o.stats as Record<string, unknown>)[k];
+      if (typeof v === 'number' && Number.isFinite(v)) stats[k] = v;
+    }
+  }
+  const rarity = typeof o.rarity === 'string' && o.rarity in RARITY_COLOR ? (o.rarity as Rarity) : 'common';
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  return {
+    id: nextId++,
+    name,
+    base: typeof o.base === 'string' ? o.base.slice(0, 80) : name,
+    slot,
+    rarity,
+    level: Math.max(1, Math.round(num(o.level, 1))),
+    stats,
+    amount: Math.max(1, Math.round(num(o.amount, 1))),
+    ...(typeof o.lore === 'string' ? { lore: o.lore.slice(0, 300) } : {}),
+  };
+}
+
+/** The saved form of an item: everything but its id, which is handed out afresh on load. */
+export function saveItem(it: Item): Omit<Item, 'id'> {
+  const { id: _id, ...rest } = it;
+  return { ...rest, stats: { ...it.stats } };
+}

@@ -168,6 +168,27 @@ export class QuestLog {
   /** Bumps every time something changes, so the HUD knows when to redraw. */
   version = 0;
 
+  /** Quest state for the save file, by quest id so text and rewards can change freely. */
+  toSave() {
+    return { active: this.active.map((q) => ({ id: q.def.id, progress: q.progress })), done: [...this.done] };
+  }
+
+  /** Loads saved quest state. Quests that no longer exist are skipped. */
+  restore(data: { active?: unknown; done?: unknown } | undefined) {
+    this.active.length = 0;
+    this.done.clear();
+    if (Array.isArray(data?.done)) for (const id of data.done) if (typeof id === 'string') this.done.add(id);
+    if (Array.isArray(data?.active)) {
+      for (const a of data.active as { id?: unknown; progress?: unknown }[]) {
+        const def = DEFS.find((d) => d.id === a?.id);
+        if (!def || this.active.some((q) => q.def.giver === def.giver)) continue;
+        const p = typeof a.progress === 'number' && Number.isFinite(a.progress) ? Math.round(a.progress) : 0;
+        this.active.push({ def, progress: Math.max(0, Math.min(def.count, p)) });
+      }
+    }
+    this.version++;
+  }
+
   /** The next quest `giver` has to offer, if any. */
   available(giver: string): QuestDef | null {
     if (this.active.some((q) => q.def.giver === giver)) return null;

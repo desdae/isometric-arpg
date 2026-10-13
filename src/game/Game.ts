@@ -22,6 +22,8 @@ import { SK } from './Skills';
 import { cutaway } from '../engine/cutaway';
 import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
 import { QuestLog, type Quest } from './Quests';
+import { GameMenu } from './GameMenu';
+import { applySave, captureSave, writeSave, type CharacterSave } from './Save';
 import { Shop } from './Shop';
 import { PortalFx } from './Portal';
 import type { DialogueAction } from '../engine/Dialogue';
@@ -89,6 +91,11 @@ export class Game {
   private viewMat = new THREE.Matrix4();
   private viewSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   private deathTimer = -1;
+  readonly menu = new GameMenu();
+  /** The hero being played; null for views opened straight from the URL, which never save. */
+  private character: CharacterSave | null = null;
+  private playTime = 0;
+  private saveTimer = 0;
 
   constructor(
     private builders: Partial<Record<AreaName, AreaBuilder>>,
@@ -123,6 +130,15 @@ export class Game {
     this.hud.onSkills = () => this.toggleTree();
     this.hud.onRevive = () => this.revive();
     this.hud.onMute = () => audio.toggleMute();
+    this.hud.onMenu = () => this.toggleMenu();
+    this.menu.onQuit = () => {
+      this.saveNow();
+      location.reload();
+    };
+    // Save whenever the page is hidden or closed, so nothing since the last autosave is lost.
+    const flush = () => this.saveNow();
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
     audio.onMuteChange = (m) => this.hud.setMuted(m);
     this.hud.setMuted(audio.muted);
     this.exitLayer = document.createElement('div');
@@ -140,6 +156,27 @@ export class Game {
       @keyframes quest-bob { 50% { margin-top: -5px; } }`;
     document.head.appendChild(style);
     this.bindInput();
+  }
+
+  /** Loads a saved hero into the game; from now on progress is saved to it. */
+  useCharacter(save: CharacterSave) {
+    this.character = save;
+    this.playTime = save.playTime;
+    applySave(save, this.stats, this.quests);
+  }
+
+  /** Writes the hero's progress to storage now (a no-op for unsaved views). */
+  saveNow() {
+    if (!this.character) return;
+    captureSave(this.character, this.stats, this.quests, this.area?.name ?? 'town', this.playTime);
+    writeSave(this.character);
+    this.saveTimer = 0;
+  }
+
+  private toggleMenu(on = !this.menu.open) {
+    audio.click();
+    if (on) this.saveNow();
+    this.menu.toggle(on, this.character ? `${this.character.name} · saved` : 'This view is not saved');
   }
 
   async start(name: AreaName, entry: string) {
@@ -300,6 +337,7 @@ export class Game {
     // Dig the crypt while the hero is out in the fields, so going down is quick.
     if (name === 'zone') this.preloadSoon('dungeon', 4000);
     this.travelling = false;
+    this.saveNow();
   }
 
   /**
@@ -737,9 +775,13 @@ export class Game {
       if (k === 't') void this.openPortal();
       if (k === 'l' || k === 'j') this.toggleJournal();
       if (k === 'escape') {
+        // Escape closes whatever is open; with nothing open it brings up the menu.
+        const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open;
         this.inventory.toggle(false);
         this.hud.showJournal(null);
         this.tree.toggle(false);
+        if (this.menu.open) this.menu.toggle(false);
+        else if (!any) this.toggleMenu(true);
       }
     });
   }
@@ -748,7 +790,12 @@ export class Game {
 
   update(dt: number, t: number) {
     if (!this.area) return;
+    // The world holds still while the menu is up.
+    if (this.menu.open) return;
     this.time = t;
+    this.playTime += dt;
+    // Autosave every few seconds; a save is a small JSON write.
+    if ((this.saveTimer += dt) > 10 && !this.travelling) this.saveNow();
     const a = this.area;
     const w = a.world;
     const p = this.player;
