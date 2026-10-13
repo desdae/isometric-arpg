@@ -95,14 +95,13 @@ export class Game {
   readonly menu = new GameMenu();
   /** The hero being played; null for views opened straight from the URL, which never save. */
   private character: CharacterSave | null = null;
-  /** The mire's layout for views opened straight from the URL (no saved hero). */
-  private directSwampSeed = Math.floor(Math.random() * 1e9);
-  /** The hero's own mire: the same layout on every visit and after reloading. */
+  /** The hero's mire seed and when they last left it (the save's copy, or a scratch one for unsaved views). */
+  private worldState: CharacterSave['world'] = { swampSeed: Math.floor(Math.random() * 1e9), swampLeftAt: null };
   get swampSeed(): number {
-    return this.character?.world.swampSeed ?? this.directSwampSeed;
+    return this.worldState.swampSeed;
   }
   set swampSeed(v: number) {
-    this.directSwampSeed = v;
+    this.worldState.swampSeed = v;
   }
   private playTime = 0;
   private saveTimer = 0;
@@ -171,6 +170,7 @@ export class Game {
   /** Loads a saved hero into the game; from now on progress is saved to it. */
   useCharacter(save: CharacterSave) {
     this.character = save;
+    this.worldState = save.world;
     this.playTime = save.playTime;
     applySave(save, this.stats, this.quests);
   }
@@ -212,7 +212,8 @@ export class Game {
   private load(name: AreaName): Promise<AreaState> {
     const cached = this.building.get(name);
     if (cached) return cached;
-    const p = (async () => {
+    let p: Promise<AreaState> | null = null;
+    p = (async () => {
       const world = await this.builders[name]!();
       const scene = world.scene;
       scene.environment = this.environment;
@@ -242,7 +243,8 @@ export class Game {
         el: this.label(it.label, () => this.player.interact(it.pos, it.radius, () => it.active() && it.use())),
       }));
       const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels, useLabels };
-      this.areas.set(name, state);
+      // A build that was thrown away while it ran (the mire rerolled) doesn't replace the new one.
+      if (!p || this.building.get(name) === p) this.areas.set(name, state);
       return state;
     })();
     this.building.set(name, p);
@@ -274,6 +276,34 @@ export class Game {
     for (const x of [...a.exitLabels, ...a.useLabels]) x.el.remove();
     this.areas.delete(a.name);
     this.building.delete(a.name);
+    // Free its GPU memory. Anything shared with another area (monster
+    // materials, the sky) is simply uploaded again when next drawn.
+    if (this.area !== a) {
+      a.world.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || o === this.sky.mesh) return;
+        m.geometry.dispose();
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+          for (const v of Object.values(mat)) if (v instanceof THREE.Texture && v !== this.environment) v.dispose();
+          mat.dispose();
+        }
+      });
+    }
+  }
+
+  /**
+   * The mire is laid out anew once the hero has spent this long (in play
+   * time) away from it; come back sooner and it is as they left it.
+   */
+  private static readonly SWAMP_FORGET = 15 * 60;
+  private rerollSwampIfForgotten() {
+    const ws = this.worldState;
+    if (ws.swampLeftAt === null || this.playTime - ws.swampLeftAt < Game.SWAMP_FORGET) return;
+    ws.swampSeed = Math.floor(Math.random() * 1e9);
+    ws.swampLeftAt = null;
+    const old = this.areas.get('swamp');
+    if (old) this.discard(old);
+    else this.building.delete('swamp');
   }
 
   private scriptCtx(): ScriptContext {
@@ -291,6 +321,9 @@ export class Game {
   async enter(name: AreaName, entry: string, fade = true) {
     this.travelling = true;
     if (this.area) audio.travel();
+    if (name === 'swamp' && this.area?.name !== 'swamp') this.rerollSwampIfForgotten();
+    // Leaving the mire starts its clock.
+    if (this.area?.name === 'swamp' && name !== 'swamp') this.worldState.swampLeftAt = this.playTime;
     const ready = this.areas.get(name);
     // An area that still has to be generated gets the loading splash.
     const splash = !ready || loading.active;
@@ -347,7 +380,8 @@ export class Game {
     // Dig the crypt while the hero is out in the fields, so going down is quick.
     if (name === 'zone') {
       this.preloadSoon('dungeon', 4000);
-      this.preloadSoon('swamp', 10000);
+      const left = this.worldState.swampLeftAt;
+      if (left === null || this.playTime - left < Game.SWAMP_FORGET - 60) this.preloadSoon('swamp', 10000);
     }
     this.travelling = false;
     this.saveNow();

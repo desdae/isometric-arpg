@@ -54,8 +54,12 @@ export interface CharacterSave {
   quests: { active: { id: string; progress: number }[]; done: string[] };
   /** Where the hero was last; play resumes in town. */
   area: string;
-  /** This hero's world: random once, when the hero is made, then kept. */
-  world: { swampSeed: number };
+  /**
+   * This hero's world. The mire keeps its layout until the hero has spent
+   * a while (in play time) away from it; `swampLeftAt` is the play time when
+   * they last walked out, or null if they haven't been since it was laid out.
+   */
+  world: { swampSeed: number; swampLeftAt: number | null };
   /** Room for systems that don't exist yet (a stash, achievements, a second act). */
   ext: Json;
 }
@@ -121,7 +125,11 @@ export function upgrade(raw: unknown): CharacterSave {
     quests: { ...quests, active: Array.isArray(quests.active) ? (quests.active as CharacterSave['quests']['active']) : [], done: Array.isArray(quests.done) ? (quests.done as string[]) : [] },
     area: str(d.area, 'town'),
     // Saves from before the mire get theirs now; it is kept from then on.
-    world: { ...obj(d.world), swampSeed: Math.floor(num(obj(d.world).swampSeed, newSeed(), 0)) },
+    world: {
+      ...obj(d.world),
+      swampSeed: Math.floor(num(obj(d.world).swampSeed, newSeed(), 0)),
+      swampLeftAt: typeof obj(d.world).swampLeftAt === 'number' ? num(obj(d.world).swampLeftAt, 0, 0) : null,
+    },
     ext: obj(d.ext),
   };
 }
@@ -211,7 +219,7 @@ export function newCharacter(slot: number, name: string, classId: string, tabard
     hero: { level: 1, xp: 0, gold: 0, potions: 3, ranks: { ...cls.startRanks }, belt: [...cls.startBelt], equipped: {}, bag: [] },
     quests: { active: [], done: [] },
     area: 'town',
-    world: { swampSeed: newSeed() },
+    world: { swampSeed: newSeed(), swampLeftAt: null },
     ext: {},
   });
 }
