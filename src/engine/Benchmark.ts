@@ -24,7 +24,7 @@ export const FLAGS = ['noao', 'noshadows', 'nobloom', 'nomsaa', 'res75', 'res50'
 /** The sweep's runs, in order: everything on, then one switch at a time. */
 const SWEEP = ['', 'noao', 'noshadows', 'nobloom', 'nomsaa', 'res75'];
 const SWEEP_KEY = 'benchSweep';
-type SweepRow = { run: string; fps: number; frame: number; cpu: number; low: number };
+type SweepRow = { run: string; fps: number; frame: number; cpu: number; low: number; buffer: string };
 type Flag = (typeof FLAGS)[number];
 
 /** The benchmark's switches, or null when this is not a benchmark run. */
@@ -176,7 +176,7 @@ export class Benchmark {
     document.body.appendChild(el);
     console.log(lines.join('\n'));
     (window as unknown as { __bench: string }).__bench = lines.join('\n');
-    if (this.flags.has('sweep')) this.sweepStep({ run: '', fps, frame: total / n, cpu: upd + ren, low: low1 }, el);
+    if (this.flags.has('sweep')) this.sweepStep({ run: '', fps, frame: total / n, cpu: upd + ren, low: low1, buffer: `${size.x}×${size.y}` }, el);
   }
 
   /** Records this run of a sweep, then moves on to the next run or shows the table. */
@@ -205,7 +205,7 @@ export class Benchmark {
       `Benchmark sweep · Blighted Fields · ${LENGTH / 2} s per run`,
       'run              avg FPS  1% low  frame ms  CPU ms  saves ms',
       ...rows.map((r) => `${label[r.run].padEnd(16)} ${r.fps.toFixed(1).padStart(7)} ${r.low.toFixed(0).padStart(7)} ${r.frame.toFixed(2).padStart(9)} ${r.cpu.toFixed(2).padStart(7)} ${r.run ? (base.frame - r.frame).toFixed(2).padStart(9) : '        -'}`),
-      `buffer ${this.r.renderer.getDrawingBufferSize(new THREE.Vector2()).toArray().join('×')} · ${navigator.userAgent}`,
+      `buffer ${base.buffer} (75% run ${rows.find((r) => r.run === 'res75')?.buffer ?? '-'}) · ${navigator.userAgent}`,
     ].join('\n');
     el.querySelector('h3')!.textContent = 'Benchmark sweep';
     el.querySelector('.big')?.remove();
