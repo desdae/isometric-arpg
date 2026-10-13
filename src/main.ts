@@ -17,6 +17,7 @@ import { buildDungeon } from './scenes/dungeon';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { dressKnight } from './actors/outfits/knight';
+import { dressMage } from './actors/outfits/mage';
 import { bakeRig, SHADOW_LAYER } from './actors/bake';
 import { addSilhouette } from './actors/silhouette';
 import { KINDS, type MonsterKind } from './actors/Monster';
@@ -24,7 +25,7 @@ import { monsterMaterials } from './actors/monsters/materials';
 import type { Rig } from './actors/Rig';
 import { Game } from './game/Game';
 import { chooseCharacter } from './game/CharacterSelect';
-import { tabard } from './game/Classes';
+import { classDef, tabard } from './game/Classes';
 import type { CharacterSave } from './game/Save';
 import { MOON_OFFSET, type World } from './world/World';
 
@@ -68,6 +69,31 @@ async function knight(tabardRgb: [number, number, number] = tabard(undefined).rg
   return c;
 }
 
+async function mage(accentRgb: [number, number, number] = tabard(undefined).rgb): Promise<Character> {
+  const [cloth, wood] = await bakeSurfaces([
+    { kind: 'cloth', seed: 22, size: 512, normalStrength: 1.5 },
+    { kind: 'deadBark', seed: 24, size: 256, normalStrength: 5 },
+  ]);
+  const c = dressMage(new Character(), {
+    robe: pbrMaterial(cloth, 3, { color: new THREE.Color(0.075, 0.07, 0.085), metalness: 0 }),
+    under: pbrMaterial(cloth, 3, { color: new THREE.Color(0.16, 0.13, 0.11), metalness: 0 }),
+    accent: pbrMaterial(cloth, 3, { color: new THREE.Color(...accentRgb), metalness: 0 }),
+    leather: new THREE.MeshStandardMaterial({ color: 0x1c120c, roughness: 0.75 }),
+    skin: new THREE.MeshStandardMaterial({ color: 0x8a6a58, roughness: 0.65 }),
+    wood: pbrMaterial(wood, 1, { color: 0x6a5240 }),
+    iron: new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: 0.9, roughness: 0.45 }),
+    gold: new THREE.MeshStandardMaterial({ color: 0x9a7438, metalness: 1, roughness: 0.42 }),
+    crystal: new THREE.MeshStandardMaterial({ color: 0x8a60ff, emissive: new THREE.Color(1.6, 0.8, 3.6), roughness: 0.2 }),
+    eyes: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 1.1, 0.35) }),
+    dark: new THREE.MeshBasicMaterial({ color: 0x030202 }),
+  });
+  bakeRig(c.root);
+  return c;
+}
+
+/** Builds the hero's model for a class, dressed in the chosen colour. */
+const heroModel = (classId: string, rgb?: [number, number, number]) => (classId === 'mage' ? mage(rgb) : knight(rgb));
+
 /** ARPG "light radius": a soft light that travels with the hero so they always read. */
 function heroLight(c: THREE.Object3D) {
   const l = new THREE.PointLight(0xffd2b0, 7, 9.5, 1.6);
@@ -98,7 +124,7 @@ if (sceneName === 'test' || sceneName === 'character') {
       if (anim === 'attack') previewAttack = () => body.attack(() => {});
       if (anim === 'die') setTimeout(() => body.die(), 300);
     } else {
-      const c = await knight();
+      const c = await heroModel(model);
       preview = c;
       heroLight(c.root);
     }
@@ -118,13 +144,16 @@ if (sceneName === 'test' || sceneName === 'character') {
   const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
   await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : 'Into the Crypt', 'Forging a world out of nothing');
   loading.range(0, 0.12);
-  await loading.step("Forging the knight's armour", 0);
-  const hero = await knight(character ? tabard(character.look.tabard).rgb : undefined);
+  await loading.step('Dressing the hero', 0);
+  // Direct views can try a class with ?class=mage.
+  const classId = character ? classDef(character.classId).id : classDef(params.get('class') ?? 'knight').id;
+  const hero = await heroModel(classId, character ? tabard(character.look.tabard).rgb : undefined);
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.root);
   game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
   if (character) game.useCharacter(character);
+  else game.stats.setClass(classId);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');
   world = game.world!;
 }

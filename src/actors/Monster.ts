@@ -337,6 +337,7 @@ export class Monster implements Combatant {
       }
       return;
     }
+    if (this.chilled > 0) this.chilled -= dt;
     if (this.stunned > 0) {
       // Dazed: stands swaying, does nothing.
       this.stunned -= dt;
@@ -416,7 +417,7 @@ export class Monster implements Combatant {
     if (dist < this.radius + p.radius && dist > 0.001) want.add(toPlayer.clone().multiplyScalar(-(this.radius + p.radius - dist) * 8 / dist));
 
     // Integrate with a little inertia.
-    const targetSpeed = Math.min(want.length(), this.def.speed * 1.2);
+    const targetSpeed = Math.min(want.length(), this.def.speed * 1.2) * (this.chilled > 0 ? 0.35 : 1);
     this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-dt * 8));
     if (want.lengthSq() > 0.01) {
       const step = want.clone().normalize().multiplyScalar(this.speed * dt);
@@ -437,6 +438,15 @@ export class Monster implements Combatant {
 
   /** Seconds left dazed by a hero's skill. */
   stunned = 0;
+  /** Seconds left slowed by frost. */
+  chilled = 0;
+
+  /** Slows it to a crawl for `secs` (frost spells). */
+  chill(secs: number) {
+    if (!this.alive || this.dormant) return;
+    this.chilled = Math.max(this.chilled, secs);
+    this.awake = true;
+  }
 
   /** Dazes it for `secs` (and wakes it: being stunned is a fight). Returns whether it took. */
   stun(secs: number): boolean {

@@ -1,5 +1,6 @@
 import type { Item, ItemStats, Slot } from './Items';
-import { BELT_KEYS, SK, SKILL, SKILLS, TIER_NEEDS, type Branch, type SkillId } from './Skills';
+import { BELT_KEYS, SK, SKILL, SKILLS, TIER_NEEDS, type Branch, type SkillId, branchClass } from './Skills';
+import { classDef, type ClassDef } from './Classes';
 
 // The hero's numbers: level and experience, life and mana, damage and armour,
 // all recomputed from level plus whatever is equipped.
@@ -7,6 +8,8 @@ import { BELT_KEYS, SK, SKILL, SKILLS, TIER_NEEDS, type Branch, type SkillId } f
 export const SLOTS: Slot[] = ['weapon', 'helm', 'armor', 'gloves', 'boots', 'ring', 'amulet'];
 
 export class Stats {
+  /** The hero's class: base numbers, starting skills, which skill tree. */
+  cls: ClassDef = classDef('knight');
   level = 1;
   xp = 0;
   gold = 0;
@@ -22,6 +25,7 @@ export class Stats {
   attackSpeed = 0;
   lifeSteal = 0;
   regen = 0.6;
+  manaRegen = 3.2;
   /** Ranks learned in the skill tree (Cleave comes free). */
   readonly ranks: Partial<Record<SkillId, number>> = { cleave: 1 };
   /** Unspent skill points: one per level, plus one to start. */
@@ -34,10 +38,20 @@ export class Stats {
   readonly bag: Item[] = [];
   readonly bagSize = 40;
 
-  constructor() {
+  constructor(classId = 'knight') {
+    this.setClass(classId);
     this.recompute();
     this.hp = this.maxHp;
     this.mana = this.maxMana;
+  }
+
+  /** Switches class: starting skills and belt, then fresh numbers. */
+  setClass(id: string) {
+    this.cls = classDef(id);
+    for (const k of Object.keys(this.ranks)) delete this.ranks[k as SkillId];
+    Object.assign(this.ranks, this.cls.startRanks);
+    this.belt.splice(0, this.belt.length, ...this.cls.startBelt);
+    this.recompute();
   }
 
   xpToNext(level = this.level) {
@@ -69,29 +83,33 @@ export class Stats {
       for (const [k, v] of Object.entries(it.stats) as [keyof ItemStats, number][]) total[k] = (total[k] ?? 0) + v;
     }
     const L = this.level - 1;
-    this.maxHp = Math.round(100 + L * 14 + (total.life ?? 0));
-    this.maxMana = Math.round(60 + L * 6 + (total.mana ?? 0));
+    const b = this.cls.base(this.level);
+    this.maxHp = Math.round(b.life + (total.life ?? 0));
+    this.maxMana = Math.round(b.mana + (total.mana ?? 0));
+    this.manaRegen = b.manaRegen;
     const weapon = this.equipped.weapon;
-    // Bare base damage is the knight's starting sword; a found weapon adds to a smaller strength base.
-    const baseMin = weapon ? 3 : 7;
-    const baseMax = weapon ? 4 : 13;
+    // Bare base damage is the class's own weapon; a found weapon adds to a smaller strength base.
+    const baseMin = weapon ? 3 : b.dmgMin;
+    const baseMax = weapon ? 4 : b.dmgMax;
     this.dmgMin = Math.round((baseMin + (total.dmgMin ?? 0)) * (1 + L * 0.06) + L);
     this.dmgMax = Math.max(this.dmgMin + 1, Math.round((baseMax + (total.dmgMax ?? 0)) * (1 + L * 0.06) + L * 1.5));
-    this.armor = Math.round(10 + L * 2 + (total.armor ?? 0));
+    this.armor = Math.round(b.armor + (total.armor ?? 0));
     this.crit = 0.05 + (total.crit ?? 0);
     this.attackSpeed = total.attackSpeed ?? 0;
     this.lifeSteal = total.lifeSteal ?? 0;
     this.regen = 0.6 + L * 0.1 + (total.regen ?? 0);
     // Passives from the skill tree.
-    const keen = 1 + SK.keenEdge(this.rank('keenEdge'));
+    const keen = 1 + SK.keenEdge(this.rank('keenEdge')) + SK.pyromancy(this.rank('pyromancy'));
     this.dmgMin = Math.round(this.dmgMin * keen);
     this.dmgMax = Math.max(this.dmgMin + 1, Math.round(this.dmgMax * keen));
-    this.crit += SK.precision(this.rank('precision'));
-    this.armor = Math.round(this.armor * (1 + SK.ironSkin(this.rank('ironSkin')) + this.armorBuff));
-    this.maxHp = Math.round(this.maxHp * (1 + SK.vigor(this.rank('vigor'))));
+    this.crit += SK.precision(this.rank('precision')) + SK.combustion(this.rank('combustion'));
+    this.armor = Math.round(this.armor * (1 + SK.ironSkin(this.rank('ironSkin')) + SK.frostSkin(this.rank('frostSkin')) + this.armorBuff));
+    this.maxHp = Math.round(this.maxHp * (1 + SK.vigor(this.rank('vigor')) + SK.wintersResolve(this.rank('wintersResolve'))));
+    this.maxMana = Math.round(this.maxMana * (1 + SK.focus(this.rank('focus'))));
+    this.manaRegen += SK.manaFlow(this.rank('manaFlow'));
     this.regen += SK.secondWindRegen(this.rank('secondWind'));
     this.lifeSteal += SK.bloodthirst(this.rank('bloodthirst'));
-    this.attackSpeed += SK.fervor(this.rank('fervor'));
+    this.attackSpeed += SK.fervor(this.rank('fervor')) + SK.arcaneHaste(this.rank('arcaneHaste'));
     this.hp = Math.min(this.hp, this.maxHp);
     this.mana = Math.min(this.mana, this.maxMana);
   }
@@ -138,12 +156,13 @@ export class Stats {
 
   /** Points already spent in a branch. */
   spentIn(branch: Branch) {
-    return SKILLS.filter((d) => d.branch === branch).reduce((n, d) => n + this.rank(d.id) - (d.id === 'cleave' ? 1 : 0), 0);
+    return SKILLS.filter((d) => d.branch === branch).reduce((n, d) => n + this.rank(d.id) - (this.cls.startRanks[d.id] ?? 0), 0);
   }
 
   /** Why a skill can't take another point right now, or null if it can. */
   blocked(id: SkillId): string | null {
     const d = SKILL[id];
+    if (branchClass(d.branch) !== this.cls.id) return 'Another class';
     if (this.rank(id) >= d.maxRank) return 'Fully learned';
     const need = TIER_NEEDS[d.tier];
     if (this.spentIn(d.branch) < need) return `Needs ${need} points in ${d.branch[0].toUpperCase() + d.branch.slice(1)}`;

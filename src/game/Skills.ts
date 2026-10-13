@@ -18,9 +18,25 @@ export type SkillId =
   | 'bloodthirst'
   | 'fervor'
   | 'siphon'
-  | 'bloodNova';
+  | 'bloodNova'
+  // Mage
+  | 'fireball'
+  | 'pyromancy'
+  | 'flameWave'
+  | 'combustion'
+  | 'meteor'
+  | 'frostNova'
+  | 'frostSkin'
+  | 'iceShards'
+  | 'wintersResolve'
+  | 'blizzard'
+  | 'manaFlow'
+  | 'focus'
+  | 'blink'
+  | 'arcaneHaste'
+  | 'arcaneBarrage';
 
-export type Branch = 'blade' | 'bulwark' | 'blood';
+export type Branch = 'blade' | 'bulwark' | 'blood' | 'fire' | 'frost' | 'arcane';
 
 export interface SkillDef {
   id: SkillId;
@@ -30,6 +46,8 @@ export interface SkillDef {
   tier: number;
   maxRank: number;
   active: boolean;
+  /** Turns the hero toward the cursor when cast. */
+  aimed?: boolean;
   /** Mana per use at a rank (actives). */
   cost?: (r: number) => number;
   /** Seconds between uses at a rank (actives). */
@@ -42,11 +60,18 @@ export interface SkillDef {
 /** Points that must already be in a branch before a tier opens. */
 export const TIER_NEEDS = [0, 3, 6];
 
-export const BRANCHES: { id: Branch; name: string; blurb: string; color: string }[] = [
-  { id: 'blade', name: 'Blade', blurb: 'Steel and fury', color: '#e0804a' },
-  { id: 'bulwark', name: 'Bulwark', blurb: 'Faith and iron', color: '#d8c070' },
-  { id: 'blood', name: 'Blood', blurb: 'The crypt’s dark gift', color: '#e03a3a' },
+/** Each class has its own three branches; `cls` is the class id. */
+export const BRANCHES: { id: Branch; cls: string; name: string; blurb: string; color: string }[] = [
+  { id: 'blade', cls: 'knight', name: 'Blade', blurb: 'Steel and fury', color: '#e0804a' },
+  { id: 'bulwark', cls: 'knight', name: 'Bulwark', blurb: 'Faith and iron', color: '#d8c070' },
+  { id: 'blood', cls: 'knight', name: 'Blood', blurb: 'The crypt’s dark gift', color: '#e03a3a' },
+  { id: 'fire', cls: 'mage', name: 'Fire', blurb: 'Cinders of the burning sky', color: '#f07a34' },
+  { id: 'frost', cls: 'mage', name: 'Frost', blurb: 'The cold between stars', color: '#7ac8f0' },
+  { id: 'arcane', cls: 'mage', name: 'Arcane', blurb: 'Will made into force', color: '#b88cff' },
 ];
+
+/** The class a branch belongs to. */
+export const branchClass = (b: Branch) => BRANCHES.find((x) => x.id === b)!.cls;
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const svg = (body: string) => `<svg viewBox="0 0 32 32">${body}</svg>`;
@@ -74,6 +99,24 @@ export const SK = {
   siphon: (r: number) => 3 * r,
   novaMult: (r: number) => 2.0 + 0.5 * r,
   novaHeal: (r: number) => 0.2 + 0.05 * r,
+  // Mage
+  staffMult: 0.9,
+  fireballMult: (r: number) => 1.25 + 0.2 * r,
+  pyromancy: (r: number) => 0.07 * r,
+  flameWaveMult: (r: number) => 1.1 + 0.2 * r,
+  combustion: (r: number) => 0.03 * r,
+  meteorMult: (r: number) => 3.0 + 0.6 * r,
+  frostNovaMult: (r: number) => 0.8 + 0.15 * r,
+  frostNovaFreeze: (r: number) => 1.2 + 0.3 * r,
+  frostSkin: (r: number) => 0.15 * r,
+  shardsMult: (r: number) => 0.75 + 0.15 * r,
+  wintersResolve: (r: number) => 0.07 * r,
+  blizzardMult: (r: number) => 0.35 + 0.1 * r,
+  manaFlow: (r: number) => 1.5 * r,
+  focus: (r: number) => 0.1 * r,
+  blinkMult: (r: number) => 0.6 + 0.2 * r,
+  arcaneHaste: (r: number) => 0.06 * r,
+  barrageMult: (r: number) => 0.55 + 0.1 * r,
 };
 
 export const SKILLS: SkillDef[] = [
@@ -102,6 +145,7 @@ export const SKILLS: SkillDef[] = [
   },
   {
     id: 'leapSlam',
+    aimed: true,
     name: 'Leap Slam',
     branch: 'blade',
     tier: 1,
@@ -124,6 +168,7 @@ export const SKILLS: SkillDef[] = [
   },
   {
     id: 'whirlwind',
+    aimed: true,
     name: 'Whirlwind',
     branch: 'blade',
     tier: 2,
@@ -192,6 +237,7 @@ export const SKILLS: SkillDef[] = [
   // ---- Blood ----
   {
     id: 'bloodLance',
+    aimed: true,
     name: 'Blood Lance',
     branch: 'blood',
     tier: 0,
@@ -243,6 +289,182 @@ export const SKILLS: SkillDef[] = [
     cooldown: () => 12,
     text: (r) => `Spend 12% of your life to burst in a 7m nova for ${pct(SK.novaMult(r))} weapon damage, healing ${pct(SK.novaHeal(r))} of the damage dealt.`,
     icon: svg(`<circle cx="16" cy="16" r="5" fill="#c01010"/><circle cx="16" cy="16" r="10" fill="none" stroke="#ff4030" stroke-width="2"/><circle cx="16" cy="16" r="14" fill="none" stroke="#ff4030" stroke-width="1" stroke-dasharray="3 3"/>`),
+  },
+  // ---- Fire (mage) ----
+  {
+    id: 'fireball',
+    aimed: true,
+    name: 'Fireball',
+    branch: 'fire',
+    tier: 0,
+    maxRank: 5,
+    active: true,
+    cost: () => 10,
+    cooldown: () => 0,
+    text: (r) => `Hurl a ball of fire toward the cursor that bursts on the first foe it meets, burning everything within 2m for ${pct(SK.fireballMult(r))} damage.`,
+    icon: svg(`<circle cx="19" cy="13" r="7" fill="#ff8a30"/><circle cx="19" cy="13" r="3.5" fill="#fff0b0"/><path d="M4 28c3-6 6-9 10-11M7 23c2-3 4-5 7-6" stroke="#ff6020" stroke-width="2.2" fill="none"/>`),
+  },
+  {
+    id: 'pyromancy',
+    name: 'Pyromancy',
+    branch: 'fire',
+    tier: 0,
+    maxRank: 5,
+    active: false,
+    text: (r) => `+${pct(SK.pyromancy(r))} damage.`,
+    icon: svg(`<path d="M16 3c6 7 9 11 9 16a9 9 0 0 1-18 0c0-4 2-6 4-8 0 4 2 5 3 5-1-5 0-9 2-13z" fill="#e05a20" stroke="#ffc070" stroke-width="1.3"/><path d="M16 17c2 2 3 3 3 5a3 3 0 0 1-6 0c0-2 1-3 3-5z" fill="#fff0b0"/>`),
+  },
+  {
+    id: 'flameWave',
+    aimed: true,
+    name: 'Flame Wave',
+    branch: 'fire',
+    tier: 1,
+    maxRank: 5,
+    active: true,
+    cost: () => 18,
+    cooldown: () => 3,
+    text: (r) => `Send a rolling wall of flame toward the cursor that sears everything it passes through for ${pct(SK.flameWaveMult(r))} damage.`,
+    icon: svg(`<path d="M3 24c4-2 6-10 9-10s4 6 7 6 4-8 7-10" fill="none" stroke="#ff7a28" stroke-width="3"/><path d="M3 28h26" stroke="#ffb060" stroke-width="2"/><path d="M8 20l1-5M15 22l1-6M22 19l1-6" stroke="#fff0b0" stroke-width="1.4"/>`),
+  },
+  {
+    id: 'combustion',
+    name: 'Combustion',
+    branch: 'fire',
+    tier: 1,
+    maxRank: 3,
+    active: false,
+    text: (r) => `+${pct(SK.combustion(r))} critical strike chance.`,
+    icon: svg(`<circle cx="16" cy="16" r="5" fill="#fff0b0"/><path d="M16 2v7M16 23v7M2 16h7M23 16h7M6 6l5 5M21 21l5 5M26 6l-5 5M11 21l-5 5" stroke="#ff7a28" stroke-width="2.2"/>`),
+  },
+  {
+    id: 'meteor',
+    aimed: true,
+    name: 'Meteor',
+    branch: 'fire',
+    tier: 2,
+    maxRank: 3,
+    active: true,
+    cost: () => 40,
+    cooldown: () => 10,
+    text: (r) => `Call a burning stone down on the cursor. It lands a moment later, crushing everything within 3.5m for ${pct(SK.meteorMult(r))} damage and leaving the ground on fire.`,
+    icon: svg(`<circle cx="21" cy="21" r="7" fill="#c84a18" stroke="#ffb060" stroke-width="1.5"/><path d="M3 3l13 13M8 2l10 10M2 8l10 10" stroke="#ff8a30" stroke-width="2"/><circle cx="19" cy="19" r="2" fill="#fff0b0"/>`),
+  },
+  // ---- Frost (mage) ----
+  {
+    id: 'frostNova',
+    name: 'Frost Nova',
+    branch: 'frost',
+    tier: 0,
+    maxRank: 5,
+    active: true,
+    cost: () => 22,
+    cooldown: () => 8,
+    text: (r) => `A ring of ice bursts out to 5m, dealing ${pct(SK.frostNovaMult(r))} damage and freezing foes in place for ${SK.frostNovaFreeze(r).toFixed(1)}s.`,
+    icon: svg(`<circle cx="16" cy="16" r="12" fill="none" stroke="#8ad8ff" stroke-width="2" stroke-dasharray="4 3"/><path d="M16 6v20M7 11l18 10M25 11L7 21" stroke="#e0f6ff" stroke-width="2"/>`),
+  },
+  {
+    id: 'frostSkin',
+    name: 'Frost Skin',
+    branch: 'frost',
+    tier: 0,
+    maxRank: 5,
+    active: false,
+    text: (r) => `+${pct(SK.frostSkin(r))} armour.`,
+    icon: svg(`<path d="M16 3l11 4v8c0 7-5 12-11 14C10 27 5 22 5 15V7z" fill="#2a4a68" stroke="#9ad8ff" stroke-width="1.5"/><path d="M16 8v14M10 12l12 6M22 12l-12 6" stroke="#e0f6ff" stroke-width="1.4"/>`),
+  },
+  {
+    id: 'iceShards',
+    aimed: true,
+    name: 'Ice Shards',
+    branch: 'frost',
+    tier: 1,
+    maxRank: 5,
+    active: true,
+    cost: () => 16,
+    cooldown: () => 1.5,
+    text: (r) => `Fire a fan of five ice shards toward the cursor; each strikes the first foe it meets for ${pct(SK.shardsMult(r))} damage and chills it briefly.`,
+    icon: svg(`<path d="M4 26L20 6M4 26l22-8M4 26l10-22" stroke="#9ad8ff" stroke-width="2.4"/><path d="M18 4l4 1-1 4zM25 16l3 3-4 1zM12 2l4 1-2 3z" fill="#e8faff"/>`),
+  },
+  {
+    id: 'wintersResolve',
+    name: 'Winter’s Resolve',
+    branch: 'frost',
+    tier: 1,
+    maxRank: 3,
+    active: false,
+    text: (r) => `+${pct(SK.wintersResolve(r))} maximum life.`,
+    icon: svg(`<path d="M16 27C6 20 4 14 6 10c2-4 8-5 10 0 2-5 8-4 10 0 2 4 0 10-10 17z" fill="#2a5a80" stroke="#bfe8ff" stroke-width="1.5"/><path d="M16 11v10M12 13l8 6M20 13l-8 6" stroke="#e8faff" stroke-width="1.3"/>`),
+  },
+  {
+    id: 'blizzard',
+    aimed: true,
+    name: 'Blizzard',
+    branch: 'frost',
+    tier: 2,
+    maxRank: 3,
+    active: true,
+    cost: () => 45,
+    cooldown: () => 14,
+    text: (r) => `Summon a storm of ice over the cursor for 5s: foes within 4m take ${pct(SK.blizzardMult(r))} damage every half second and are slowed to a crawl.`,
+    icon: svg(`<path d="M6 12a6 6 0 0 1 6-6 8 8 0 0 1 14 3 5 5 0 0 1-1 10H8a4 4 0 0 1-2-7z" fill="#3a5a78" stroke="#bfe8ff" stroke-width="1.3"/><path d="M10 22l-2 6M16 22l-2 7M22 22l-2 6" stroke="#e8faff" stroke-width="1.8"/>`),
+  },
+  // ---- Arcane (mage) ----
+  {
+    id: 'manaFlow',
+    name: 'Mana Flow',
+    branch: 'arcane',
+    tier: 0,
+    maxRank: 5,
+    active: false,
+    text: (r) => `+${SK.manaFlow(r).toFixed(1)} mana per second.`,
+    icon: svg(`<path d="M6 10c6-4 12 4 20 0M6 16c6-4 12 4 20 0M6 22c6-4 12 4 20 0" fill="none" stroke="#a88cff" stroke-width="2"/><circle cx="26" cy="22" r="2" fill="#e8dcff"/>`),
+  },
+  {
+    id: 'focus',
+    name: 'Focus',
+    branch: 'arcane',
+    tier: 0,
+    maxRank: 5,
+    active: false,
+    text: (r) => `+${pct(SK.focus(r))} maximum mana.`,
+    icon: svg(`<path d="M16 3l5 13-5 13-5-13z" fill="#6a4ab8" stroke="#e0d0ff" stroke-width="1.4"/><circle cx="16" cy="16" r="3" fill="#f4eeff"/>`),
+  },
+  {
+    id: 'blink',
+    aimed: true,
+    name: 'Blink',
+    branch: 'arcane',
+    tier: 1,
+    maxRank: 5,
+    active: true,
+    cost: () => 15,
+    cooldown: () => 5,
+    text: (r) => `Vanish and reappear at the cursor (up to 8m), the air cracking around you for ${pct(SK.blinkMult(r))} damage.`,
+    icon: svg(`<circle cx="7" cy="22" r="4" fill="none" stroke="#a88cff" stroke-width="1.5" stroke-dasharray="2 2"/><circle cx="24" cy="10" r="5" fill="#8a6ae0" stroke="#e8dcff" stroke-width="1.5"/><path d="M10 19l10-6" stroke="#e8dcff" stroke-width="1.6" stroke-dasharray="3 2"/>`),
+  },
+  {
+    id: 'arcaneHaste',
+    name: 'Arcane Haste',
+    branch: 'arcane',
+    tier: 1,
+    maxRank: 3,
+    active: false,
+    text: (r) => `+${pct(SK.arcaneHaste(r))} casting and attack speed.`,
+    icon: svg(`<path d="M18 3L8 18h7l-3 11 12-16h-7z" fill="#7a5ad0" stroke="#e0d0ff" stroke-width="1.2"/>`),
+  },
+  {
+    id: 'arcaneBarrage',
+    aimed: true,
+    name: 'Arcane Barrage',
+    branch: 'arcane',
+    tier: 2,
+    maxRank: 3,
+    active: true,
+    cost: () => 35,
+    cooldown: () => 9,
+    text: (r) => `Loose ten seeking arcane missiles at foes near the cursor, each dealing ${pct(SK.barrageMult(r))} damage.`,
+    icon: svg(`<circle cx="24" cy="8" r="3" fill="#e8dcff"/><circle cx="10" cy="12" r="2.5" fill="#c8b0ff"/><circle cx="20" cy="22" r="2.5" fill="#c8b0ff"/><path d="M4 28c4-8 10-14 18-18M4 28c6-2 11-4 14-5M4 28c1-6 3-11 5-14" fill="none" stroke="#a88cff" stroke-width="1.6"/>`),
   },
 ];
 

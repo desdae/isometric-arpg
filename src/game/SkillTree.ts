@@ -97,7 +97,7 @@ export class SkillTree {
 
   render() {
     const s = this.stats;
-    const cols = BRANCHES.map((b) => {
+    const cols = BRANCHES.filter((b) => b.cls === s.cls.id).map((b) => {
       const spent = s.spentIn(b.id);
       const tiers = TIER_NEEDS.map((need, tier) => {
         const open = spent >= need;

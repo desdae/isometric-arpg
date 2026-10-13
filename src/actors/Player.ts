@@ -11,6 +11,7 @@ import { BossFx, prewarmBossFx } from '../game/BossFx';
 import { SK, SKILL, type SkillId } from '../game/Skills';
 import type { Monster } from './Monster';
 import { collapse, keyedAction } from './monsters/humanoid';
+import { castMage, staffBolt } from './mage';
 
 // The hero: click-to-move along the nav grid, walk up to things to interact,
 // sword swings at a target (repeating while the button is held), the skills
@@ -45,7 +46,8 @@ export class Player implements Combatant {
   private marker: THREE.Mesh;
   private markerAge = 10;
   private pending: { target: THREE.Vector3; radius: number; onReach: () => void } | null = null;
-  private area: Area | null = null;
+  /** The area the hero stands in (spells read its floor and nav). */
+  area: Area | null = null;
   /** Monster we're swinging at; kept while the button is held. */
   target: Monster | null = null;
   holdAttack = false;
@@ -111,9 +113,19 @@ export class Player implements Combatant {
     this.queued = null;
     this.endCast();
     this.consecrations = [];
+    this.tickers.length = 0;
     prewarmBossFx(area.scene);
     this.velocity.set(0, 0);
     this.shove.set(0, 0);
+    this.syncTransform();
+  }
+
+  /** Moves the hero instantly (Blink). */
+  teleport(to: THREE.Vector3) {
+    this.position.copy(to);
+    this.path = [];
+    this.pending = null;
+    this.velocity.set(0, 0);
     this.syncTransform();
   }
 
@@ -150,8 +162,13 @@ export class Player implements Combatant {
   }
 
   private reach(m: Monster) {
+    // Casters shoot from range; everyone else closes to sword's length.
+    if (this.stats.cls.attack === 'ranged') return 9 + m.radius;
     return 1.35 + m.radius + this.radius * 0.5;
   }
+
+  /** Lasting spell effects (burning ground, storms, missile volleys); each returns false when done. */
+  readonly tickers: ((dt: number, ctx: PlayerContext) => boolean)[] = [];
 
   /**
    * Uses a skill from the belt, aimed at `this.aim`. Returns why it couldn't
@@ -177,7 +194,7 @@ export class Player implements Combatant {
     this.path = [];
     this.pending = null;
     this.velocity.set(0, 0);
-    if (id === 'leapSlam' || id === 'bloodLance' || id === 'whirlwind') {
+    if (def.aimed) {
       const dx = this.aim.x - this.position.x;
       const dz = this.aim.z - this.position.z;
       if (dx * dx + dz * dz > 0.01) this.yaw = Math.atan2(dx, dz);
@@ -205,6 +222,8 @@ export class Player implements Combatant {
       case 'bloodNova':
         this.doNova(ctx, fx, r);
         break;
+      default:
+        castMage(this, id, r, ctx, fx);
     }
     return null;
   }
@@ -217,13 +236,13 @@ export class Player implements Combatant {
     return Math.min(1, t / full);
   }
 
-  private fxFor(e: Effects): BossFx {
+  fxFor(e: Effects): BossFx {
     if (!this.bfx || this.bfx.fx !== e) this.bfx = new BossFx(e);
     return this.bfx;
   }
 
   /** Locks the hero into a skill for `dur` seconds; `end` tidies the pose. */
-  private busy(dur: number, end?: () => void) {
+  busy(dur: number, end?: () => void) {
     this.swinging = true;
     this.castLeft = dur;
     this.castEnd = end ?? null;
@@ -242,14 +261,14 @@ export class Player implements Combatant {
     }
   }
 
-  private restPose() {
+  restPose() {
     const c = this.character;
     c.body.rotation.set(0, 0, 0);
     c.body.position.set(0, 0, 0);
     for (const a of c.arms) a.upper.rotation.z = a.side * 0.12;
   }
 
-  private near(ctx: PlayerContext, at: THREE.Vector3, radius: number) {
+  near(ctx: PlayerContext, at: THREE.Vector3, radius: number) {
     return ctx.monsters.filter((m) => m.alive && Math.hypot(m.position.x - at.x, m.position.z - at.z) < radius + m.radius);
   }
 
@@ -591,6 +610,7 @@ export class Player implements Combatant {
         for (const m of this.near(ctx, this.position, 2.4)) this.strike(m, ctx, w.mult);
       }
     }
+    for (let i = this.tickers.length - 1; i >= 0; i--) if (!this.tickers[i](dt, ctx)) this.tickers.splice(i, 1);
     for (let i = this.consecrations.length - 1; i >= 0; i--) {
       const z = this.consecrations[i];
       z.left -= dt;
@@ -662,7 +682,7 @@ export class Player implements Combatant {
   }
 
   /** Hits a monster with the sword's damage times `mult`; returns the damage dealt. */
-  private strike(m: Monster, ctx: PlayerContext, mult = 1): number {
+  strike(m: Monster, ctx: PlayerContext, mult = 1): number {
     const s = this.stats;
     const roll = rollDamage(s.dmgMin * mult, s.dmgMax * mult, s.crit);
     const dealt = m.takeDamage(roll.amount, roll.crit, this.position);
@@ -682,6 +702,13 @@ export class Player implements Combatant {
 
   private startSwing(m: Monster, ctx: PlayerContext) {
     this.swinging = true;
+    if (this.stats.cls.attack === 'ranged') {
+      staffBolt(this, m, ctx);
+      const end = this.stats.swingTime;
+      let t = 0;
+      this.swingTick = (dt) => (t += dt) >= end;
+      return;
+    }
     const c = this.character;
     const back = this.swingIndex++ % 2 === 1;
     // Forehand: up and out to the right, down across the body. Backhand mirrors it.
@@ -741,7 +768,7 @@ export class Player implements Combatant {
       return;
     }
     s.hp = Math.min(s.maxHp, s.hp + s.regen * dt);
-    s.mana = Math.min(s.maxMana, s.mana + 3.2 * dt);
+    s.mana = Math.min(s.maxMana, s.mana + s.manaRegen * dt);
     if (this.swingTick && this.swingTick(dt)) {
       this.swingTick = null;
       this.swinging = false;

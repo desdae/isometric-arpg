@@ -1,6 +1,6 @@
 import { restoreItem, saveItem, type Item } from './Items';
 import { classDef, tabard } from './Classes';
-import { SKILL, type SkillId } from './Skills';
+import { SKILL, branchClass, type SkillId } from './Skills';
 import { SLOTS, type Stats } from './Stats';
 import type { QuestLog } from './Quests';
 
@@ -214,6 +214,7 @@ const unreadable = new WeakMap<CharacterSave, unknown[]>();
 export function applySave(save: CharacterSave, stats: Stats, quests: QuestLog) {
   const h = save.hero;
   const cls = classDef(save.classId);
+  stats.setClass(cls.id);
   stats.level = h.level;
   stats.xp = Math.min(h.xp, stats.xpToNext() - 1);
   stats.gold = h.gold;
@@ -223,7 +224,7 @@ export function applySave(save: CharacterSave, stats: Stats, quests: QuestLog) {
   for (const [id, r] of Object.entries(cls.startRanks)) stats.ranks[id as SkillId] = r;
   for (const [id, r] of Object.entries(h.ranks)) {
     const def = SKILL[id as SkillId];
-    if (!def || typeof r !== 'number' || !Number.isFinite(r)) continue;
+    if (!def || branchClass(def.branch) !== cls.id || typeof r !== 'number' || !Number.isFinite(r)) continue;
     stats.ranks[id as SkillId] = Math.max(cls.startRanks[id as SkillId] ?? 0, Math.min(def.maxRank, Math.round(r)));
   }
   // One point per level, plus one to start; free starting ranks cost nothing.
@@ -289,7 +290,7 @@ export function captureSave(save: CharacterSave, stats: Stats, quests: QuestLog,
     gold: stats.gold,
     potions: stats.potions,
     // Skills this build doesn't know are kept as they were.
-    ranks: { ...Object.fromEntries(Object.entries(save.hero.ranks).filter(([id]) => !SKILL[id as SkillId])), ...stats.ranks },
+    ranks: { ...Object.fromEntries(Object.entries(save.hero.ranks).filter(([id]) => !SKILL[id as SkillId] || branchClass(SKILL[id as SkillId].branch) !== stats.cls.id)), ...stats.ranks },
     belt: [...stats.belt],
     equipped,
     bag: [...stats.bag.map(saveItem), ...((unreadable.get(save) ?? []) as Omit<Item, 'id'>[])],

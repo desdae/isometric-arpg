@@ -115,6 +115,7 @@ const CSS = `
   }
 `;
 
+const ICON_STAFF = `<svg viewBox="0 0 32 32"><path d="M7 29L22 10" stroke="#6a4a30" stroke-width="2.6"/><path d="M20 5l6 6-4 4-6-6z" fill="#a880ff" stroke="#f0e8ff" stroke-width="1"/><circle cx="23" cy="8" r="7" fill="none" stroke="#a880ff" stroke-width=".8" opacity=".6"/></svg>`;
 const ICON_SWORD = `<svg viewBox="0 0 32 32"><path d="M24 4l4 0 0 4-13 13-3-1-1-3z" fill="#c8c0b8" stroke="#3a2a20"/><path d="M8 18l6 6-2 2-2-1-3 3-2-2 3-3-1-2z" fill="#6a4020" stroke="#2a1a10"/></svg>`;
 const ICON_POTION = `<svg viewBox="0 0 32 32"><path d="M13 4h6v5l5 6v9a4 4 0 0 1-4 4h-8a4 4 0 0 1-4-4v-9l5-6z" fill="#2a1010" stroke="#8a6a50"/><path d="M9 17h14v7a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3z" fill="#c01810"/><rect x="12" y="2" width="8" height="3" fill="#6a4a30"/></svg>`;
 
@@ -202,7 +203,7 @@ export class Hud {
           <div class="level"></div>
           <div class="xp"><div class="xp-fill"></div></div>
           <div class="slots">
-            <div class="slot" title="Strike (left click a foe)"><span class="key">LMB</span>${ICON_SWORD}</div>
+            <div class="slot" data-act="strike" title="Strike (left click a foe)"><span class="key">LMB</span>${ICON_SWORD}</div>
             ${BELT_KEYS.map((k, i) => `<div class="slot skill empty" data-skill="${i}"><span class="key">${k}</span><div class="cd"></div></div>`).join('')}
             <div class="gap"></div>
             <div class="slot" data-act="potion" title="Healing Draught"><span class="key">1</span>${ICON_POTION}<span class="count"></span></div>
@@ -265,7 +266,16 @@ export class Hud {
     setTimeout(() => (this.help.style.opacity = '0.55'), 20000);
   }
 
+  private strikeKind = 'melee';
+
   update(dt: number, s: Stats, cooldown: (id: SkillId) => number) {
+    if (s.cls.attack !== this.strikeKind) {
+      // Casters strike with a bolt from the staff.
+      this.strikeKind = s.cls.attack;
+      const slot = this.root.querySelector<HTMLElement>('[data-act="strike"]')!;
+      slot.innerHTML = `<span class="key">LMB</span>${this.strikeKind === 'ranged' ? ICON_STAFF : ICON_SWORD}`;
+      slot.title = this.strikeKind === 'ranged' ? 'Staff bolt (left click a foe)' : 'Strike (left click a foe)';
+    }
     put(this.lifeFill, 'height', `${((s.hp / s.maxHp) * 100).toFixed(1)}%`);
     put(this.manaFill, 'height', `${((s.mana / s.maxMana) * 100).toFixed(1)}%`);
     put(this.lifeText, 'text', `${Math.ceil(s.hp)}`);

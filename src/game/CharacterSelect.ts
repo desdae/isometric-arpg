@@ -40,7 +40,7 @@ const CSS = `
     background: #0c0505; border: 1px solid #5a2a20; outline: none; }
   .csel input[type=text]:focus { border-color: #c0703a; }
   .csel-classes { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-  .csel-class { padding: 10px 12px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: rgba(0,0,0,.35); border: 1px solid #2a1612; }
+  .csel-class { display: flex; flex-direction: column; justify-content: flex-start; gap: 2px; padding: 10px 12px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: rgba(0,0,0,.35); border: 1px solid #2a1612; }
   .csel-class.on { border-color: #c0703a; background: rgba(70,20,12,.5); }
   .csel-class b { display: block; font: 600 15px/1.3 'Cinzel', Georgia, serif; color: #f0d0a8; }
   .csel-class span { font-size: 14px; color: #a89080; }
@@ -68,6 +68,8 @@ const swatchCss = (id: string) => {
   const [r, g, b] = tabard(id).rgb.map((c) => Math.round(Math.pow(c, 1 / 2.2) * 255));
   return `rgb(${r},${g},${b})`;
 };
+/** What the chosen colour dyes: the knight's tabard, the mage's mantle and stole. */
+const colourWord = (classId: string) => (classDef(classId).id === 'mage' ? 'Mantle' : 'Tabard');
 const NAME_OK = /^[\p{L}][\p{L}' -]*$/u;
 
 /** Shows the roster until the player picks or creates a hero. */
@@ -149,7 +151,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
           <div class="csel-err" data-err>${draft.name && err ? err : ''}</div>
           <span class="csel-label">Class</span>
           <div class="csel-classes">${CLASSES.map((c) => `<button type="button" class="csel-class${c.id === draft.classId ? ' on' : ''}" data-class="${c.id}"><b>${c.name}</b><span>${c.blurb}</span></button>`).join('')}</div>
-          <span class="csel-label">Tabard · ${tabard(draft.tabard).name}</span>
+          <span class="csel-label">${colourWord(draft.classId)} · ${tabard(draft.tabard).name}</span>
           <div class="csel-swatches">${TABARDS.map((t) => `<button type="button" class="csel-swatch${t.id === draft.tabard ? ' on' : ''}" data-tabard="${t.id}" title="${t.name}" aria-label="${t.name}" style="background:${swatchCss(t.id)}"></button>`).join('')}</div>
           <div class="csel-actions"><button type="button" class="csel-btn primary" data-create ${err ? 'disabled' : ''}>Begin</button></div>`;
       }
@@ -160,7 +162,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
       }
       const s = en.save;
       const newer = s.version > SAVE_VERSION;
-      return `<h2>${esc(s.name)}</h2><div class="cls">Level ${s.hero.level} ${classDef(s.classId).name} · ${tabard(s.look.tabard).name} tabard</div>
+      return `<h2>${esc(s.name)}</h2><div class="cls">Level ${s.hero.level} ${classDef(s.classId).name} · ${tabard(s.look.tabard).name} ${colourWord(s.classId).toLowerCase()}</div>
         <dl class="csel-facts">
           <dt>Gold</dt><dd>${s.hero.gold}</dd>
           <dt>Errands done</dt><dd>${s.quests.done.length}</dd>

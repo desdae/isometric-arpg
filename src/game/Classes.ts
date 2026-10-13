@@ -13,6 +13,10 @@ export interface ClassDef {
   startRanks: Partial<Record<SkillId, number>>;
   /** Belt at creation: right click, then keys 2 to 5. */
   startBelt: (SkillId | null)[];
+  /** Base numbers at a level, before gear and skills. */
+  base: (level: number) => { life: number; mana: number; manaRegen: number; armor: number; dmgMin: number; dmgMax: number };
+  /** Basic attack: a melee swing, or a bolt cast from range. */
+  attack: 'melee' | 'ranged';
 }
 
 export const CLASSES: ClassDef[] = [
@@ -22,6 +26,17 @@ export const CLASSES: ClassDef[] = [
     blurb: 'A sworn sword of the fallen cathedral. Heavy steel, a heavier oath.',
     startRanks: { cleave: 1 },
     startBelt: ['cleave', null, null, null, null],
+    base: (lv) => ({ life: 100 + (lv - 1) * 14, mana: 60 + (lv - 1) * 6, manaRegen: 3.2, armor: 10 + (lv - 1) * 2, dmgMin: 7, dmgMax: 13 }),
+    attack: 'melee',
+  },
+  {
+    id: 'mage',
+    name: 'Mage',
+    blurb: 'A scholar of the cathedral library who read the forbidden shelf. Fire, frost and raw will, from a distance.',
+    startRanks: { fireball: 1 },
+    startBelt: ['fireball', null, null, null, null],
+    base: (lv) => ({ life: 78 + (lv - 1) * 10, mana: 110 + (lv - 1) * 9, manaRegen: 6 + (lv - 1) * 0.25, armor: 5 + (lv - 1) * 1.5, dmgMin: 6, dmgMax: 12 }),
+    attack: 'ranged',
   },
 ];
 
