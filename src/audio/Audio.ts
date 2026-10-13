@@ -8,7 +8,7 @@ import { Music, type Mood } from './Music';
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first click or key press.
 
-export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing';
+export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith';
 
 interface At {
   gain: number;
@@ -117,8 +117,9 @@ class AudioEngine {
       const t = this.ctx.currentTime;
       // Town: low sheltered wind. Wasteland: louder, higher, gustier.
       // Underground: only a deep draught moaning through the passages.
-      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : name === 'dungeon' ? 0.1 : 0.32, t, 1);
-      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : name === 'dungeon' ? 170 : 620, t, 1);
+      // The mire: a low, damp, still air.
+      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : name === 'dungeon' ? 0.1 : name === 'swamp' ? 0.16 : 0.32, t, 1);
+      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : name === 'dungeon' ? 170 : name === 'swamp' ? 260 : 620, t, 1);
     }
   }
 
@@ -599,6 +600,28 @@ class AudioEngine {
         this.throat(o, t, { f0: 70 * p, f1: (what === 'die' ? 38 : 95) * p, dur: 0.7 * long, formants: [300, 650], gain: 0.4, rough: 0.8, wobble: 0.12, drive: true });
         this.burst(o, t + 0.05, { f0: 500, f1: 200, q: 5, gain: 0.25, attack: 0.05, decay: 0.5 * long });
         break;
+      case 'toad':
+        // A deep, wet croak that bubbles in the throat sac.
+        for (let i = 0; i < (what === 'die' ? 3 : 2); i++) this.throat(o, t + i * 0.18, { f0: 95 * p, f1: (what === 'die' ? 50 : 80) * p, dur: 0.22 * long, formants: [320, 700], gain: 0.3, rough: 0.9, wobble: 0.2, drive: true });
+        this.burst(o, t, { type: 'lowpass', f0: 600, f1: 180, gain: 0.2, decay: 0.3 * long });
+        break;
+      case 'croc':
+        // A low, rumbling hiss and a jaw clap.
+        this.burst(o, t, { f0: 3800, q: 1.2, gain: 0.22, attack: 0.05, decay: 0.6 * long });
+        this.throat(o, t, { f0: 55 * p, f1: (what === 'die' ? 35 : 48) * p, dur: 0.7 * long, formants: [250, 520], gain: 0.3, rough: 0.6, drive: true });
+        if (what === 'attack') this.burst(o, t + 0.35, { type: 'bandpass', f0: 1800, q: 3, gain: 0.45, decay: 0.04 });
+        break;
+      case 'rootHorror':
+        // Groaning timber and a guttural moan from the maw.
+        this.tone(o, t, { type: 'sawtooth', f0: 48 * p, f1: (what === 'die' ? 28 : 62) * p, gain: 0.12, attack: 0.15, decay: 1.0 * long });
+        this.throat(o, t + 0.05, { f0: 70 * p, f1: (what === 'die' ? 40 : 90) * p, dur: 0.9 * long, formants: [280, 600], gain: 0.3, rough: 0.7, wobble: 0.05, drive: true });
+        for (let i = 0; i < 5 * long; i++) this.burst(o, t + Math.random() * 0.8 * long, { type: 'bandpass', f0: 500 + Math.random() * 900, q: 6, gain: 0.12, decay: 0.05 }); // creaks
+        break;
+      case 'mireWraith':
+        // A drowned wail, gargled through water.
+        this.throat(o, t, { f0: 260 * p, f1: (what === 'die' ? 90 : 380) * p, dur: 0.9 * long, formants: [600, 1300], gain: 0.13, wobble: 0.12, breath: 0.15, rough: 0.4 });
+        this.tone(o, t, { type: 'sine', f0: 520 * p, f1: (what === 'die' ? 160 : 700) * p, gain: 0.05, attack: 0.2, decay: 0.9 * long });
+        break;
       case 'wraith':
         // A hollow, rising moan with a whispering edge.
         this.throat(o, t, { f0: 330 * p, f1: (what === 'die' ? 120 : 470) * p, dur: 0.9 * long, formants: [700, 1600], gain: 0.12, wobble: 0.03, breath: 0.12 });
@@ -624,7 +647,7 @@ class AudioEngine {
         for (let i = 0; i < 3; i++) this.burst(o, t + i * 0.12, { type: 'lowpass', f0: 1400, f1: 250, gain: 0.3, decay: 0.08 });
         break;
     }
-    if (what === 'die' && kind !== 'wraith') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
+    if (what === 'die' && kind !== 'wraith' && kind !== 'mireWraith') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
   }
 
   /** A boss's great roar: the voice, a sub-bass swell under it and a long tail. */

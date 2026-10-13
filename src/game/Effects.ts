@@ -325,6 +325,41 @@ export class Effects {
     this.addShake(0.35);
   }
 
+  /** Barbed roots bursting up out of the ground around `at`, then sinking back. */
+  rootSpikes(at: THREE.Vector3, radius = 1.6, count = 9) {
+    const mat = Effects.rootMat ??= new THREE.MeshStandardMaterial({ color: 0x2a1e16, roughness: 0.85 });
+    const holder = new THREE.Group();
+    const spikes: { m: THREE.Mesh; h: number; delay: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const d = i === 0 ? 0 : radius * (0.3 + Math.random() * 0.7);
+      const h = (i === 0 ? 1.7 : 0.8 + Math.random() * 0.9) * (radius / 1.6);
+      const geo = new THREE.ConeGeometry(0.09 + h * 0.06, h, 5).translate(0, h / 2, 0);
+      const m = new THREE.Mesh(geo, mat);
+      const x = at.x + Math.cos(a) * d;
+      const z = at.z + Math.sin(a) * d;
+      m.position.set(x, this.height(x, z) - h, z);
+      m.rotation.set((Math.random() - 0.5) * 0.6, Math.random() * 6, (Math.random() - 0.5) * 0.6);
+      m.castShadow = true;
+      holder.add(m);
+      spikes.push({ m, h, delay: d / radius * 0.12 });
+    }
+    this.group.add(holder);
+    this.after(1.3, holder, (k) => {
+      for (const s of spikes) {
+        const t = Math.max(0, k * 1.3 - s.delay);
+        // Shoot up fast, hold, then sink back.
+        const up = Math.min(1, t / 0.08) * (1 - Math.max(0, (t - 0.75) / 0.35));
+        s.m.position.y = this.height(s.m.position.x, s.m.position.z) - s.h * (1 - Math.max(0, up)) - 0.05;
+      }
+    }, () => {
+      for (const s of spikes) s.m.geometry.dispose();
+    });
+    this.shockwave(at, radius * 1.4, new THREE.Color(0.5, 0.08, 0.04));
+    this.sparks(at.clone().setY(at.y + 0.2), 16, new THREE.Color(0.3, 0.22, 0.12), 3, 0.6);
+  }
+  private static rootMat: THREE.MeshStandardMaterial | undefined;
+
   /** Brief point-light flash (hits, casts). */
   flash(at: THREE.Vector3, color: number, intensity = 20, range = 6, life = 0.25) {
     const l = this.borrowLight(color, intensity, range);

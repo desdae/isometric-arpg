@@ -5,7 +5,7 @@ import type { Npc } from '../actors/Npc';
 import type { Monster, MonsterSpawn } from '../actors/Monster';
 import type { Effects } from '../game/Effects';
 
-export type AreaName = 'town' | 'zone' | 'dungeon';
+export type AreaName = 'town' | 'zone' | 'dungeon' | 'swamp';
 
 /** A way out of an area: walk into it to travel. */
 export interface Exit {
@@ -75,6 +75,10 @@ export interface World {
   /** Multiplies the distance fog density. */
   fogScale?: number;
   script?: AreaScript;
+  /** Laid out anew on every visit: forgotten as soon as the hero leaves. */
+  fresh?: boolean;
+  /** Frees the area's GPU resources once it has been left for good. */
+  dispose?(): void;
   update(dt: number, t: number): void;
 }
 

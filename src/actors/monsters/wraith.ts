@@ -35,21 +35,33 @@ class Wraith implements Rig {
   private rags: Rag[] = [];
   private time = Math.random() * 10;
   private lean = 0;
+  heart: THREE.Mesh | null = null;
   private action: { t: number; dur: number; fn: (k: number) => void; done?: () => void } | null = null;
 
-  constructor(m: MonsterMaterials, rng: Rng, scale: number) {
+  constructor(m: MonsterMaterials, rng: Rng, scale: number, mire = false) {
     this.body.scale.setScalar(scale);
     this.root.add(this.body);
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x0b0c16, roughness: 0.9, side: THREE.DoubleSide, emissive: new THREE.Color(0.01, 0.012, 0.04) });
-    const spirit = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.75, 2.6), fog: false });
-    const eyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.2, 6), fog: false });
+    // The mire wraith is a drowned shade: a bone skull, mud-dark rags, and a
+    // heart of red fire burning behind its ribs.
+    const cloth = mire
+      ? new THREE.MeshStandardMaterial({ color: 0x0d0a08, roughness: 0.95, side: THREE.DoubleSide, emissive: new THREE.Color(0.02, 0.004, 0.002) })
+      : new THREE.MeshStandardMaterial({ color: 0x0b0c16, roughness: 0.9, side: THREE.DoubleSide, emissive: new THREE.Color(0.01, 0.012, 0.04) });
+    const spirit = mire ? new THREE.MeshBasicMaterial({ color: new THREE.Color(1.1, 0.02, 0.01), fog: false }) : new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.75, 2.6), fog: false });
+    const skullMat = mire ? m.bone : spirit;
+    const eyes = mire ? m.eyeRed : new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.2, 6), fog: false });
     const wisp = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.8, 0.08, 0.04), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
 
     this.core = joint(this.body, 0, 1.15, 0);
     // Shoulders and chest: a narrow mantle the rags hang from.
     mesh(lathe([[0.08, 0.32], [0.2, 0.24], [0.24, 0.1], [0.2, -0.1], [0.16, -0.3]], 18).scale(1.15, 1, 0.85), cloth, this.core);
     // Ribcage glimpsed through a rent in the robe.
-    for (let i = 0; i < 4; i++) mesh(new THREE.TorusGeometry(0.1 - i * 0.012, 0.008, 4, 14, Math.PI).rotateX(-Math.PI / 2), spirit, this.core, 0, 0.12 - i * 0.055, 0.12);
+    for (let i = 0; i < 4; i++) mesh(new THREE.TorusGeometry(0.1 - i * 0.012, 0.008, 4, 14, Math.PI).rotateX(-Math.PI / 2), mire ? m.bone : spirit, this.core, 0, 0.12 - i * 0.055, mire ? 0.17 : 0.12);
+    if (mire) {
+      // The burning heart, and the dark hollow of the chest around it.
+      mesh(new THREE.SphereGeometry(0.12, 12, 8).scale(1, 1.1, 0.6), m.void, this.core, 0, 0.04, 0.13);
+      this.heart = mesh(new THREE.SphereGeometry(0.07, 12, 8), spirit, this.core, 0, 0.04, 0.17);
+      this.heart.userData.dynamic = true;
+    }
 
     // Hood: a deep cowl around a glowing skull.
     this.hood = joint(this.core, 0, 0.36, 0.04);
@@ -75,10 +87,10 @@ class Wraith implements Rig {
       20,
       16,
     );
-    mesh(skull, spirit, this.hood, 0, -0.01, 0.12);
+    mesh(skull, skullMat, this.hood, 0, -0.01, 0.12);
     for (const s of [-1, 1]) mesh(new THREE.SphereGeometry(0.013, 8, 6), eyes, this.hood, s * 0.026, 0.0, 0.175);
     // Jaw hanging open.
-    mesh(new THREE.BoxGeometry(0.06, 0.02, 0.04), spirit, this.hood, 0, -0.085, 0.14).rotation.x = 0.4;
+    mesh(new THREE.BoxGeometry(0.06, 0.02, 0.04), skullMat, this.hood, 0, -0.085, 0.14).rotation.x = 0.4;
 
     // Sleeves and skeletal hands.
     for (const side of [-1, 1]) {
@@ -88,7 +100,7 @@ class Wraith implements Rig {
       const fore = joint(shoulder, 0, -0.38, 0);
       mesh(lathe([[0.07, 0.02], [0.1, -0.12], [0.14, -0.26]], 12), cloth, fore);
       for (let f = 0; f < 4; f++) {
-        const finger = mesh(new THREE.CylinderGeometry(0.006, 0.01, 0.16, 5).translate(0, -0.08, 0), spirit, fore, (f - 1.5) * 0.022, -0.26, 0.02);
+        const finger = mesh(new THREE.CylinderGeometry(0.006, 0.01, 0.16, 5).translate(0, -0.08, 0), skullMat, fore, (f - 1.5) * 0.022, -0.26, 0.02);
         finger.rotation.set(0.35 + f * 0.05, 0, (f - 1.5) * 0.12);
       }
       this.arms.push({ side, shoulder, fore });
@@ -127,6 +139,7 @@ class Wraith implements Rig {
     this.core.rotation.z = Math.sin(t * 0.9) * 0.04;
     this.hood.rotation.y += (this.lookYaw - this.hood.rotation.y) * (1 - Math.exp(-dt * 5));
     this.hood.rotation.x = -0.15 + Math.sin(t * 1.1) * 0.05;
+    if (this.heart) this.heart.scale.setScalar(1 + Math.max(0, Math.sin(t * 5.5)) ** 4 * 0.35);
     for (const a of this.arms) {
       a.shoulder.rotation.x = -0.2 + Math.sin(t * 1.3 + a.side) * 0.12 + this.lean * 0.4;
       a.shoulder.rotation.z = a.side * 0.25;
@@ -168,8 +181,8 @@ class Wraith implements Rig {
   }
 }
 
-export function buildWraith(m: MonsterMaterials, rng: Rng, scale = range(rng, 1.0, 1.1)): MonsterBody {
-  const c = new Wraith(m, rng, scale);
+export function buildWraith(m: MonsterMaterials, rng: Rng, scale = range(rng, 1.0, 1.1), mire = false): MonsterBody {
+  const c = new Wraith(m, rng, scale, mire);
   return {
     rig: c,
     attack(onHit) {

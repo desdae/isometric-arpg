@@ -23,6 +23,14 @@ export interface MonsterMaterials {
   eyeRed: THREE.Material;
   crystal: THREE.Material;
   void: THREE.Material;
+  /** Mire beasts: warty olive toad hide, its pale belly and dark blotches. */
+  toadSkin: THREE.Material;
+  toadBelly: THREE.Material;
+  toadDark: THREE.Material;
+  /** Ridged, near-black swamp lizard hide. */
+  crocHide: THREE.Material;
+  /** Waterlogged, moss-dark bark for the root horror. */
+  swampBark: THREE.Material;
 }
 
 /** A dressed monster body plus the animations its behaviour can call. */
@@ -70,6 +78,11 @@ export function monsterMaterials(): Promise<MonsterMaterials> {
       eyeRed: new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.35, 0.15), fog: false }),
       crystal: new THREE.MeshStandardMaterial({ color: 0x200000, emissive: new THREE.Color(3.5, 0.15, 0.08), roughness: 0.2 }),
       void: new THREE.MeshBasicMaterial({ color: 0x000000 }),
+      toadSkin: pbrMaterial(flesh, 3, { color: new THREE.Color(0.16, 0.22, 0.06), roughness: 0.55 }),
+      toadBelly: pbrMaterial(flesh, 2, { color: new THREE.Color(0.42, 0.4, 0.2) }),
+      toadDark: new THREE.MeshStandardMaterial({ color: 0x1a1c08, roughness: 0.55 }),
+      crocHide: pbrMaterial(chitin, 3, { color: new THREE.Color(0.1, 0.12, 0.08) }),
+      swampBark: pbrMaterial(wood, 1.5, { color: new THREE.Color(0.42, 0.36, 0.3) }),
     };
   })();
   return cached;

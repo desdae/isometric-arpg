@@ -13,6 +13,9 @@ import { buildCultist } from './monsters/cultist';
 import { buildCrawler } from './monsters/crawler';
 import { buildHorror } from './monsters/horror';
 import { buildWraith } from './monsters/wraith';
+import { buildToad } from './monsters/toad';
+import { buildCroc } from './monsters/croc';
+import { buildRootHorror } from './monsters/rootHorror';
 import { buildAbomination } from './bosses/abomination';
 import { buildLich } from './bosses/lich';
 import { buildNightwing } from './bosses/nightwing';
@@ -23,7 +26,7 @@ import { mulberry32 } from '../procgen/noise';
 // in range, flinch, die and leave a corpse. Casters keep their distance and
 // throw blood bolts. Packs wake together.
 
-export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing';
+export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith';
 
 interface KindDef {
   name: string;
@@ -150,6 +153,68 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     blood: new THREE.Color(0.05, 0.06, 0.12),
     ranged: { min: 5, max: 11, boltSpeed: 12 },
     build: (m, seed, elite, boss) => buildWraith(m, mulberry32(seed), boss ? 2.2 : elite ? 1.45 : undefined),
+  },
+  // The Bleeding Mire.
+  toad: {
+    name: 'Bloated Mire Toad',
+    hp: 58,
+    dmg: [6, 11],
+    armor: 8,
+    speed: 3.4,
+    radius: 0.7,
+    height: 1.2,
+    reach: 1.6,
+    cooldown: 1.3,
+    aggro: 11,
+    xp: 28,
+    blood: new THREE.Color(0.1, 0.12, 0.02),
+    build: (m, seed, elite) => buildToad(m, mulberry32(seed), elite ? 1.55 : undefined),
+  },
+  croc: {
+    name: 'Spined Mire-Croc',
+    hp: 90,
+    dmg: [9, 15],
+    armor: 20,
+    speed: 4.3,
+    radius: 0.75,
+    height: 0.9,
+    reach: 1.8,
+    cooldown: 1.1,
+    aggro: 10,
+    xp: 42,
+    blood: new THREE.Color(0.2, 0.01, 0.008),
+    build: (m, seed, elite) => buildCroc(m, mulberry32(seed), elite ? 1.5 : undefined),
+  },
+  rootHorror: {
+    name: 'Root Horror',
+    hp: 210,
+    dmg: [13, 22],
+    armor: 22,
+    speed: 2.1,
+    radius: 1.0,
+    height: 2.7,
+    reach: 2.8,
+    cooldown: 1.8,
+    aggro: 9,
+    xp: 90,
+    blood: new THREE.Color(0.09, 0.06, 0.03),
+    build: (m, seed, elite) => buildRootHorror(m, mulberry32(seed), elite ? 1.45 : undefined),
+  },
+  mireWraith: {
+    name: 'Mire Wraith',
+    hp: 62,
+    dmg: [6, 10],
+    armor: 6,
+    speed: 3.4,
+    radius: 0.5,
+    height: 2.0,
+    reach: 14,
+    cooldown: 1.9,
+    aggro: 14,
+    xp: 45,
+    blood: new THREE.Color(0.2, 0.02, 0.01),
+    ranged: { min: 5, max: 11, boltSpeed: 10 },
+    build: (m, seed, elite) => buildWraith(m, mulberry32(seed), elite ? 1.45 : undefined, true),
   },
   // Vault bosses (see Boss.ts). Radius and height here are before the boss multipliers.
   abomination: {
@@ -292,7 +357,7 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
-    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2 }[this.kind] * (this.elite ? 1.3 : 1);
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2, toad: 1.1, croc: 0.9, rootHorror: 2.4, mireWraith: 0 }[this.kind] * (this.elite ? 1.3 : 1);
     if (weight > 0) this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
@@ -523,17 +588,21 @@ export class Monster implements Combatant {
         const from = this.body.muzzle ? this.body.muzzle().clone() : this.position.clone().setY(this.position.y + 1.4);
         const aim = p.position.clone().setY(p.position.y + 1.0);
         const dir = aim.sub(from).normalize();
-        ctx.effects.bolt(
-          from,
-          dir,
-          (pos) => p.alive && Math.hypot(pos.x - p.position.x, pos.z - p.position.z) < p.radius + 0.25 && pos.y < p.position.y + 2,
-          () => {
-            audio.boltHit(p.position);
-            const roll = rollDamage(this.dmg[0], this.dmg[1], 0.05);
-            ctx.onPlayerHit(roll.amount, roll.crit, this.position);
-          },
-          ranged.boltSpeed,
-        );
+        // The mire wraith throws a fan of three; one in the face is the usual cost.
+        const fan = this.kind === 'mireWraith' ? [-0.28, 0, 0.28] : [0];
+        for (const a of fan) {
+          ctx.effects.bolt(
+            from,
+            dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), a),
+            (pos) => p.alive && Math.hypot(pos.x - p.position.x, pos.z - p.position.z) < p.radius + 0.25 && pos.y < p.position.y + 2,
+            () => {
+              audio.boltHit(p.position);
+              const roll = rollDamage(this.dmg[0], this.dmg[1], 0.05);
+              ctx.onPlayerHit(roll.amount, roll.crit, this.position);
+            },
+            ranged.boltSpeed,
+          );
+        }
         ctx.effects.flash(from, 0xff2010, 30, 6, 0.3);
         audio.cast(from);
         return;
@@ -545,6 +614,25 @@ export class Monster implements Combatant {
         audio.slam(at, this.elite ? 1.3 : 1);
         ctx.effects.sparks(at.clone().setY(at.y + 0.2), 14, new THREE.Color(1.4, 0.6, 0.3), 3, 0.5);
       }
+      if (this.kind === 'rootHorror') {
+        // Roots burst up under the target (or where it stood, if it got away).
+        const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+        const at = d <= this.def.reach + 1.5 ? p.position.clone() : this.position.clone().addScaledVector(fwd, this.def.reach);
+        ctx.effects.rootSpikes(at, this.elite ? 2.3 : 1.6);
+        audio.slam(at, this.elite ? 1.2 : 0.9);
+        const hit = Math.hypot(p.position.x - at.x, p.position.z - at.z) <= (this.elite ? 2.3 : 1.6) + p.radius;
+        if (p.alive && hit) {
+          const roll = rollDamage(this.dmg[0], this.dmg[1], 0.06);
+          ctx.onPlayerHit(roll.amount, roll.crit, this.position);
+        }
+        return;
+      }
+      if (this.kind === 'toad') {
+        // The landing splashes blood and mire.
+        const at = this.position.clone().add(new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(1.1 * this.radius / 0.7));
+        ctx.effects.shockwave(at, 1.8, new THREE.Color(0.35, 0.05, 0.03));
+        audio.splash(at);
+      }
       if (p.alive && d <= this.def.reach + p.radius + this.radius * 0.5 + 0.6) {
         const roll = rollDamage(this.dmg[0], this.dmg[1], 0.06);
         ctx.onPlayerHit(roll.amount, roll.crit, this.position);
@@ -553,7 +641,7 @@ export class Monster implements Combatant {
   }
 
   protected get voiceSize() {
-    return (this.kind === 'brute' || this.kind === 'horror' ? 1.15 : this.kind === 'spider' ? 1.8 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
+    return (this.kind === 'brute' || this.kind === 'horror' ? 1.15 : this.kind === 'spider' || this.kind === 'rootHorror' ? 1.8 : this.kind === 'toad' ? 1.3 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
   }
 
   get kind(): MonsterKind {

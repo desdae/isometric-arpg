@@ -3,7 +3,7 @@ import { loading } from '../engine/Loading';
 import { bakeSurfaces, pbrMaterial } from '../procgen/textures';
 import { maskTexture, splatMaterial } from '../procgen/splat';
 import { fbm2, mulberry32, range, smoothstep, type Rng } from '../procgen/noise';
-import { deadTree, rock, thornShrub } from '../procgen/geometry';
+import { deadTree, rock, ruinedWall, thornShrub } from '../procgen/geometry';
 import { terrainMesh, type HeightFn } from '../procgen/terrain';
 import { MeshBuilder, xf } from '../procgen/builder';
 import { curtainWall, gatehouse, pinnacle, pointedArch, spireTower } from '../procgen/gothic';
@@ -24,6 +24,9 @@ import { tiledInstances } from '../procgen/tiles';
 const SIZE = 140;
 const HALF = SIZE / 2;
 const WALL_X = -42;
+/** The ruined gate east, through a pass in the mountains, to the Bleeding Mire. */
+const MIRE_X = 36;
+const MIRE_Z = -HALF + 6;
 
 export async function buildWastelandZone(seed = 7): Promise<World> {
   const rng = mulberry32(seed);
@@ -71,6 +74,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       const z = range(crng, -HALF + 14, HALF - 16);
       if (roadDist(x, z) < 12) continue;
       if (craters.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 7)) continue;
+      if (Math.hypot(x - MIRE_X, z - MIRE_Z) < 20) continue;
       return new THREE.Vector3(x, 0, z);
     }
     return new THREE.Vector3(30, 0, -40);
@@ -83,7 +87,8 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     const nearWall = 1 - smoothstep(0, 14, x - WALL_X);
     const road = (1 - smoothstep(2.5, 9, roadDist(x, z))) * (0.4 + 0.6 * roadFade(x));
     const cryptPad = 1 - smoothstep(6, 12, Math.hypot(x - crypt.x, z - crypt.z));
-    h *= 1 - Math.max(nearWall, road, cryptPad);
+    const mirePad = 1 - smoothstep(7, 15, Math.hypot(x - MIRE_X, z - MIRE_Z));
+    h *= 1 - Math.max(nearWall, road, cryptPad, mirePad);
     for (const c of craters) {
       const d = Math.hypot(x - c.x, z - c.z) / c.r;
       if (d < 1.4) h += -Math.cos(Math.min(d, 1) * Math.PI * 0.5) * 0.9 * (d < 1 ? 1 : 0) + (d > 0.8 && d < 1.4 ? Math.sin(((d - 0.8) / 0.6) * Math.PI) * 0.35 : 0);
@@ -120,8 +125,14 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   const rim = mountainRim({
     half: HALF, sides: ['n', 's', 'e'], gentle: ['s'], seed: seed + 400,
     rock: rockSet, earth: earthSet, earthScale: 45 / SIZE, earthOrigin: -HALF,
+    gaps: [{ side: 'n', u: MIRE_X, width: 12 }],
   });
   scene.add(rim.group);
+
+  // The mire gate: a drowned-looking gatehouse in the pass, its towers solid,
+  // only the arch open. Nothing beyond it is walkable.
+  for (const k of [-1, 1]) nav.blockBox(MIRE_X + k * 5.6, MIRE_Z, 3.4, 2.6, 0);
+  nav.blockBox(MIRE_X, -HALF + 1, 14, 3.4, 0);
 
   // The gatehouse towers and the buttresses along the wall are solid; only
   // the gate arch itself is open (walking into it leads back to town).
@@ -202,6 +213,24 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   for (let z = -HALF + 12; z < HALF - 6; z += 16) if (Math.abs(z) > 12) placeBrazier(WALL_X + 3.5, z);
   for (let x = WALL_X + 14; x < 10; x += 13) placeBrazier(x, roadZ(x) + (x % 2 ? 3.2 : -3.2));
 
+  {
+    const b = new MeshBuilder();
+    const gb = new MeshBuilder();
+    gatehouse(gb, rng, new THREE.Matrix4(), 8, 9, 3);
+    b.addBuilder(gb, xf(MIRE_X, height(MIRE_X, MIRE_Z) - 0.3, MIRE_Z, 0));
+    // Broken walls running from the towers into the mountain foot.
+    for (const k of [-1, 1]) {
+      const g = ruinedWall(rng, 9, 4, 1.0);
+      b.add('stone', g, xf(MIRE_X + k * 8.2, height(MIRE_X + k * 8, MIRE_Z - 1) - 0.2, MIRE_Z - 1, k > 0 ? 0 : Math.PI));
+      nav.blockBox(MIRE_X + k * 12.7, MIRE_Z - 1, 4.5, 0.8, 0);
+    }
+    scene.add(b.build(mats));
+    placeBrazier(MIRE_X + 3.6, MIRE_Z + 4.5);
+    placeBrazier(MIRE_X - 3.6, MIRE_Z + 4.5);
+    // Red light spilling out of the arch.
+    firePool.add(new THREE.Vector3(MIRE_X, height(MIRE_X, MIRE_Z) + 2, MIRE_Z - 0.5), 16, 10, 0.4, 0xff2a10);
+  }
+
   await loading.step('Hiding the crypt entrance', 0.55);
   // ---- Crypt entrance ----------------------------------------------------
   // A sunken mausoleum: plinth, buttressed walls, a steep stone roof with
@@ -275,6 +304,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   // ---- Scatter ---------------------------------------------------------
   const free = (x: number, z: number, r: number) =>
     Math.hypot(x - crypt.x, z - crypt.z) > 8 + r &&
+    Math.hypot(x - MIRE_X, z - MIRE_Z) > 10 + r &&
     x > WALL_X + 6 && roadDist(x, z) > 3.5 + r && nav.walkable(x, z) && Math.abs(x) < HALF - 3 && Math.abs(z) < HALF - 3;
   const scatter = (count: number, r: number, fn: (x: number, z: number, rng: Rng) => void) => {
     let placed = 0;
@@ -404,7 +434,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     for (let i = 0; i < 60; i++) {
       const x = range(rng, minX, maxX);
       const z = range(rng, -HALF + 10, HALF - 10);
-      if (farFromGate(x, z) && Math.hypot(x - crypt.x, z - crypt.z) > 14 && nav.walkable(x, z)) return [x, z];
+      if (farFromGate(x, z) && Math.hypot(x - crypt.x, z - crypt.z) > 14 && Math.hypot(x - MIRE_X, z - MIRE_Z) > 14 && nav.walkable(x, z)) return [x, z];
     }
     return [range(rng, minX, maxX), range(rng, -20, 20)];
   };
@@ -443,9 +473,11 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     exits: [
       { pos: new THREE.Vector3(WALL_X + 0.6, 0, 0), radius: 1.5, to: 'town', entry: 'gate', label: 'To Saint Orsolya' },
       { pos: crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(2.9)), radius: 0.9, to: 'dungeon', entry: 'start', label: 'Descend into the Crypt' },
+      { pos: new THREE.Vector3(MIRE_X, 0, MIRE_Z - 0.4), radius: 1.5, to: 'swamp', entry: 'gate', label: 'To the Bleeding Mire' },
     ],
     entries: {
       gate: { pos: new THREE.Vector3(spawnX, 0, roadZ(spawnX)), yaw: Math.PI / 2 },
+      mire: { pos: new THREE.Vector3(MIRE_X, 0, MIRE_Z + 7), yaw: 0 },
       crypt: { pos: crypt.clone().add(new THREE.Vector3(Math.sin(cryptYaw), 0, Math.cos(cryptYaw)).multiplyScalar(6.2)), yaw: cryptYaw },
     },
     monsterSpawns: spawns,

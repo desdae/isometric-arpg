@@ -485,5 +485,34 @@ export function chitin(seed = 14): SurfaceFn {
   };
 }
 
-export const SURFACES = { flesh, skin, hair, flagstones, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
+
+/** Sodden swamp mud: dark silt with moss mats, rotted leaf litter and pebbles. */
+export function swampMud(seed = 19): SurfaceFn {
+  return (u, v) => {
+    const large = fbm2(u * 3, v * 3, 4, seed, 3) * 0.5 + 0.5;
+    const moss = smoothstep(0.52, 0.68, fbm2(u * 6 + 2, v * 6, 5, seed + 3, 6) * 0.5 + 0.5 + large * 0.1);
+    const clump = fbm2(u * 90, v * 90, 3, seed + 5, 90) * 0.5 + 0.5;
+    const peb = voronoi2(u * 22, v * 22, seed + 7, 22, 1);
+    const pebble = (1 - smoothstep(0.12, 0.2, peb.f1)) * smoothstep(0.55, 0.75, fbm2(u * 8, v * 8, 2, seed + 9, 8) * 0.5 + 0.5);
+    const litter = smoothstep(0.62, 0.75, fbm2(u * 40, v * 40, 3, seed + 11, 40) * 0.5 + 0.5) * (1 - moss);
+    const grain = fbm2(u * 64, v * 64, 3, seed + 13, 64) * 0.5 + 0.5;
+    const height = clamp01(0.3 + large * 0.15 + moss * (0.25 + clump * 0.2) + pebble * 0.35 + litter * 0.1 + grain * 0.05);
+    let r = mix(0.04, 0.06, large) * (0.85 + grain * 0.3);
+    let g = mix(0.033, 0.05, large) * (0.85 + grain * 0.3);
+    let b = mix(0.025, 0.035, large) * (0.85 + grain * 0.3);
+    // Moss: dull olive, brighter on its tufts.
+    r = mix(r, 0.05 * (0.7 + clump * 0.6), moss);
+    g = mix(g, 0.07 * (0.7 + clump * 0.6), moss);
+    b = mix(b, 0.02, moss);
+    r = mix(r, 0.09, litter * 0.6);
+    g = mix(g, 0.055, litter * 0.6);
+    b = mix(b, 0.03, litter * 0.6);
+    r = mix(r, 0.1, pebble);
+    g = mix(g, 0.095, pebble);
+    b = mix(b, 0.09, pebble);
+    return { height, r, g, b, rough: mix(0.55, 0.9, moss * 0.7 + pebble * 0.3), ao: mix(0.6, 1, height) };
+  };
+}
+
+export const SURFACES = { swampMud, flesh, skin, hair, flagstones, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

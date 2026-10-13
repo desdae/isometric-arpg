@@ -14,6 +14,7 @@ import { buildWastelandZone } from './scenes/wastelandZone';
 import { buildCharacterPreview } from './scenes/characterPreview';
 import { buildTown } from './scenes/town';
 import { buildDungeon } from './scenes/dungeon';
+import { buildSwamp } from './scenes/swamp';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
 import { dressKnight } from './actors/outfits/knight';
@@ -141,8 +142,8 @@ if (sceneName === 'test' || sceneName === 'character') {
     character = await chooseCharacter();
   }
   // Saved heroes always wake in town.
-  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' ? sceneName : 'town';
-  await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : 'Into the Crypt', 'Forging a world out of nothing');
+  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' ? sceneName : 'town';
+  await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : startArea === 'swamp' ? 'The Bleeding Mire' : 'Into the Crypt', 'Forging a world out of nothing');
   loading.range(0, 0.12);
   await loading.step('Dressing the hero', 0);
   // Direct views can try a class with ?class=mage.
@@ -151,7 +152,7 @@ if (sceneName === 'test' || sceneName === 'character') {
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.root);
-  game = new Game({ town: buildTown, zone: buildWastelandZone, dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
+  game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(Number(params.get('sseed') ?? Math.floor(Math.random() * 1e9))), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
   if (character) game.useCharacter(character);
   else game.stats.setClass(classId);
   await game.start(startArea, startArea === 'zone' ? 'gate' : 'start');

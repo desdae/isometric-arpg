@@ -23,7 +23,7 @@ export function pointedArch(w: number, h: number): THREE.Shape {
   return s;
 }
 
-function archPath(w: number, h: number): THREE.Path {
+export function archPath(w: number, h: number): THREE.Path {
   const p = new THREE.Path();
   const pts = pointedArch(w, h).getPoints(12);
   p.setFromPoints(pts.reverse());

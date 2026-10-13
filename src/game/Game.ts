@@ -51,6 +51,7 @@ const AREA_TITLES: Record<AreaName, [string, string]> = {
   town: ['Saint Orsolya', 'The last lit town at the edge of the blight'],
   zone: ['The Blighted Fields', 'Where the dead were buried, they do not rest'],
   dungeon: ['Into the Crypt', 'A new dark is dug for every soul that descends'],
+  swamp: ['The Bleeding Mire', 'It is never the same swamp twice'],
 };
 
 /** Stands in for a frozen rig's updateMatrixWorld, so scene updates skip it. */
@@ -258,12 +259,23 @@ export class Game {
     this.floaters.spawn(text, this.player.position.clone().setY(this.player.position.y + 2.3), 'info', life);
   }
 
-  /** Forgets an area so it is generated afresh next time (a cleared dungeon). */
+  /**
+   * Forgets an area so it is generated afresh next time (a cleared dungeon,
+   * or the mire, which is new on every visit). A portal into a fresh area
+   * stays open: stepping back through it leads into the new layout.
+   */
   private discard(a: AreaState) {
-    if (this.portal?.area === a.name) this.closePortal();
+    if (this.portal?.area === a.name && !a.world.fresh) this.closePortal();
     for (const x of [...a.exitLabels, ...a.useLabels]) x.el.remove();
     this.areas.delete(a.name);
     this.building.delete(a.name);
+    if (a.world.fresh) {
+      // Free its GPU memory once nothing can still be drawing it.
+      setTimeout(() => {
+        a.world.dispose?.();
+        for (const m of a.monsters) m.body.rig.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      }, 3000);
+    }
   }
 
   private scriptCtx(): ScriptContext {
@@ -293,7 +305,7 @@ export class Game {
       prev.loot.setVisible(false);
       for (const x of [...prev.exitLabels, ...prev.useLabels]) x.el.hidden = true;
       prev.effects.group.visible = false;
-      if (prev !== area && prev.world.indoor && prev.world.script?.finished) this.discard(prev);
+      if (prev !== area && (prev.world.fresh || (prev.world.indoor && prev.world.script?.finished))) this.discard(prev);
     }
     this.area = area;
     audio.setArea(name);
@@ -335,7 +347,11 @@ export class Game {
     // Stepping back through from town closes the portal behind you.
     if (entry === 'portal' && name !== 'town') this.closePortal();
     // Dig the crypt while the hero is out in the fields, so going down is quick.
-    if (name === 'zone') this.preloadSoon('dungeon', 4000);
+    if (name === 'zone') {
+      this.preloadSoon('dungeon', 4000);
+      // A mire laid out ahead of time is still a new one: it is thrown away when left.
+      this.preloadSoon('swamp', 10000);
+    }
     this.travelling = false;
     this.saveNow();
   }
@@ -387,7 +403,7 @@ export class Game {
     // Loot.
     const at = m.position.clone();
     const loot = this.area.loot;
-    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4, abomination: 1, lich: 1, nightwing: 1 }[m.kind];
+    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4, abomination: 1, lich: 1, nightwing: 1, toad: 0.22, croc: 0.35, rootHorror: 0.65, mireWraith: 0.4 }[m.kind];
     if (Math.random() < (m.elite ? 1 : 0.55)) loot.drop(makeGold(m.level, m.elite ? 6 : m.kind === 'brute' ? 2.5 : 1), at);
     if (Math.random() < (m.kind === 'brute' ? 0.4 : 0.15) || (m.elite && Math.random() < 0.8)) loot.drop(makePotion(), at);
     if (m.elite) {

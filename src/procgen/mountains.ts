@@ -28,6 +28,8 @@ export interface RimOptions {
   earthScale?: number;
   /** World x/z where the ground's texture origin sits. */
   earthOrigin?: number;
+  /** Passes cut through the rim: on `side`, centred at `u` along it, `width` across. */
+  gaps?: { side: Side; u: number; width: number }[];
 }
 
 export interface Rim {
@@ -64,17 +66,26 @@ export function mountainRim(o: RimOptions): Rim {
     }
     return sum;
   };
+  // How much of the mountain stands at a point on a side: 0 in a pass, 1 clear of it.
+  const along = (s: Side, x: number, z: number) => (s === 'n' || s === 's' ? x : z);
+  const passFactor = (s: Side, x: number, z: number) => {
+    let f = 1;
+    for (const g of o.gaps ?? []) if (g.side === s) f = Math.min(f, smoothstep(g.width / 2, g.width / 2 + 9, Math.abs(along(s, x, z) - g.u)));
+    return f;
+  };
   /** Mountain height, or -1 inside the playable floor. */
   const heightAt = (x: number, z: number) => {
     let best = -1;
     for (const s of o.sides) {
       const d = sideDist(s, x, z);
       if (d <= 0) continue;
+      const pass = passFactor(s, x, z);
       const k = climb(s);
       const ramp = smoothstep(0.5, k, d);
       const crag = perlin2(x * 0.16, z * 0.16, seed + 50) * 2.2 + perlin2(x * 0.4, z * 0.4, seed + 51) * 0.8;
       const h = 0.7 * smoothstep(0, 2.5, d) + ramp * (2.5 + 13 * Math.pow(ridged(x, z), 2) + crag * (0.5 + ramp)) + ramp * 6 * smoothstep(k, k * 4, d);
-      best = Math.max(best, h);
+      // A pass keeps a low, broken floor of rock between its walls.
+      best = Math.max(best, h * (0.06 + 0.94 * pass) + (1 - pass) * 0.25 * crag);
     }
     return best;
   };
@@ -126,7 +137,7 @@ export function mountainRim(o: RimOptions): Rim {
 
   // ---- Needle spires -----------------------------------------------------
   {
-    const along = (s: Side, u: number, d: number): [number, number] => {
+    const spot = (s: Side, u: number, d: number): [number, number] => {
       const e = o.half - inset + d;
       return s === 'n' ? [u, -e] : s === 's' ? [u, e] : s === 'e' ? [e, u] : [-e, u];
     };
@@ -140,8 +151,8 @@ export function mountainRim(o: RimOptions): Rim {
         // Most peaks crowd the near slopes; some stand far back as a skyline.
         const gentle = o.gentle?.includes(s);
         const d = (gentle ? 5 : 0.5) + Math.pow(rng(), 1.6) * 40;
-        const [x, z] = along(s, u, d);
-        if (heightAt(x, z) < 0) continue;
+        const [x, z] = spot(s, u, d);
+        if (heightAt(x, z) < 0 || passFactor(s, x, z) < 0.7) continue;
         const k = climb(s);
         const grow = smoothstep(0, k * 1.4, d);
         const h = Math.min(gentle ? 2 + d * 0.55 : 6 + d * 0.9, (7 + rng() * 11) * (0.8 + grow * 1.1));
