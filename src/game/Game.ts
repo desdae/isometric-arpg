@@ -484,7 +484,7 @@ export class Game {
     // Loot.
     const at = m.position.clone();
     const loot = this.area.loot;
-    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4, abomination: 1, lich: 1, nightwing: 1, toad: 0.22, croc: 0.35, rootHorror: 0.65, mireWraith: 0.4 }[m.kind];
+    const itemChance = { ghoul: 0.14, crawler: 0.1, cultist: 0.32, brute: 0.55, spider: 0.45, horror: 0.6, wraith: 0.4, abomination: 1, lich: 1, nightwing: 1, toad: 0.22, croc: 0.35, rootHorror: 0.65, mireWraith: 0.4, butcher: 0.6, chainWraith: 0.42, gaunt: 0.14, bonePriest: 0.38, gaolCroc: 0.42, leech: 0.25, hanged: 0.35, weeper: 0.5, maiden: 0.6, inquisitor: 1 }[m.kind];
     if (Math.random() < (m.elite ? 1 : 0.55)) loot.drop(makeGold(m.level, m.elite ? 6 : m.kind === 'brute' ? 2.5 : 1), at);
     if (Math.random() < (m.kind === 'brute' ? 0.4 : 0.15) || (m.elite && Math.random() < 0.8)) loot.drop(makePotion(), at);
     if (m.elite) {

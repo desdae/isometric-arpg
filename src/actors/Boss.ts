@@ -8,6 +8,7 @@ import type { MonsterBody, MonsterMaterials } from './monsters/materials';
 import { ABOMINATION } from './bosses/abomination';
 import { LICH } from './bosses/lich';
 import { NIGHTWING } from './bosses/nightwing';
+import { INQUISITOR } from './bosses/inquisitor';
 
 // Crypt bosses: a monster with a playbook. Between abilities it hunts and
 // strikes like any other; every few seconds it picks one of its abilities
@@ -53,7 +54,7 @@ export interface BossDef {
   death(b: Boss, ctx: MonsterContext): void;
 }
 
-export const BOSS_DEFS: Partial<Record<MonsterKind, BossDef>> = { abomination: ABOMINATION, lich: LICH, nightwing: NIGHTWING };
+export const BOSS_DEFS: Partial<Record<MonsterKind, BossDef>> = { abomination: ABOMINATION, lich: LICH, nightwing: NIGHTWING, inquisitor: INQUISITOR };
 
 export class Boss extends Monster {
   readonly brain: BossDef;

@@ -140,7 +140,8 @@ class Croc extends BasicRig {
   }
 }
 
-export function buildCroc(m: MonsterMaterials, rng: Rng, scale = range(rng, 0.95, 1.15)): MonsterBody {
+export function buildCroc(m: MonsterMaterials, rng: Rng, scale = range(rng, 0.95, 1.15), spiked = false): MonsterBody {
+  void spiked;
   const c = new Croc(m, rng, scale);
   return {
     rig: c,

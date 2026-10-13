@@ -16,6 +16,14 @@ import { buildWraith } from './monsters/wraith';
 import { buildToad } from './monsters/toad';
 import { buildCroc } from './monsters/croc';
 import { buildRootHorror } from './monsters/rootHorror';
+import { buildButcher } from './monsters/butcher';
+import { buildBonePriest } from './monsters/bonePriest';
+import { buildGaunt } from './monsters/gaunt';
+import { buildLeech } from './monsters/leech';
+import { buildHanged } from './monsters/hanged';
+import { buildWeeper } from './monsters/weeper';
+import { buildMaiden } from './monsters/maiden';
+import { buildInquisitor } from './bosses/inquisitor';
 import { buildAbomination } from './bosses/abomination';
 import { buildLich } from './bosses/lich';
 import { buildNightwing } from './bosses/nightwing';
@@ -26,7 +34,9 @@ import { mulberry32 } from '../procgen/noise';
 // in range, flinch, die and leave a corpse. Casters keep their distance and
 // throw blood bolts. Packs wake together.
 
-export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith';
+export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith'
+  // The Drowned Gaol beneath the mire.
+  | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor';
 
 interface KindDef {
   name: string;
@@ -216,6 +226,143 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     ranged: { min: 5, max: 11, boltSpeed: 10 },
     build: (m, seed, elite) => buildWraith(m, mulberry32(seed), elite ? 1.45 : undefined, true),
   },
+  // The Drowned Gaol.
+  butcher: {
+    name: 'Gaol Butcher',
+    hp: 180,
+    dmg: [13, 22],
+    armor: 20,
+    speed: 2.5,
+    radius: 0.85,
+    height: 2.7,
+    reach: 2.2,
+    cooldown: 1.7,
+    aggro: 9,
+    xp: 80,
+    blood: new THREE.Color(0.22, 0.01, 0.008),
+    build: (m, seed, elite) => buildButcher(m, mulberry32(seed), elite ? 1.35 : 1),
+  },
+  chainWraith: {
+    name: 'Chained Wraith',
+    hp: 80,
+    dmg: [8, 14],
+    armor: 8,
+    speed: 3.2,
+    radius: 0.5,
+    height: 2.1,
+    reach: 3.6,
+    cooldown: 1.6,
+    aggro: 13,
+    xp: 50,
+    blood: new THREE.Color(0.2, 0.02, 0.01),
+    build: (m, seed, elite) => buildWraith(m, mulberry32(seed), elite ? 1.45 : undefined, 'chained'),
+  },
+  gaunt: {
+    name: 'Gaunt',
+    hp: 30,
+    dmg: [4, 8],
+    armor: 3,
+    speed: 5.0,
+    radius: 0.45,
+    height: 0.9,
+    reach: 1.2,
+    cooldown: 0.8,
+    aggro: 13,
+    xp: 14,
+    blood: new THREE.Color(0.16, 0.02, 0.01),
+    build: (m, seed, elite) => buildGaunt(m, mulberry32(seed), elite ? 1.4 : 1),
+  },
+  bonePriest: {
+    name: 'Ossuary Priest',
+    hp: 60,
+    dmg: [8, 13],
+    armor: 6,
+    speed: 2.9,
+    radius: 0.45,
+    height: 2.0,
+    reach: 13,
+    cooldown: 1.8,
+    aggro: 14,
+    xp: 40,
+    blood: new THREE.Color(0.1, 0.08, 0.06),
+    ranged: { min: 6, max: 12, boltSpeed: 10 },
+    build: (m, seed, elite) => buildBonePriest(m, mulberry32(seed), elite ? 1.3 : 1),
+  },
+  gaolCroc: {
+    name: 'Spiked Gaol-Croc',
+    hp: 120,
+    dmg: [11, 18],
+    armor: 26,
+    speed: 4.2,
+    radius: 0.8,
+    height: 1.0,
+    reach: 1.9,
+    cooldown: 1.2,
+    aggro: 10,
+    xp: 55,
+    blood: new THREE.Color(0.22, 0.01, 0.008),
+    build: (m, seed, elite) => buildCroc(m, mulberry32(seed), elite ? 1.6 : 1.15, true),
+  },
+  leech: {
+    name: 'Blood Leech',
+    hp: 50,
+    dmg: [6, 10],
+    armor: 10,
+    speed: 3.0,
+    radius: 0.55,
+    height: 0.6,
+    reach: 1.5,
+    cooldown: 1.2,
+    aggro: 10,
+    xp: 30,
+    blood: new THREE.Color(0.3, 0.01, 0.01),
+    build: (m, seed, elite) => buildLeech(m, mulberry32(seed), elite ? 1.5 : 1),
+  },
+  hanged: {
+    name: 'The Hanged',
+    hp: 70,
+    dmg: [9, 14],
+    armor: 6,
+    speed: 2.4,
+    radius: 0.45,
+    height: 2.0,
+    reach: 1.4,
+    cooldown: 1.5,
+    aggro: 10,
+    xp: 40,
+    blood: new THREE.Color(0.12, 0.04, 0.03),
+    build: (m, seed, elite) => buildHanged(m, mulberry32(seed), elite ? 1.3 : 1),
+  },
+  weeper: {
+    name: 'Weeping Matron',
+    hp: 90,
+    dmg: [10, 16],
+    armor: 8,
+    speed: 2.8,
+    radius: 0.5,
+    height: 2.5,
+    reach: 4.6,
+    cooldown: 2.4,
+    aggro: 12,
+    xp: 55,
+    blood: new THREE.Color(0.14, 0.02, 0.02),
+    build: (m, seed, elite) => buildWeeper(m, mulberry32(seed), elite ? 1.3 : 1),
+  },
+  maiden: {
+    name: 'Iron Maiden',
+    hp: 160,
+    dmg: [14, 22],
+    armor: 34,
+    speed: 2.2,
+    radius: 0.6,
+    height: 2.1,
+    reach: 1.6,
+    cooldown: 1.9,
+    aggro: 8,
+    xp: 70,
+    blood: new THREE.Color(0.22, 0.01, 0.008),
+    build: (m, seed, elite) => buildMaiden(m, mulberry32(seed), elite ? 1.3 : 1),
+  },
   // Vault bosses (see Boss.ts). Radius and height here are before the boss multipliers.
   abomination: {
     name: 'Gorrath',
@@ -261,6 +408,21 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     xp: 420,
     blood: new THREE.Color(0.2, 0.01, 0.01),
     build: (m, seed) => buildNightwing(m, mulberry32(seed)),
+  },
+  inquisitor: {
+    name: 'The Grand Inquisitor',
+    hp: 100,
+    dmg: [6, 10],
+    armor: 16,
+    speed: 3.0,
+    radius: 0.6,
+    height: 2.0,
+    reach: 2.6,
+    cooldown: 1.5,
+    aggro: 14,
+    xp: 480,
+    blood: new THREE.Color(0.1, 0.08, 0.06),
+    build: (m, seed) => buildInquisitor(m, mulberry32(seed)),
   },
 };
 
@@ -357,7 +519,7 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
-    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2, toad: 1.1, croc: 0.9, rootHorror: 2.4, mireWraith: 0 }[this.kind] * (this.elite ? 1.3 : 1);
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2, toad: 1.1, croc: 0.9, rootHorror: 2.4, mireWraith: 0, butcher: 2.3, chainWraith: 0, gaunt: 0.5, bonePriest: 0.6, gaolCroc: 1, leech: 0, hanged: 0, weeper: 0.5, maiden: 2.6, inquisitor: 1.4 }[this.kind] * (this.elite ? 1.3 : 1);
     if (weight > 0) this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
@@ -605,10 +767,11 @@ export class Monster implements Combatant {
         }
         ctx.effects.flash(from, 0xff2010, 30, 6, 0.3);
         audio.cast(from);
+        if (this.kind === 'bonePriest') this.mendAlly(ctx);
         return;
       }
       const d = Math.hypot(p.position.x - this.position.x, p.position.z - this.position.z);
-      if (this.kind === 'brute') {
+      if (this.kind === 'brute' || this.kind === 'butcher' || this.kind === 'maiden') {
         const at = this.position.clone().add(new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(1.6 * (this.elite ? 1.2 : 1)));
         ctx.effects.shockwave(at, this.elite ? 4.5 : 3.5);
         audio.slam(at, this.elite ? 1.3 : 1);
@@ -627,6 +790,29 @@ export class Monster implements Combatant {
         }
         return;
       }
+      if (this.kind === 'chainWraith') {
+        // The chains lash out in a wide arc.
+        ctx.effects.slash(this.position.clone().setY(this.position.y + 1.1), this.yaw, this.def.reach * (this.elite ? 1.2 : 1), new THREE.Color(0.9, 0.12, 0.06));
+        ctx.effects.sparks(this.position.clone().setY(this.position.y + 1.1), 10, new THREE.Color(1.2, 0.4, 0.2), 3, 0.4);
+      }
+      if (this.kind === 'weeper') {
+        // A wail in a cone before her: everything in it is struck.
+        const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+        const reach = this.def.reach * (this.elite ? 1.2 : 1) + 0.8;
+        ctx.effects.slash(this.position.clone().setY(this.position.y + 0.6), this.yaw, reach, new THREE.Color(0.55, 0.6, 0.75));
+        ctx.effects.shockwave(this.position.clone().addScaledVector(fwd, 1.2), reach * 0.8, new THREE.Color(0.4, 0.42, 0.55));
+        const toP = new THREE.Vector3(p.position.x - this.position.x, 0, p.position.z - this.position.z);
+        if (p.alive && d <= reach + p.radius && toP.normalize().dot(fwd) > Math.cos(0.65)) {
+          const roll = rollDamage(this.dmg[0], this.dmg[1], 0.05);
+          ctx.onPlayerHit(roll.amount, roll.crit, this.position);
+        }
+        return;
+      }
+      if (this.kind === 'leech' && p.alive && d <= this.def.reach + p.radius + this.radius * 0.5 + 0.6) {
+        // It drinks what it draws.
+        this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.12);
+        ctx.effects.blood(p.position.clone().setY(p.position.y + 1), this.position.clone().setY(this.position.y + 0.3), 12, this.def.blood, 0.7);
+      }
       if (this.kind === 'toad') {
         // The landing splashes blood and mire.
         const at = this.position.clone().add(new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(1.1 * this.radius / 0.7));
@@ -640,8 +826,23 @@ export class Monster implements Combatant {
     });
   }
 
+  /** Ossuary priests knit the worst-hurt ally nearby back together. */
+  protected mendAlly(ctx: MonsterContext) {
+    let best: Monster | null = null;
+    for (const o of ctx.monsters) {
+      if (o === this || !o.alive || o.spawn.boss || o.hp > o.maxHp * 0.8) continue;
+      if (Math.hypot(o.position.x - this.position.x, o.position.z - this.position.z) > 9) continue;
+      if (!best || o.hp / o.maxHp < best.hp / best.maxHp) best = o;
+    }
+    if (!best) return;
+    best.hp = Math.min(best.maxHp, best.hp + best.maxHp * 0.2);
+    const at = best.position.clone().setY(best.position.y + best.height * 0.6);
+    ctx.effects.sparks(at, 18, new THREE.Color(1.6, 0.25, 0.1), 2, 0.7);
+    ctx.effects.flash(at, 0xff3020, 14, 4, 0.3);
+  }
+
   protected get voiceSize() {
-    return (this.kind === 'brute' || this.kind === 'horror' ? 1.15 : this.kind === 'spider' || this.kind === 'rootHorror' ? 1.8 : this.kind === 'toad' ? 1.3 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
+    return (this.kind === 'brute' || this.kind === 'horror' || this.kind === 'butcher' || this.kind === 'maiden' ? 1.15 : this.kind === 'gaunt' ? 0.85 : this.kind === 'spider' || this.kind === 'rootHorror' ? 1.8 : this.kind === 'toad' ? 1.3 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
   }
 
   get kind(): MonsterKind {

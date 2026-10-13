@@ -8,7 +8,7 @@ import { Music, type Mood } from './Music';
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first click or key press.
 
-export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith';
+export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith' | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor';
 
 interface At {
   gain: number;
@@ -575,6 +575,58 @@ class AudioEngine {
     const p = (1 / size) * (0.9 + Math.random() * 0.2);
     const long = what === 'die' ? 2.2 : what === 'aggro' ? 1.5 : what === 'hurt' ? 0.5 : 1;
     switch (kind) {
+      case 'butcher':
+        // A thick, wet grunt from under the hood, and the cleaver's ring.
+        this.throat(o, t, { f0: 72 * p, f1: (what === 'die' ? 40 : 64) * p, dur: 0.55 * long, formants: [330, 720], gain: 0.4, rough: 0.7, wobble: 0.05, drive: true });
+        if (what === 'attack') this.tone(o, t + 0.25, { type: 'triangle', f0: 1900, f1: 1700, gain: 0.06, decay: 0.6 });
+        break;
+      case 'chainWraith':
+        // A choked moan over rattling links.
+        this.throat(o, t, { f0: 210 * p, f1: (what === 'die' ? 80 : 300) * p, dur: 0.8 * long, formants: [550, 1250], gain: 0.13, wobble: 0.1, breath: 0.15, rough: 0.5 });
+        for (let i = 0; i < 6 * long; i++) this.burst(o, t + i * 0.06 + Math.random() * 0.03, { type: 'bandpass', f0: 3400 + Math.random() * 1800, q: 9, gain: 0.18, decay: 0.03 });
+        break;
+      case 'gaunt':
+        // A thin, hungry keening and a click of teeth.
+        this.throat(o, t, { f0: 560 * p, f1: (what === 'die' ? 200 : 820) * p, dur: 0.35 * long, formants: [1100, 2800], gain: 0.16, rough: 0.5, wobble: 0.1, breath: 0.1 });
+        this.burst(o, t + 0.2, { type: 'bandpass', f0: 2600, q: 5, gain: 0.25, decay: 0.03 });
+        break;
+      case 'bonePriest':
+        // A dry litany: a whisper over a hollow drone, bones clicking.
+        this.burst(o, t, { f0: 1500, q: 5, gain: 0.22, attack: 0.08, decay: 0.55 * long });
+        this.throat(o, t, { f0: 92 * p, f1: (what === 'die' ? 50 : 88) * p, dur: 0.7 * long, formants: [420, 980], gain: 0.15, breath: 0.15 });
+        for (let i = 0; i < 4; i++) this.burst(o, t + 0.1 + i * 0.07, { type: 'bandpass', f0: 1800, q: 7, gain: 0.12, decay: 0.02 });
+        break;
+      case 'gaolCroc':
+        this.burst(o, t, { f0: 3400, q: 1.2, gain: 0.24, attack: 0.05, decay: 0.7 * long });
+        this.throat(o, t, { f0: 46 * p, f1: (what === 'die' ? 30 : 40) * p, dur: 0.8 * long, formants: [230, 480], gain: 0.34, rough: 0.7, drive: true });
+        if (what === 'attack') this.burst(o, t + 0.35, { type: 'bandpass', f0: 1600, q: 3, gain: 0.5, decay: 0.05 });
+        break;
+      case 'leech':
+        // Wet suction and a bubbling gurgle.
+        this.burst(o, t, { type: 'lowpass', f0: 500, f1: 140, gain: 0.35, attack: 0.03, decay: 0.4 * long });
+        for (let i = 0; i < 4 * long; i++) this.tone(o, t + i * 0.09, { type: 'sine', f0: 180 + Math.random() * 160, f1: 420, gain: 0.07, decay: 0.06 });
+        break;
+      case 'hanged':
+        // A strangled rattle and the creak of a rope under weight.
+        this.throat(o, t, { f0: 140 * p, f1: (what === 'die' ? 60 : 120) * p, dur: 0.6 * long, formants: [700, 1500], gain: 0.14, rough: 0.95, wobble: 0.2, breath: 0.2 });
+        this.tone(o, t + 0.1, { type: 'sawtooth', f0: 90, f1: 140, gain: 0.04, attack: 0.15, decay: 0.5 });
+        break;
+      case 'weeper':
+        // Sobbing that swells into a keening wail.
+        for (let i = 0; i < (what === 'attack' ? 1 : 3); i++) this.throat(o, t + i * 0.28, { f0: 380 * p, f1: (what === 'die' ? 140 : what === 'attack' ? 760 : 300) * p, dur: (what === 'attack' ? 1.2 : 0.24) * long, formants: [800, 2000], gain: 0.13, wobble: 0.25, breath: 0.25 });
+        break;
+      case 'maiden':
+        // Iron grinding on its hinges, then the clang of the doors.
+        this.tone(o, t, { type: 'sawtooth', f0: 70 * p, f1: 55 * p, gain: 0.08, attack: 0.2, decay: 0.6 * long });
+        this.tone(o, t + 0.3, { type: 'triangle', f0: 620, f1: 560, gain: 0.1, decay: 0.9 });
+        this.burst(o, t + 0.3, { type: 'bandpass', f0: 1400, q: 2, gain: 0.4, decay: 0.08 });
+        break;
+      case 'inquisitor':
+        // A sermon from a hollow chest: deep, doubled, a choir of whispers under it.
+        this.throat(o, t, { f0: 70 * p, f1: (what === 'die' ? 34 : 60) * p, dur: 1.1 * long, formants: [400, 880], gain: 0.3, rough: 0.4, drive: true });
+        this.throat(o, t + 0.04, { f0: 105 * p, f1: (what === 'die' ? 50 : 92) * p, dur: 1.1 * long, formants: [560, 1300], gain: 0.15, breath: 0.2 });
+        this.burst(o, t, { f0: 1700, q: 6, gain: 0.2, attack: 0.3, decay: 0.9 * long });
+        break;
       case 'ghoul':
         // Wet, rasping shriek that rises then breaks.
         this.throat(o, t, { f0: 420 * p, f1: (what === 'die' ? 160 : 620) * p, dur: 0.45 * long, formants: [900, 2400], gain: 0.22, rough: 0.6, wobble: 0.06, breath: 0.08 });
@@ -647,7 +699,7 @@ class AudioEngine {
         for (let i = 0; i < 3; i++) this.burst(o, t + i * 0.12, { type: 'lowpass', f0: 1400, f1: 250, gain: 0.3, decay: 0.08 });
         break;
     }
-    if (what === 'die' && kind !== 'wraith' && kind !== 'mireWraith') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
+    if (what === 'die' && kind !== 'wraith' && kind !== 'mireWraith' && kind !== 'chainWraith' && kind !== 'hanged') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
   }
 
   /** A boss's great roar: the voice, a sub-bass swell under it and a long tail. */

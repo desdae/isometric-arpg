@@ -181,7 +181,8 @@ class Wraith implements Rig {
   }
 }
 
-export function buildWraith(m: MonsterMaterials, rng: Rng, scale = range(rng, 1.0, 1.1), mire = false): MonsterBody {
+export function buildWraith(m: MonsterMaterials, rng: Rng, scale = range(rng, 1.0, 1.1), variant: boolean | 'chained' = false): MonsterBody {
+  const mire = variant !== false;
   const c = new Wraith(m, rng, scale, mire);
   return {
     rig: c,
