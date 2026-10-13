@@ -148,11 +148,20 @@ export class Renderer {
     this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  private lastRender = 0;
+  private shadowSkipped = false;
+
   render(time: number) {
     this.grade.uniforms.time.value = time % 100;
-    this.renderer.shadowMap.needsUpdate = true;
-    // The composer renders the scene twice (colour, then AO normals) and each
-    // render would walk the whole scene graph to update matrices. Do it once.
+    // Above ~125 FPS, redraw the shadow map every other frame: a shadow one
+    // frame (under 8 ms) behind is invisible, and the shadow pass is the
+    // costliest part of the frame for the CPU. A skipped frame keeps the old
+    // shadow matrices too, so the map and its projection always match.
+    const now = performance.now();
+    this.shadowSkipped = now - this.lastRender < 8 && !this.shadowSkipped;
+    this.lastRender = now;
+    this.renderer.shadowMap.needsUpdate = !this.shadowSkipped;
+    // Walk the scene graph to update matrices once here, not in every render call.
     const scene = this.renderPass.scene;
     this.grade.uniforms.aoIntensity.value = this.ao.enabled ? this.ao.blendIntensity : 0;
     // The scene (and the bloom added onto it) must land in the multisampled target.
