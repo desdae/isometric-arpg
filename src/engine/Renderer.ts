@@ -11,6 +11,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
+    /** Denoised ambient occlusion, at half resolution. */
+    tAO: { value: null as THREE.Texture | null },
+    aoIntensity: { value: 0 },
     time: { value: 0 },
     shadowTint: { value: new THREE.Vector3(1.06, 0.92, 0.9) },
     highlightTint: { value: new THREE.Vector3(1.08, 0.96, 0.86) },
@@ -25,13 +28,15 @@ const GradeShader = {
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
   `,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
+    uniform sampler2D tDiffuse, tAO;
+    uniform float aoIntensity;
     uniform float time, exposure, contrast, saturation, vignette, grain;
     uniform vec3 shadowTint, highlightTint;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb * exposure;
+      c *= mix(vec3(1.0), texture2D(tAO, vUv).rgb, aoIntensity);
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       float hl = smoothstep(0.05, 0.8, l);
       c *= mix(shadowTint, highlightTint, hl);
@@ -55,6 +60,13 @@ const GradeShader = {
   const call = 'RE_Direct( directLight, geometryPosition';
   const at = chunk.indexOf(call, chunk.indexOf('NUM_POINT_LIGHTS > 0'));
   if (at > 0) THREE.ShaderChunk.lights_fragment_begin = chunk.slice(0, at) + 'if ( directLight.visible ) ' + chunk.slice(at);
+  // Faces turned away from the moon get no moonlight anyway: skip their 16
+  // shadow-map reads.
+  // A real if: some drivers evaluate both sides of a ?: (ANGLE's HLSL does).
+  THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begin.replace(
+    /directLight\.color \*= \( directLight\.visible && receiveShadow \) \? (getShadow\( directionalShadowMap\[ i \][^;]*\)) : 1\.0;/,
+    'if ( directLight.visible && receiveShadow && dot( geometryNormal, directLight.direction ) > 0.0 ) directLight.color *= $1;',
+  );
 }
 
 /**
@@ -102,8 +114,13 @@ export class Renderer {
     this.ao = new GTAOPass(scene, camera, Math.ceil(size.x / 2), Math.ceil(size.y / 2));
     const aoSize = this.ao.setSize.bind(this.ao);
     this.ao.setSize = (w: number, h: number) => aoSize(Math.ceil(w / 2), Math.ceil(h / 2));
-    this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
+    this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 8 });
     this.ao.blendIntensity = 0.85;
+    this.ao.updatePdMaterial({ samples: 12 });
+    // The grade pass multiplies the AO in, so the AO pass draws nothing at full
+    // resolution itself (by default it copies the whole frame and blends over it).
+    this.ao.output = GTAOPass.OUTPUT.Off;
+    this.ao.needsSwap = false;
     composer.addPass(this.ao);
     // GTAO walks the whole scene every frame to hide points and lines; aoHidden()
     // below already hides points, and the game draws no lines.
@@ -122,7 +139,11 @@ export class Renderer {
     composer.addPass(this.bloom);
 
     this.grade = new ShaderPass(GradeShader);
+    this.grade.uniforms.tAO.value = this.ao.pdRenderTarget.texture;
     composer.addPass(this.grade);
+    // Only the scene pass needs multisampling; the full-screen passes after it
+    // write to a plain target (4 samples per pixel is 4× the memory traffic).
+    composer.renderTarget1.samples = 0;
     composer.addPass(new OutputPass());
     this.composer = composer;
 
@@ -167,6 +188,10 @@ export class Renderer {
     // The composer renders the scene twice (colour, then AO normals) and each
     // render would walk the whole scene graph to update matrices. Do it once.
     const scene = this.renderPass.scene;
+    this.grade.uniforms.aoIntensity.value = this.ao.enabled ? this.ao.blendIntensity : 0;
+    // The scene (and the bloom added onto it) must land in the multisampled target.
+    const c = this.composer;
+    if (c.readBuffer.samples === 0 && c.writeBuffer.samples > 0) c.swapBuffers();
     scene.matrixWorldAutoUpdate = false;
     scene.updateMatrixWorld();
     this.composer.render();

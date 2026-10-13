@@ -137,13 +137,12 @@ export class DebugOverlay {
       },
       {
         label: () => 'MSAA',
-        on: () => r.composer.renderTarget1.samples > 0,
+        on: () => r.composer.renderTarget2.samples > 0,
         flip: () => {
-          const n = r.composer.renderTarget1.samples > 0 ? 0 : 4;
-          for (const t of [r.composer.renderTarget1, r.composer.renderTarget2]) {
-            t.samples = n;
-            t.dispose();
-          }
+          // Only the scene's target is multisampled (see Renderer).
+          const t = r.composer.renderTarget2;
+          t.samples = t.samples > 0 ? 0 : 4;
+          t.dispose();
         },
       },
       {

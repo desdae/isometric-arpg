@@ -5,6 +5,8 @@ import { installHeightFog } from './engine/fog';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
 import { DebugOverlay } from './engine/DebugOverlay';
+import { Benchmark, benchFlags } from './engine/Benchmark';
+import { mulberry32 } from './procgen/noise';
 import { Sky } from './engine/Atmosphere';
 import { buildEnvironment } from './engine/environment';
 import { buildTestScene } from './scenes/testScene';
@@ -26,13 +28,16 @@ import { MOON_OFFSET, type World } from './world/World';
 installHeightFog();
 
 const params = new URLSearchParams(location.search);
+const bench = benchFlags(params);
+// A benchmark run builds the same world every time.
+if (bench) Math.random = mulberry32(20261013);
 const hud = document.getElementById('hud')!;
 hud.textContent = 'Generating world…';
 if (!params.has('debug')) hud.style.visibility = 'hidden';
 
 const t0 = performance.now();
 // Artifacts only pass a bare #anchor, so the hash also picks the starting area.
-const sceneName = params.get('scene') ?? (location.hash.slice(1) || 'town');
+const sceneName = bench ? 'zone' : (params.get('scene') ?? (location.hash.slice(1) || 'town'));
 
 const cam = new IsoCamera(window.innerWidth / window.innerHeight, document.body);
 const renderer = new Renderer(document.body, new THREE.Scene(), cam.camera);
@@ -161,6 +166,8 @@ const debug = new DebugOverlay(renderer, () => {
   return [['Game', rows]];
 });
 if (params.has('debug')) debug.toggle(true);
+const benchmark = bench && game ? new Benchmark(bench, game, renderer) : null;
+let lastFrame = 0;
 let frames = 0;
 let fpsTime = 0;
 let attackTimer = 0;
@@ -168,6 +175,7 @@ let attackTimer = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
+  const f0 = performance.now();
   debug.begin();
   if (game) {
     world = game.world!;
@@ -224,8 +232,14 @@ function frame() {
   (world.scene.fog as THREE.FogExp2).density = (0.42 / cam.distance) * (world.fogScale ?? 1);
   sky.update(t, cam.camera.position);
   debug.updated();
+  const f1 = performance.now();
   renderer.render(t);
   debug.end(world.scene, dt);
+  if (benchmark) {
+    const f2 = performance.now();
+    if (lastFrame) benchmark.frame((f0 - lastFrame) / 1000, f1 - f0, f2 - f1);
+    lastFrame = f0;
+  }
 
   frames++;
   fpsTime += dt;

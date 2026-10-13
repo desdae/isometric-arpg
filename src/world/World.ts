@@ -92,7 +92,7 @@ export function createNightScene(): { scene: THREE.Scene; moon: THREE.Directiona
   const moon = new THREE.DirectionalLight(new THREE.Color(1.0, 0.58, 0.52), 2.3);
   moon.position.copy(MOON_OFFSET);
   moon.castShadow = true;
-  moon.shadow.mapSize.set(4096, 4096);
+  moon.shadow.mapSize.set(2048, 2048);
   const sc = moon.shadow.camera;
   sc.left = sc.bottom = -38;
   sc.right = sc.top = 38;
