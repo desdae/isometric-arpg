@@ -5,6 +5,7 @@ import type { Renderer } from './Renderer';
 // A repeatable 30 second run through the Blighted Fields: same world seed,
 // same route, hero untouchable, so runs can be compared. Started with #bench
 // (or ?bench). Switches go after it: #bench-noao-noshadows-nobloom-nomsaa-res75.
+// #bench-sweep runs it once per switch (shorter runs) and tabulates the costs.
 
 const WARMUP = 3;
 const LENGTH = 30;
@@ -19,7 +20,11 @@ const ROUTE: [number, number][] = [
   [-20, -12],
 ];
 
-export const FLAGS = ['noao', 'noshadows', 'nobloom', 'nomsaa', 'res75', 'res50'] as const;
+export const FLAGS = ['noao', 'noshadows', 'nobloom', 'nomsaa', 'res75', 'res50', 'sweep'] as const;
+/** The sweep's runs, in order: everything on, then one switch at a time. */
+const SWEEP = ['', 'noao', 'noshadows', 'nobloom', 'nomsaa', 'res75'];
+const SWEEP_KEY = 'benchSweep';
+type SweepRow = { run: string; fps: number; frame: number; cpu: number; low: number };
 type Flag = (typeof FLAGS)[number];
 
 /** The benchmark's switches, or null when this is not a benchmark run. */
@@ -109,7 +114,7 @@ export class Benchmark {
     this.frames.push(dt * 1000);
     this.update.push(updateMs);
     this.render.push(renderMs);
-    const left = LENGTH - (this.t - this.start);
+    const left = (this.flags.has('sweep') ? LENGTH / 2 : LENGTH) - (this.t - this.start);
     this.bar.textContent = `Benchmark running · ${Math.ceil(left)} s left · don't touch the mouse`;
     if (left <= 0) this.finish();
   }
@@ -152,7 +157,7 @@ export class Benchmark {
     el.innerHTML = `<h3>Benchmark result</h3>
       <div class="big"><span><b>${fps.toFixed(0)}</b>avg FPS</span><span><b>${low1.toFixed(0)}</b>1% low</span><span><b>${(total / n).toFixed(2)}</b>ms / frame</span><span><b>${(upd + ren).toFixed(2)}</b>CPU ms</span></div>
       <textarea readonly></textarea>
-      <div class="row"><button data-copy>Copy result</button><button data-run="">Run again</button><button data-run="noao">Without AO</button><button data-run="noshadows">Without shadows</button><button data-run="noao-noshadows">Without both</button><button data-close>Close</button></div>
+      <div class="row"><button data-copy>Copy result</button><button data-run="">Run again</button><button data-run="noao">Without AO</button><button data-run="noshadows">Without shadows</button><button data-run="noao-noshadows">Without both</button><button data-run="sweep">Cost of each effect</button><button data-close>Close</button></div>
       <p class="note">Firefox caps FPS at the monitor refresh rate; set layout.frame_rate to 0 in about:config to see the real figure. CPU ms is not capped.</p>`;
     const ta = el.querySelector('textarea')!;
     ta.value = lines.join('\n');
@@ -171,5 +176,42 @@ export class Benchmark {
     document.body.appendChild(el);
     console.log(lines.join('\n'));
     (window as unknown as { __bench: string }).__bench = lines.join('\n');
+    if (this.flags.has('sweep')) this.sweepStep({ run: '', fps, frame: total / n, cpu: upd + ren, low: low1 }, el);
+  }
+
+  /** Records this run of a sweep, then moves on to the next run or shows the table. */
+  private sweepStep(row: SweepRow, el: HTMLDivElement) {
+    const run = SWEEP.find((r) => r !== '' && this.flags.has(r as Flag)) ?? '';
+    row.run = run;
+    let rows: SweepRow[] = [];
+    try {
+      rows = run === '' ? [] : JSON.parse(sessionStorage.getItem(SWEEP_KEY) ?? '[]');
+      rows.push(row);
+      sessionStorage.setItem(SWEEP_KEY, JSON.stringify(rows));
+    } catch {
+      // No storage: this run's own result stays on screen instead.
+      return;
+    }
+    const next = SWEEP[SWEEP.indexOf(run) + 1];
+    if (next !== undefined) {
+      el.remove();
+      location.hash = next ? `bench-sweep-${next}` : 'bench-sweep';
+      location.reload();
+      return;
+    }
+    const base = rows.find((r) => r.run === '') ?? rows[0];
+    const label: Record<string, string> = { '': 'everything on', noao: 'no AO', noshadows: 'no shadows', nobloom: 'no bloom', nomsaa: 'no MSAA', res75: '75% resolution' };
+    const table = [
+      `Benchmark sweep · Blighted Fields · ${LENGTH / 2} s per run`,
+      'run              avg FPS  1% low  frame ms  CPU ms  saves ms',
+      ...rows.map((r) => `${label[r.run].padEnd(16)} ${r.fps.toFixed(1).padStart(7)} ${r.low.toFixed(0).padStart(7)} ${r.frame.toFixed(2).padStart(9)} ${r.cpu.toFixed(2).padStart(7)} ${r.run ? (base.frame - r.frame).toFixed(2).padStart(9) : '        -'}`),
+      `buffer ${this.r.renderer.getDrawingBufferSize(new THREE.Vector2()).toArray().join('×')} · ${navigator.userAgent}`,
+    ].join('\n');
+    el.querySelector('h3')!.textContent = 'Benchmark sweep';
+    el.querySelector('.big')?.remove();
+    const ta = el.querySelector('textarea')!;
+    ta.value = table;
+    console.log(table);
+    (window as unknown as { __bench: string }).__bench = table;
   }
 }
