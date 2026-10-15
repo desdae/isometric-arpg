@@ -193,7 +193,6 @@ class Leech extends BasicRig {
     });
     this.update(0, 0);
     bakeRig(this.root);
-    (globalThis as any).__leech = this; // DEBUG
   }
 
   protected animate(dt: number) {
@@ -213,12 +212,6 @@ class Leech extends BasicRig {
     this.deflate = 0;
   }
 
-  // DEBUG-POSE
-  play(dur: number, fn: (k: number) => void, done?: () => void) {
-    const k = new URLSearchParams(location.search).get('pose');
-    if (k !== null) return super.play(1e9, () => fn(Number(k)));
-    super.play(dur, fn, done);
-  }
   update(dt: number, speed: number) {
     if (this.dead && !this.acting) return;
     super.update(dt, speed);
