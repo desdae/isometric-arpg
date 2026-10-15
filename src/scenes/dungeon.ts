@@ -8,7 +8,9 @@ import { barrel, crate, rock } from '../procgen/geometry';
 import { terrainMesh } from '../procgen/terrain';
 import { MeshBuilder, xf } from '../procgen/builder';
 import { bones, brazier } from '../procgen/props';
+import { bloodCauldron, candles, cellBars, gibbet, hangingCage, maidenProp, PEDESTAL_BRAZIER_COALS_Y, pedestalBrazier, rack, skeleton, skullPile, spikedChair, stocks, toolTable } from '../procgen/torture';
 import { prewarmTelegraph } from '../game/Telegraph';
+import { bloodWater } from '../procgen/bloodWater';
 import { auraMaterial, prewarmBossFx } from '../game/BossFx';
 import { Fire } from '../engine/Fire';
 import { LightPool } from '../engine/LightPool';
@@ -23,6 +25,11 @@ import type { Monster, MonsterKind, MonsterSpawn } from '../actors/Monster';
 // against one edge behind a sealed portcullis; three objectives drawn from a
 // pool, spread through the deepest rooms, break the seal. Thick block walls,
 // wall torches, blood on the flagstones, chains, rune circles and red fog.
+//
+// The same generator digs the Drowned Gaol beneath the Bleeding Mire, in two
+// levels: torture halls flooded with blood, cages, racks and candles. On the
+// upper level the vault is the stairwell down, guarded by the gaolmaster; on
+// the lower one it is the Grand Inquisitor's court.
 
 const CELL = 2;
 const G = 40;
@@ -46,16 +53,27 @@ interface Room extends Rect {
   role?: string;
 }
 
-type Objective = 'runes' | 'warden' | 'key' | 'hearts' | 'brood';
 
 const NAMES = ['The Sunken Ossuary', 'The Weeping Crypt', 'The Charnel Vaults', 'The Red Catacomb', 'The Sepulchre of Thorns'];
-type BossKind = 'abomination' | 'lich' | 'nightwing';
+const GAOL_NAMES = ['The Drowned Gaol', 'The Weeping Cells', 'The Red Oubliette', 'The Flayed Halls', 'The Gaol of Chains'];
+
+/** Which dungeon is being dug: the crypt under the fields, or a level of the gaol under the mire. */
+export type DungeonVariant = 'crypt' | 'gaol1' | 'gaol2';
+
+/** Ways to break the vault's seal; each run draws its own from the pool. */
+export type Objective = 'runes' | 'warden' | 'key' | 'hearts' | 'brood' | 'braziers' | 'levers' | 'shards' | 'marked';
+const UNLOCKS: Objective[] = ['runes', 'warden', 'key', 'hearts', 'brood', 'braziers', 'levers', 'shards', 'marked'];
+
+type BossKind = 'abomination' | 'lich' | 'nightwing' | 'inquisitor';
 /** The three vault bosses and how each one's room is lit and coloured. */
 const BOSS_THEMES: Record<BossKind, { name: string; rune: THREE.Color; mist: THREE.Color; light: number; ghost: boolean; wakes: string }> = {
   abomination: { name: 'Gorrath the Many-Mouthed', rune: new THREE.Color(0.6, 0.04, 0.02), mist: new THREE.Color(0.11, 0.008, 0.005), light: 0xff3a1a, ghost: false, wakes: 'Something stirs beneath the blood' },
   lich: { name: 'The Hollow King', rune: new THREE.Color(0.32, 0.08, 0.7), mist: new THREE.Color(0.05, 0.015, 0.1), light: 0x9a50ff, ghost: true, wakes: 'The Hollow King lifts his head' },
   nightwing: { name: "Vhal'zereth", rune: new THREE.Color(0.55, 0.03, 0.04), mist: new THREE.Color(0.08, 0.01, 0.012), light: 0x9ab4ff, ghost: false, wakes: 'Wings unfold in the dark above' },
+  inquisitor: { name: 'The Grand Inquisitor', rune: new THREE.Color(0.7, 0.05, 0.02), mist: new THREE.Color(0.12, 0.01, 0.006), light: 0xff3418, ghost: false, wakes: 'The Inquisitor rises to pass judgement' },
 };
+/** The crypt's three bosses; the gaol always ends with the Inquisitor. */
+const CRYPT_BOSSES: BossKind[] = ['abomination', 'lich', 'nightwing'];
 
 const cx = (i: number) => -HALF + (i + 0.5) * CELL;
 const overlap = (a: Rect, b: Rect, pad = 0) => a.x - pad < b.x + b.w && b.x - pad < a.x + a.w && a.y - pad < b.y + b.h && b.y - pad < a.y + a.h;
@@ -450,6 +468,30 @@ function splatTexture(seed: number): THREE.CanvasTexture {
   });
 }
 
+/** Blood running down a wall: streaks from a ragged top edge, beading at their ends. */
+function dripTexture(seed: number): THREE.CanvasTexture {
+  const rng = mulberry32(seed);
+  return canvasTexture(256, (g, s) => {
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = '#fff';
+    for (let x = 0; x < s; x += 3) g.fillRect(x, 0, 3, range(rng, 6, 26));
+    for (let k = 0; k < 22; k++) {
+      const x = range(rng, 8, s - 8);
+      const len = range(rng, 0.2, 0.97) * s;
+      const w = range(rng, 2, 7);
+      const grd = g.createLinearGradient(0, 0, 0, len);
+      grd.addColorStop(0, 'rgba(255,255,255,1)');
+      grd.addColorStop(0.85, 'rgba(255,255,255,0.8)');
+      grd.addColorStop(1, 'rgba(255,255,255,0.2)');
+      g.fillStyle = grd;
+      g.fillRect(x - w / 2, 0, w, len);
+      g.beginPath();
+      g.arc(x, len, w * 0.8, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}
+
 /** Soft cloudy blots for mist and pooled light. */
 function mistTexture(seed: number): THREE.CanvasTexture {
   const rng = mulberry32(seed);
@@ -514,8 +556,11 @@ function cocoon(): THREE.BufferGeometry {
 
 // ---- Build ------------------------------------------------------------------
 
-export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promise<World> {
+export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant: DungeonVariant = 'crypt', forcedUnlock?: string | null): Promise<World> {
   const rng = mulberry32(seed);
+  const gaol = variant !== 'crypt';
+  /** The gaol's upper level: no seal and no boss, just the way down. */
+  const descent = variant === 'gaol1';
   await loading.step('Carving rooms and passages', 0.02);
   const L = generate(rng);
   const { grid, rooms, boss, start, dir } = L;
@@ -523,9 +568,13 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   const floorAt = (x: number, z: number) => at(Math.floor((x + HALF) / CELL), Math.floor((z + HALF) / CELL));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x030102);
-  scene.fog = new THREE.FogExp2(0x140607, 0.02);
-  scene.add(new THREE.HemisphereLight(new THREE.Color(0.55, 0.36, 0.32), new THREE.Color(0.14, 0.08, 0.07), 1.7));
+  scene.background = new THREE.Color(gaol ? 0x050102 : 0x030102);
+  scene.fog = new THREE.FogExp2(gaol ? 0x1e0605 : 0x140607, gaol ? 0.022 : 0.02);
+  scene.add(
+    gaol
+      ? new THREE.HemisphereLight(new THREE.Color(0.66, 0.33, 0.28), new THREE.Color(0.2, 0.08, 0.06), 2.1)
+      : new THREE.HemisphereLight(new THREE.Color(0.55, 0.36, 0.32), new THREE.Color(0.14, 0.08, 0.07), 1.7),
+  );
   // Dim shadow-casting key light from above (main.ts steers its frustum).
   const moon = new THREE.DirectionalLight(new THREE.Color(0.9, 0.45, 0.4), 1.1);
   moon.position.copy(MOON_OFFSET);
@@ -548,8 +597,9 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     { kind: 'woodPlanks', seed: (seed % 971) + 9, size: 256, normalStrength: 4 },
   ]);
   const mats: Record<string, THREE.Material> = {
-    wall: pbrMaterial(wallSet, 1, { color: new THREE.Color(0.85, 0.76, 0.72) }),
-    trim: pbrMaterial(capSet, 1, { color: new THREE.Color(0.75, 0.68, 0.65) }),
+    // The gaol's stone is darker, blood-stained and wet.
+    wall: pbrMaterial(wallSet, 1, { color: gaol ? new THREE.Color(0.52, 0.38, 0.35) : new THREE.Color(0.85, 0.76, 0.72), roughness: gaol ? 0.7 : undefined }),
+    trim: pbrMaterial(capSet, 1, { color: gaol ? new THREE.Color(0.5, 0.4, 0.38) : new THREE.Color(0.75, 0.68, 0.65) }),
     rubble: pbrMaterial(capSet, 1, { color: new THREE.Color(0.45, 0.4, 0.38) }),
     void: new THREE.MeshBasicMaterial({ color: 0x050203 }),
     wood: pbrMaterial(woodSet, 1, { color: new THREE.Color(0.6, 0.5, 0.45) }),
@@ -560,6 +610,16 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     egg: new THREE.MeshStandardMaterial({ color: 0xb4a68a, roughness: 0.35, emissive: new THREE.Color(0.06, 0.04, 0.02) }),
     altar: pbrMaterial(capSet, 1, { color: new THREE.Color(0.35, 0.3, 0.3) }),
     seal: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(3, 0.2, 0.08), roughness: 1 }),
+    // Torture-prison dressing (see procgen/torture.ts).
+    rust: new THREE.MeshStandardMaterial({ color: 0x4a2414, roughness: 0.85, metalness: 0.5 }),
+    wax: new THREE.MeshStandardMaterial({ color: 0xc8b48c, roughness: 0.55, emissive: new THREE.Color(0.08, 0.05, 0.02) }),
+    flame: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.4, 0.4), fog: false }),
+    gore: new THREE.MeshStandardMaterial({ color: 0x4a0c08, roughness: 0.25, emissive: new THREE.Color(0.12, 0.0, 0.0) }),
+    cloth: new THREE.MeshStandardMaterial({ color: 0x3a2a22, roughness: 0.95, side: THREE.DoubleSide }),
+    rope: new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.95 }),
+    cellVoid: new THREE.MeshBasicMaterial({ color: 0x080101 }),
+    ash: new THREE.MeshStandardMaterial({ color: 0x1a1614, roughness: 1 }),
+    cellGlow: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 0.06, 0.02), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
   };
   for (const k of ['wall', 'trim', 'rubble', 'void', 'iron', 'wood']) installCutaway(mats[k]);
 
@@ -582,6 +642,52 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   });
   const ground = terrainMesh(() => 0, -HALF, -HALF, SIZE, 40, splatMaterial(floorSet, 26, cobbleSet, 40, mask));
   scene.add(ground);
+  // The gaol is flooded: blood stands in wide pools across the flagstones,
+  // deepest in the vault, rippling where it drips from the ceiling.
+  const waterTime = { value: 0 };
+  let dryFlood = (_x: number, _z: number, _hw: number, _hl: number, _yaw: number) => {};
+  if (gaol) {
+    const R = 512;
+    const data = new Uint8Array(R * R * 4);
+    for (let v = 0; v < R; v++) {
+      for (let u = 0; u < R; u++) {
+        const x = -HALF + ((u + 0.5) / R) * SIZE;
+        const z = -HALF + ((v + 0.5) / R) * SIZE;
+        const inVault = x > -HALF + boss.x * CELL && x < -HALF + (boss.x + BS) * CELL && z > -HALF + boss.y * CELL && z < -HALF + (boss.y + BS) * CELL;
+        const n = fbm2(x * 0.09, z * 0.09, 4, seed + 70) + fbm2(x * 0.35, z * 0.35, 2, seed + 71) * 0.18 + (inVault && !descent ? 0.16 : 0) + (descent ? 0 : 0.04);
+        // Depth of the pool here: negative is dry stone.
+        const depth = (n - 0.53) * 1.4;
+        const ground = Math.max(-1.5, Math.min(1, -depth));
+        const k = (v * R + u) * 4;
+        data[k] = data[k + 1] = data[k + 2] = Math.round(((ground + 1.5) / 2.5) * 255);
+        data[k + 3] = 255;
+      }
+    }
+    const depthTex = new THREE.DataTexture(data, R, R);
+    depthTex.magFilter = THREE.LinearFilter;
+    depthTex.minFilter = THREE.LinearFilter;
+    depthTex.needsUpdate = true;
+    // Dries out a rotated box (the stairwell), so no pool lies over it.
+    dryFlood = (x0, z0, hw, hl, yaw) => {
+      const c = Math.cos(yaw);
+      const s = Math.sin(yaw);
+      for (let v = 0; v < R; v++) {
+        for (let u = 0; u < R; u++) {
+          const dx = -HALF + ((u + 0.5) / R) * SIZE - x0;
+          const dz = -HALF + ((v + 0.5) / R) * SIZE - z0;
+          if (Math.abs(dx * c - dz * s) > hw || Math.abs(dx * s + dz * c) > hl) continue;
+          const k = (v * R + u) * 4;
+          data[k] = data[k + 1] = data[k + 2] = 255;
+        }
+      }
+      depthTex.needsUpdate = true;
+    };
+    const flood = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, SIZE).rotateX(-Math.PI / 2), bloodWater(SIZE, waterTime, depthTex, true));
+    flood.position.y = 0.035;
+    flood.receiveShadow = true;
+    flood.renderOrder = 1;
+    scene.add(flood);
+  }
 
   const nav = new NavGrid(-HALF, -HALF, SIZE, SIZE, 0.5);
   for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) if (!at(i, j)) nav.blockBox(cx(i), cx(j), CELL / 2 + 0.3, CELL / 2 + 0.3, 0);
@@ -622,14 +728,34 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
         walls.add('trim', new THREE.BoxGeometry(CELL, 0.35, 0.16), xf(fx, 0.17, fz, yaw), 0.6);
         if ((i + j) % 2 === 0) walls.add('trim', new THREE.BoxGeometry(0.5, h, 0.24), xf(fx, h / 2, fz, yaw), 0.6);
         if (rng() < 0.12) props.add('rubble', rock(rng, range(rng, 0.25, 0.5)), xf(fx + di * 0.3 + range(rng, -0.6, 0.6), 0, fz + dj * 0.3 + range(rng, -0.6, 0.6), rng() * 6), 0.5);
+        if (gaol && rng() < 0.3) {
+          // Blood run down the stone from somewhere above.
+          const w = range(rng, 0.5, 1.3);
+          const hh = range(rng, 1.4, h - 0.1);
+          walls.add('drip', new THREE.PlaneGeometry(w, hh), xf(fx - dj * range(rng, -0.6, 0.6) - di * 0.005, h - hh / 2 - 0.05, fz + di * range(rng, -0.6, 0.6) - dj * 0.005, yaw + Math.PI), 0);
+        }
+        if (gaol && rng() < 0.08) {
+          // A pair of shackles on short chains.
+          const side = new THREE.Vector3(dj, 0, -di);
+          for (const sgn of [-0.3, 0.3]) {
+            const top = new THREE.Vector3(fx - di * 0.04, range(rng, 1.6, 2.0), fz - dj * 0.04).addScaledVector(side, sgn);
+            const low = top.clone().setY(top.y - range(rng, 0.25, 0.5)).add(new THREE.Vector3(-di * 0.06, 0, -dj * 0.06));
+            chain(walls, top, low, 0.01);
+            walls.add('iron', new THREE.TorusGeometry(0.07, 0.018, 4, 10), xf(low.x, low.y - 0.07, low.z, yaw), 0);
+          }
+        }
       }
     }
+  }
+  if (gaol) {
+    mats.drip = new THREE.MeshStandardMaterial({ map: dripTexture(seed + 21), color: 0x6a0806, roughness: 0.15, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    installCutaway(mats.drip as THREE.MeshStandardMaterial);
   }
   scene.add(walls.build(mats));
 
   await loading.step('Lighting the torches', 0.62);
   // ---- Lights and torches ----------------------------------------------
-  const pool = new LightPool(scene, 8, 0xff6a28);
+  const pool = new LightPool(scene, 8, gaol ? 0xff4a22 : 0xff6a28);
   const fires: Fire[] = [];
   const addFire = (pos: THREE.Vector3, size: number, intensity: number, rangeM: number) => {
     const f = new Fire(size, 0, 1);
@@ -717,8 +843,68 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
         chain(props, top, bottom, 0.02);
         props.add('iron', new THREE.TorusGeometry(0.09, 0.02, 4, 10), xf(bottom.x, bottom.y - 0.08, bottom.z, Math.atan2(f.n.x, f.n.z)), 0);
       }
-      if (rng() < 0.6) props.addBuilder(bones(rng), xf(f.face.x + f.n.x * 0.6, 0, f.face.z + f.n.z * 0.6, rng() * 6));
+      if (gaol && rng() < 0.55) props.addBuilder(skeleton(rng, 'slumped'), xf(f.face.x + f.n.x * 0.45, 0, f.face.z + f.n.z * 0.45, Math.atan2(f.n.x, f.n.z)));
+      else if (rng() < 0.6) props.addBuilder(bones(rng), xf(f.face.x + f.n.x * 0.6, 0, f.face.z + f.n.z * 0.6, rng() * 6));
     }
+  };
+  // A barred cell let into the wall: darkness behind iron, a red glow at its foot.
+  const cell = (f: { face: THREE.Vector3; n: THREE.Vector3 }) => {
+    const yaw = Math.atan2(f.n.x, f.n.z);
+    const m = xf(f.face.x, 0, f.face.z, yaw);
+    props.add('cellVoid', new THREE.PlaneGeometry(1.7, 2.3), m.clone().multiply(xf(0, 1.2, 0.012)), 0);
+    props.add('cellGlow', new THREE.PlaneGeometry(1.7, 0.7), m.clone().multiply(xf(0, 0.35, 0.02)), 0);
+    props.add('trim', new THREE.BoxGeometry(2.1, 0.3, 0.22), m.clone().multiply(xf(0, 2.45, 0.08)), 0.6);
+    for (const sx of [-1, 1]) props.add('trim', new THREE.BoxGeometry(0.22, 2.5, 0.24), m.clone().multiply(xf(sx * 0.95, 1.25, 0.08)), 0.6);
+    props.addBuilder(cellBars(1.7, 2.3), m.clone().multiply(xf(0, 0, 0.1)));
+  };
+  // Torture furniture: one or two pieces a room, cages overhead, candles and
+  // cells along the walls, braziers on pedestals, low red mist.
+  const centrepieces = [() => rack(rng, rng() < 0.6), () => stocks(rng), () => spikedChair(rng), () => gibbet(rng), () => toolTable(rng), () => bloodCauldron(rng), () => maidenProp(rng), () => skullPile(rng)];
+  const mistMats: THREE.MeshBasicMaterial[] = [];
+  const lowMist = (x: number, z: number, size: number) => {
+    if (!mistMats.length) mistMats.push(new THREE.MeshBasicMaterial({ map: mistTexture(seed + 41), color: new THREE.Color(0.1, 0.012, 0.008), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    for (let k = 0; k < 2; k++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2), mistMats[0]);
+      m.position.set(x + range(rng, -0.8, 0.8), 0.25 + k * 0.3, z + range(rng, -0.8, 0.8));
+      m.rotation.y = rng() * 6;
+      m.renderOrder = 6;
+      scene.add(m);
+    }
+  };
+  const dressGaol = (r: Room) => {
+    const big = r.w >= 6 && r.h >= 6;
+    const keep = [roomCentre(r)];
+    if (r !== start) {
+      for (let k = 0; k < (big ? 2 : 1); k++) {
+        const p = spotIn(r, 1.9, keep, 2.6);
+        keep.push(p);
+        props.addBuilder(centrepieces[Math.floor(rng() * centrepieces.length)](), xf(p.x, 0, p.z, Math.floor(rng() * 4) * (Math.PI / 2) + range(rng, -0.2, 0.2)));
+        nav.blockCircle(p.x, p.z, 1.05);
+      }
+    }
+    for (let k = 0; k < (big ? 2 : 1) + (rng() < 0.4 ? 1 : 0); k++) {
+      const p = spotIn(r, 1.4, keep, 2.0);
+      keep.push(p);
+      props.addBuilder(hangingCage(rng, { top: WALL_H + 2, skeleton: rng() < 0.7 }), xf(p.x, 0, p.z, rng() * 6));
+      nav.blockCircle(p.x, p.z, 0.55);
+    }
+    for (const f of pickFaces(r, 2 + Math.floor(rng() * 2), 2.2)) {
+      const side = new THREE.Vector3(f.n.z, 0, -f.n.x);
+      const p = f.face.clone().addScaledVector(f.n, 0.4).addScaledVector(side, range(rng, -0.5, 0.5));
+      props.addBuilder(candles(rng, 4 + Math.floor(rng() * 6)), xf(p.x, 0, p.z, rng() * 6));
+      pool.add(p.clone().setY(0.6), 7, 5, 0, 0xffa050);
+    }
+    if (rng() < 0.7) pickFaces(r, big ? 2 : 1, 3).forEach(cell);
+    {
+      for (let k = 0; k < (big ? 2 : 1); k++) {
+        const p = spotIn(r, 1.6, keep, 2.2);
+        keep.push(p);
+        props.addBuilder(pedestalBrazier(rng), xf(p.x, 0, p.z, rng() * 6));
+        addFire(new THREE.Vector3(p.x, PEDESTAL_BRAZIER_COALS_Y + 0.05, p.z), 0.7, 22, 11);
+        nav.blockCircle(p.x, p.z, 0.55);
+      }
+    }
+    if (rng() < 0.6) lowMist(roomCentre(r).x, roomCentre(r).z, Math.min(r.w, r.h) * CELL * 0.9);
   };
 
   for (const r of rooms) {
@@ -744,6 +930,11 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
       [mx + 0.9, mz + r.h * CELL - 0.9],
       [mx + r.w * CELL - 0.9, mz + r.h * CELL - 0.9],
     ].sort(() => rng() - 0.5);
+    if (gaol) {
+      dressGaol(r);
+      if (rng() < 0.3 && r !== start) runeCircle(roomCentre(r).x, roomCentre(r).z, range(rng, 1.6, 2.2), new THREE.Color(0.22, 0.02, 0.01));
+      continue;
+    }
     for (const [x, z] of corners.slice(0, 1 + Math.floor(rng() * 2))) {
       if (!nav.walkable(x, z)) continue;
       const kind = rng() < 0.5;
@@ -809,7 +1000,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   // red mist. One of three bosses waits in it, and the room is dressed for
   // whichever one it is.
   const vc = roomCentre(boss);
-  const bossKind: BossKind = forcedBoss && forcedBoss in BOSS_THEMES ? (forcedBoss as BossKind) : (Object.keys(BOSS_THEMES) as BossKind[])[Math.floor(rng() * 3)];
+  const bossKind: BossKind = gaol ? 'inquisitor' : forcedBoss && forcedBoss in BOSS_THEMES ? (forcedBoss as BossKind) : CRYPT_BOSSES[Math.floor(rng() * 3)];
   const theme = BOSS_THEMES[bossKind];
   const bossName = theme.name;
   const doorA = Math.atan2(dir[0], dir[1]);
@@ -917,7 +1108,115 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   const back = U(doorA + Math.PI, APO - 1.6);
   const backYaw = doorA;
   const themed = { pool: null as THREE.Mesh | null, shaft: null as THREE.Mesh | null };
-  if (bossKind === 'abomination') {
+  // The gaol's upper vault: a stairwell sunk in the middle of the floor,
+  // walled with a parapet, braziers at its corners, red light from below.
+  const stairYaw = Math.atan2(-dir[0], -dir[1]); // local -Z faces the vault door
+  const stairTop = vc.clone().add(new THREE.Vector3(dir[0], 0, dir[1]).multiplyScalar(1.7));
+  if (descent) {
+    for (const r of [ritual, ritualOuter, ritualInner]) r.mesh.visible = false;
+    const SW = 3.2;
+    const SL = 5.2;
+    const m = xf(vc.x, 0, vc.z, stairYaw);
+    const at = (x: number, y: number, z: number) => m.clone().multiply(xf(x, y, z));
+    // The shaft below the floor, drawn before a depth-only lid so the floor
+    // never covers it: steps going down into the dark.
+    const shaft = new MeshBuilder();
+    const steps = 11;
+    for (let k = 0; k < steps; k++) {
+      const z0 = -SL / 2 + k * (SL / steps);
+      const y = -(k + 1) * 0.33;
+      shaft.add('trim', new THREE.BoxGeometry(SW, 0.33, SL / steps + 0.02), at(0, y + 0.165, z0 + SL / steps / 2), 0.6);
+      shaft.add('wall', new THREE.BoxGeometry(SW, 4, SL / steps + 0.02), at(0, y - 2, z0 + SL / steps / 2), 0.5);
+    }
+    for (const sx of [-1, 1]) shaft.add('wall', new THREE.BoxGeometry(0.3, 5, SL), at(sx * (SW / 2 + 0.15), -2.5, 0), 0.5);
+    shaft.add('wall', new THREE.BoxGeometry(SW + 0.6, 5, 0.3), at(0, -2.5, SL / 2 + 0.15), 0.5);
+    shaft.add('void', new THREE.PlaneGeometry(SW, 2.2), at(0, -3.2, SL / 2 - 0.01).multiply(xf(0, 0, 0, Math.PI)), 0);
+    const shaftGroup = shaft.build(mats, false);
+    shaftGroup.traverse((o) => (o.renderOrder = -2));
+    scene.add(shaftGroup);
+    const lid = new THREE.Mesh(new THREE.PlaneGeometry(SW, SL).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ colorWrite: false }));
+    lid.applyMatrix4(at(0, 0.012, 0));
+    lid.renderOrder = -1;
+    scene.add(lid);
+    dryFlood(vc.x, vc.z, SW / 2 + 1.2, SL / 2 + 1.2, stairYaw);
+    // Red light welling up out of the stair.
+    vaultPool.add(new THREE.Vector3().setFromMatrixPosition(at(0, -0.6, 1.2)), 16, 9, 0.3);
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(SW, SL).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: shaftTexture(), color: new THREE.Color(0.28, 0.02, 0.008), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
+    );
+    glow.applyMatrix4(at(0, 0.05, 0));
+    glow.renderOrder = 7;
+    scene.add(glow);
+    // Parapet on three sides, posts at the corners with chains slung between.
+    for (const sx of [-1, 1]) props.add('trim', new THREE.BoxGeometry(0.4, 0.85, SL + 0.4), at(sx * (SW / 2 + 0.2), 0.425, 0.2), 0.6);
+    props.add('trim', new THREE.BoxGeometry(SW + 0.8, 0.85, 0.4), at(0, 0.425, SL / 2 + 0.2), 0.6);
+    const posts: THREE.Vector3[] = [];
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const pm = at(sx * (SW / 2 + 0.2), 0, sz * (SL / 2 + 0.2));
+        props.add('trim', new THREE.BoxGeometry(0.6, 1.5, 0.6), pm.clone().multiply(xf(0, 0.75, 0)), 0.6);
+        props.add('trim', new THREE.BoxGeometry(0.72, 0.16, 0.72), pm.clone().multiply(xf(0, 1.55, 0)), 0.6);
+        posts.push(new THREE.Vector3().setFromMatrixPosition(pm).setY(1.45));
+      }
+    }
+    chain(props, posts[0], posts[1], 0.35);
+    chain(props, posts[2], posts[3], 0.35);
+    chain(props, posts[1], posts[3], 0.3);
+    nav.blockBox(vc.x + Math.sin(stairYaw) * 0.25, vc.z + Math.cos(stairYaw) * 0.25, SW / 2 + 0.45, SL / 2 + 0.2, stairYaw);
+    // Leave the head of the stair open to step down.
+    const head = new THREE.Vector3().setFromMatrixPosition(at(0, 0, -SL / 2 + 0.6));
+    nav.unblockRect(head.x, head.z, 0.9, 0.9);
+    stairTop.copy(head);
+    // Skulls and candles heaped by the stair head.
+    for (const sx of [-1, 1]) {
+      const c = new THREE.Vector3().setFromMatrixPosition(at(sx * (SW / 2 + 1.0), 0, -SL / 2 - 0.4));
+      props.addBuilder(candles(rng, 7), xf(c.x, 0, c.z, rng() * 6));
+    }
+    props.addBuilder(skullPile(rng), at(SW / 2 + 1.4, 0, SL / 2 - 0.5));
+    const pile = new THREE.Vector3().setFromMatrixPosition(at(SW / 2 + 1.4, 0, SL / 2 - 0.5));
+    nav.blockCircle(pile.x, pile.z, 0.8);
+  } else if (bossKind === 'inquisitor') {
+    // The Inquisitor's court: a judgement seat on a dais, cages hung over the
+    // rim, racks and an open maiden along the walls, candles round the circle.
+    const t = xf(back.x, 0, back.z, backYaw);
+    const at = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => t.clone().multiply(xf(x, y, z, 0, sx, sy, sz));
+    props.add('altar', new THREE.BoxGeometry(4.0, 0.25, 2.4), at(0, 0.125, 0), 0.6);
+    props.add('altar', new THREE.BoxGeometry(3.0, 0.25, 1.8), at(0, 0.375, -0.2), 0.6);
+    props.add('altar', new THREE.BoxGeometry(1.5, 0.55, 1.1), at(0, 0.775, -0.35), 0.6);
+    props.add('altar', new THREE.BoxGeometry(1.7, 3.2, 0.3), at(0, 2.1, -0.9), 0.6);
+    props.add('gore', new THREE.BoxGeometry(1.1, 0.06, 0.9), at(0, 1.08, -0.3), 0.5);
+    for (const sx of [-1, 1]) {
+      props.add('altar', new THREE.BoxGeometry(0.24, 0.7, 1.1), at(sx * 0.72, 1.3, -0.35), 0.6);
+      props.add('iron', new THREE.ConeGeometry(0.1, 1.0, 5), at(sx * 0.7, 4.2, -0.9), 0);
+      props.add('iron', new THREE.ConeGeometry(0.07, 0.6, 5), at(sx * 0.4, 4.0, -0.9), 0);
+    }
+    props.add('iron', new THREE.ConeGeometry(0.12, 1.4, 5), at(0, 4.4, -0.9), 0);
+    // A spiked wheel mounted behind the seat.
+    props.add('iron', new THREE.TorusGeometry(1.1, 0.07, 6, 28), at(0, 2.6, -1.1), 0);
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      props.add('iron', new THREE.ConeGeometry(0.06, 0.4, 5).rotateZ(-a).translate(Math.sin(a) * 1.3, Math.cos(a) * 1.3, 0), at(0, 2.6, -1.1), 0);
+    }
+    nav.blockBox(back.x, back.z, 2.1, 1.3, backYaw);
+    for (const k of [1, 3, 5, 7]) {
+      const p = U(doorA + (k * Math.PI) / 4, 4.6);
+      props.addBuilder(hangingCage(rng, { top: WALL_H + 2.5, skeleton: rng() < 0.8 }), xf(p.x, 0, p.z, rng() * 6));
+      nav.blockCircle(p.x, p.z, 0.55);
+    }
+    for (const k of [2, 6]) {
+      const a = doorA + (k * Math.PI) / 4;
+      const side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+      const p = U(a, APO - 1.3).addScaledVector(side, 2.6);
+      props.addBuilder(k === 2 ? rack(rng, true) : maidenProp(rng), xf(p.x, 0, p.z, a + Math.PI));
+      nav.blockCircle(p.x, p.z, 1.1);
+    }
+    for (let k = 0; k < 10; k++) {
+      const p = U(doorA + (k / 10) * Math.PI * 2 + 0.2, 7.0);
+      if (nav.walkable(p.x, p.z)) props.addBuilder(candles(rng, 5), xf(p.x, 0, p.z, rng() * 6));
+    }
+    vaultPool.add(vc.clone().setY(1.2), 9, 9, 0.3);
+  } else if (bossKind === 'abomination') {
     // A pool of blood at the heart of the circle, the thing below it.
     const g = new THREE.CircleGeometry(2.7, 40);
     const gp = g.getAttribute('position') as THREE.BufferAttribute;
@@ -1083,7 +1382,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     dir[1] !== 0 ? -HALF + (dir[1] > 0 ? boss.y + BS : boss.y) * CELL : -HALF + (boss.y + 4) * CELL,
   );
   const doorYaw = Math.atan2(dir[0], dir[1]); // local +Z faces out of the vault
-  {
+  if (!descent) {
     const m = xf(doorPos.x, 0, doorPos.z, doorYaw);
     for (const s of [-1, 1]) props.add('trim', new THREE.BoxGeometry(0.7, WALL_H + 0.4, 1.0), m.clone().multiply(xf(s * 2.3, (WALL_H + 0.4) / 2, 0)), 0.6);
     props.add('trim', new THREE.BoxGeometry(5.4, 0.7, 1.1), m.clone().multiply(xf(0, WALL_H + 0.25, 0)), 0.6);
@@ -1111,14 +1410,21 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   const seal = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9), sealMat);
   seal.position.set(0, 1.55, 0.06);
   door.add(seal);
-  scene.add(door);
-  nav.blockBox(doorPos.x, doorPos.z, 2.1, 0.4, doorYaw);
+  if (!descent) {
+    scene.add(door);
+    nav.blockBox(doorPos.x, doorPos.z, 2.1, 0.4, doorYaw);
+  }
   pool.add(doorPos.clone().addScaledVector(new THREE.Vector3(dir[0], 0, dir[1]), 0.8).setY(1.6), 7, 6, 0.3);
 
   await loading.step('Binding the three seals', 0.9);
   // ---- Objectives --------------------------------------------------------
-  const pool5: Objective[] = ['runes', 'warden', 'key', 'hearts', 'brood'];
-  const chosen = pool5.sort(() => rng() - 0.5).slice(0, 3);
+  // Each run draws its own unlocks: three seals on the crypt, two on the
+  // Inquisitor's court, none on the gaol's upper level.
+  const draw = [...UNLOCKS].sort(() => rng() - 0.5);
+  if (forcedUnlock && (UNLOCKS as string[]).includes(forcedUnlock)) draw.unshift(...draw.splice(draw.indexOf(forcedUnlock as Objective), 1));
+  const chosen = draw.slice(0, descent ? 0 : gaol ? 2 : 3);
+  // Who keeps the dungeon: the crypt's dead, or the gaol's torturers and prisoners.
+  const fodder: MonsterKind[] = gaol ? ['gaunt', 'leech'] : ['ghoul', 'crawler'];
   // Deepest rooms first; objectives take rooms from the deep end, packs fill the rest.
   const candidates = rooms.filter((r) => !r.boss && r !== start).sort((a, b) => b.depth - a.depth);
   const free = [...candidates];
@@ -1132,12 +1438,14 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
 
   const spawns: MonsterSpawn[] = [];
   let pack = 0;
-  const levelOf = (r: Room) => 4 + Math.round(r.depth * 2);
+  const levelOf = (r: Room) => (variant === 'gaol1' ? 5 : variant === 'gaol2' ? 7 : 4) + Math.round(r.depth * 2);
   const add = (r: Room, kind: MonsterKind, count: number, opts: Partial<MonsterSpawn> = {}, avoid: THREE.Vector3[] = []) => {
     for (let k = 0; k < count; k++) spawns.push({ kind, pos: spotIn(r, 1.4, avoid, 2), level: levelOf(r), pack, wander: kind === 'cultist' ? 0 : 2.5, ...opts });
   };
 
-  const state = { runes: 0, warden: false, key: false, hearts: 0, brood: false, sealBroken: false, doorT: -1, bossDead: false };
+  const state = { runes: 0, warden: false, key: false, hearts: 0, brood: false, braziers: 0, levers: 0, shards: 0, marked: 0, guard: false, sealBroken: false, doorT: -1, bossDead: false };
+  const levers: { arm: THREE.Object3D; t: number }[] = [];
+  const shards: THREE.Object3D[] = [];
   const interactables: Interactable[] = [];
   const runes: { pos: THREE.Vector3; mat: THREE.MeshBasicMaterial; charge: number; lit: boolean }[] = [];
   const hearts: { pos: THREE.Vector3; mesh: THREE.Object3D; burst: boolean }[] = [];
@@ -1207,19 +1515,19 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
           });
         }
         pack++;
-        add(r, rng() < 0.5 ? 'ghoul' : 'crawler', 3 + Math.floor(rng() * 2));
+        add(r, fodder[rng() < 0.5 ? 0 : 1], 3 + Math.floor(rng() * 2));
       }
     } else if (obj === 'warden') {
       const r = takeRoom(obj);
       pack++;
-      add(r, 'horror', 1, { elite: 'The Gaoler', tag: 'warden', level: levelOf(r) + 1 });
-      add(r, 'ghoul', 3);
+      add(r, gaol ? 'butcher' : 'horror', 1, { elite: 'The Gaoler', tag: 'warden', level: levelOf(r) + 1 });
+      add(r, gaol ? 'gaunt' : 'ghoul', 3);
       hangChains(r, 3);
     } else if (obj === 'brood') {
       const r = takeRoom(obj);
       pack++;
-      add(r, 'spider', 1, { elite: 'The Brood Mother', tag: 'brood', level: levelOf(r) + 1 });
-      add(r, 'crawler', 5);
+      add(r, gaol ? 'leech' : 'spider', 1, { elite: gaol ? 'The Bloated Mother' : 'The Brood Mother', tag: 'brood', level: levelOf(r) + 1 });
+      add(r, gaol ? 'leech' : 'crawler', 5);
       // Webs strung across the corners and egg clutches on the floor.
       const webMat = new THREE.MeshBasicMaterial({ map: webTexture(seed + 11), transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, color: 0xb8b0a8 });
       const mx = -HALF + r.x * CELL;
@@ -1279,14 +1587,170 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
         },
       });
       pack++;
-      add(r, 'cultist', 2, {}, [p]);
-      add(r, 'ghoul', 3, {}, [p]);
+      add(r, gaol ? 'bonePriest' : 'cultist', 2, {}, [p]);
+      add(r, gaol ? 'gaunt' : 'ghoul', 3, {}, [p]);
+    } else if (obj === 'braziers') {
+      // Four cold braziers; lit, they burn for good.
+      for (let k = 0; k < 4; k++) {
+        const r = takeRoom(obj);
+        const p = spotIn(r, 1.6, [roomCentre(r)], 1.8);
+        const fireAt = new THREE.Vector3(p.x, gaol ? PEDESTAL_BRAZIER_COALS_Y + 0.05 : 1.43, p.z);
+        if (gaol) props.addBuilder(pedestalBrazier(rng).remap((m) => (m === 'coal' ? 'ash' : m)), xf(p.x, 0, p.z, rng() * 6));
+        else {
+          props.add('trim', new THREE.CylinderGeometry(0.62, 0.72, 0.3, 8), xf(p.x, 0.15, p.z, 0), 0.6);
+          props.addBuilder(brazier().remap((m) => (m === 'coal' ? 'ash' : m)), xf(p.x, 0.28, p.z, rng() * 6));
+        }
+        nav.blockCircle(p.x, p.z, 0.7);
+        let lit = false;
+        interactables.push({
+          pos: p,
+          radius: 1.7,
+          label: 'Cold Brazier',
+          active: () => !lit,
+          use: () => {
+            if (lit) return;
+            lit = true;
+            state.braziers++;
+            addFire(fireAt, 0.85, 24, 12);
+            const c = ctxRef.current;
+            c?.effects.sparks(fireAt.clone(), 26, new THREE.Color(2.2, 0.8, 0.25), 3, 0.8);
+            c?.effects.flash(fireAt.clone(), 0xff6020, 30, 8, 0.5);
+            audio.runeLit(fireAt);
+            c?.say(`Brazier lit (${state.braziers}/4)`);
+            if (state.braziers === 4) objectiveDone('The braziers blaze');
+          },
+        });
+        pack++;
+        add(r, fodder[k % 2], 3 + Math.floor(rng() * 2), {}, [p]);
+      }
+    } else if (obj === 'levers') {
+      // Three rusted levers on the walls, each drawing a chain up into the dark.
+      for (let k = 0; k < 3; k++) {
+        const r = takeRoom(obj);
+        const f = pickFaces(r, 1, 2)[0] ?? faces(r)[0];
+        const yaw = Math.atan2(f.n.x, f.n.z);
+        const m = xf(f.face.x, 0, f.face.z, yaw);
+        props.add('iron', new THREE.BoxGeometry(0.5, 0.8, 0.08), m.clone().multiply(xf(0, 1.25, 0.04)), 0);
+        for (const sx of [-1, 1]) props.add('iron', new THREE.CylinderGeometry(0.03, 0.03, 0.06, 6).rotateX(Math.PI / 2), m.clone().multiply(xf(sx * 0.18, 1.55, 0.1)), 0);
+        props.add('iron', new THREE.BoxGeometry(0.1, 0.1, 0.2), m.clone().multiply(xf(0, 1.25, 0.14)), 0);
+        const top = new THREE.Vector3().setFromMatrixPosition(m.clone().multiply(xf(0.18, WALL_H - 0.1, 0.08)));
+        chain(props, new THREE.Vector3().setFromMatrixPosition(m.clone().multiply(xf(0.18, 1.62, 0.1))), top, 0);
+        const arm = new THREE.Group();
+        arm.applyMatrix4(m.clone().multiply(xf(0, 1.25, 0.2)));
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 6).translate(0, 0.35, 0), mats.iron);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), mats.wood);
+        knob.position.y = 0.72;
+        const pivot = new THREE.Group();
+        pivot.rotation.x = -0.75;
+        pivot.add(handle, knob);
+        handle.castShadow = knob.castShadow = true;
+        arm.add(pivot);
+        scene.add(arm);
+        const lever = { arm: pivot, t: -1 };
+        levers.push(lever);
+        const p = f.face.clone().addScaledVector(f.n, 0.9);
+        interactables.push({
+          pos: p,
+          radius: 1.5,
+          label: 'Rusted Lever',
+          active: () => lever.t < 0,
+          use: () => {
+            if (lever.t >= 0) return;
+            lever.t = 0;
+            state.levers++;
+            const c = ctxRef.current;
+            const at = new THREE.Vector3().setFromMatrixPosition(arm.matrixWorld);
+            c?.effects.sparks(at, 14, new THREE.Color(1.6, 0.7, 0.3), 2.5, 0.5);
+            c?.effects.addShake(0.2);
+            audio.doorOpen(at);
+            c?.say(`Lever pulled (${state.levers}/3)`);
+            if (state.levers === 3) objectiveDone('Somewhere, the bolts draw back');
+          },
+        });
+        pack++;
+        add(r, fodder[k % 2], 3 + Math.floor(rng() * 2), {}, [p]);
+      }
+    } else if (obj === 'shards') {
+      // Four shards of a broken sigil, floating over the bones of those who carried them.
+      const shardMat = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: new THREE.Color(3.2, 0.25, 0.1), roughness: 0.2, flatShading: true });
+      for (let k = 0; k < 4; k++) {
+        const r = takeRoom(obj);
+        const p = spotIn(r, 1.6, [roomCentre(r)], 1.8);
+        props.addBuilder(gaol ? skeleton(rng, 'lying') : bones(rng), xf(p.x, 0, p.z, rng() * 6));
+        runeCircle(p.x, p.z, 0.9, new THREE.Color(0.25, 0.02, 0.01));
+        const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0).scale(0.55, 1.6, 0.4), shardMat);
+        shard.position.set(p.x, 1.1, p.z);
+        shard.castShadow = true;
+        scene.add(shard);
+        shards.push(shard);
+        let taken = false;
+        interactables.push({
+          pos: p,
+          radius: 1.5,
+          label: 'Sigil Shard',
+          active: () => !taken,
+          use: () => {
+            if (taken) return;
+            taken = true;
+            state.shards++;
+            scene.remove(shard);
+            const c = ctxRef.current;
+            c?.effects.sparks(shard.position.clone(), 24, new THREE.Color(2.4, 0.3, 0.1), 2, 0.8);
+            audio.runeLit(shard.position);
+            c?.say(`Sigil shard (${state.shards}/4)`);
+            if (state.shards === 4) objectiveDone('The sigil is whole');
+          },
+        });
+        pack++;
+        add(r, fodder[k % 2], 3, {}, [p]);
+      }
+    } else if (obj === 'marked') {
+      // Three champions branded with the seal's mark; it breaks as they die.
+      const kinds: MonsterKind[] = gaol ? ['butcher', 'weeper', 'maiden', 'bonePriest', 'chainWraith'] : ['horror', 'wraith', 'cultist', 'spider'];
+      const names = ['Brother Vael', 'Sister Morrow', 'Old Grisk', 'Mother Hesk', 'The Pale Deacon', 'Corvin Ashmouth'].sort(() => rng() - 0.5);
+      kinds.sort(() => rng() - 0.5);
+      for (let k = 0; k < 3; k++) {
+        const r = takeRoom(obj);
+        const p = roomCentre(r);
+        pack++;
+        spawns.push({ kind: kinds[k], pos: p.clone(), level: levelOf(r) + 1, pack, elite: `${names[k]}, the Marked`, tag: 'marked', wander: 1.5 });
+        add(r, fodder[k % 2], 2, {}, [p]);
+        runeCircle(p.x, p.z, 1.8, new THREE.Color(0.3, 0.02, 0.01));
+      }
     }
   }
 
   // Ordinary packs in the remaining rooms.
+  const gaolPack = (r: Room) => {
+    const deep = variant === 'gaol2';
+    const roll = rng();
+    const n = (a: number, b: number) => a + Math.floor(rng() * (b - a + 1));
+    if (roll < 0.16) add(r, 'gaunt', n(4, 6));
+    else if (roll < 0.3) {
+      add(r, 'butcher', deep ? 2 : 1);
+      add(r, 'gaunt', 2);
+    } else if (roll < 0.43) {
+      add(r, 'chainWraith', 2);
+      add(r, deep ? 'weeper' : 'gaunt', deep ? 1 : 2);
+    } else if (roll < 0.55) {
+      add(r, 'bonePriest', 1);
+      add(r, 'hanged', n(2, 3));
+    } else if (roll < 0.66) add(r, 'leech', n(3, 5));
+    else if (roll < 0.76) add(r, 'gaolCroc', deep ? 2 : 1);
+    else if (roll < 0.88) {
+      add(r, 'weeper', 1);
+      add(r, 'hanged', 2);
+    } else {
+      add(r, 'maiden', 1);
+      add(r, deep ? 'bonePriest' : 'gaunt', deep ? 1 : 3);
+    }
+  };
   for (const r of free) {
     pack++;
+    if (gaol) {
+      gaolPack(r);
+      continue;
+    }
     const roll = rng();
     if (roll < 0.25) add(r, 'ghoul', 4 + Math.floor(rng() * 3));
     else if (roll < 0.45) {
@@ -1305,13 +1769,23 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
   }
   // The vault: the boss alone, asleep behind the seal (it brings its own help).
   pack++;
-  spawns.push({ kind: bossKind, pos: vc.clone(), level: 7, pack, boss: true, elite: bossName, tag: 'boss', dormant: true, wander: 0 });
+  if (descent) {
+    // The gaol's upper vault: the gaolmaster and his pets keep the stair.
+    const g = U(doorA + Math.PI * 0.5, 4.8);
+    spawns.push({ kind: 'butcher', pos: g, level: 7, pack, elite: 'Gaolmaster Vorn', tag: 'guard', wander: 2 });
+    for (let k = 0; k < 2; k++) spawns.push({ kind: 'chainWraith', pos: U(doorA + Math.PI * (0.25 + k), 5.4), level: 6, pack, wander: 2 });
+    for (let k = 0; k < 3; k++) spawns.push({ kind: 'gaunt', pos: U(doorA - Math.PI * 0.5 + (k - 1) * 0.35, 5), level: 6, pack, wander: 2.5 });
+  } else spawns.push({ kind: bossKind, pos: vc.clone(), level: gaol ? 9 : 7, pack, boss: true, elite: bossName, tag: 'boss', dormant: true, wander: 0 });
 
   // ---- Script ------------------------------------------------------------
   const ctxRef: { current: ScriptContext | null } = { current: null };
-  const exits: Exit[] = [{ pos: exitPos, radius: 1.3, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' }];
+  // Up the entrance stair: back to the fields, the mire, or the gaol's upper level.
+  const upTo: Exit = variant === 'gaol1' ? { pos: exitPos, radius: 1.3, to: 'swamp', entry: 'gaol', label: 'Climb to the Mire' } : variant === 'gaol2' ? { pos: exitPos, radius: 1.3, to: 'gaol1', entry: 'down', label: 'Climb to the Upper Cells' } : { pos: exitPos, radius: 1.3, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' };
+  const exits: Exit[] = [upTo];
+  if (descent) exits.push({ pos: stairTop.clone(), radius: 1.0, to: 'gaol2', entry: 'start', label: 'Descend Deeper' });
+  const homeExit = (pos: THREE.Vector3): Exit => (gaol ? { pos, radius: 1.2, to: 'swamp', entry: 'gaol', label: 'Climb to the Mire' } : { pos, radius: 1.2, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' });
   const done = (o: Objective) =>
-    o === 'runes' ? state.runes >= 3 : o === 'hearts' ? state.hearts >= 3 : o === 'warden' ? state.warden : o === 'key' ? state.key : state.brood;
+    o === 'runes' ? state.runes >= 3 : o === 'hearts' ? state.hearts >= 3 : o === 'warden' ? state.warden : o === 'key' ? state.key : o === 'brood' ? state.brood : o === 'braziers' ? state.braziers >= 4 : o === 'levers' ? state.levers >= 3 : o === 'shards' ? state.shards >= 4 : state.marked >= 3;
   function objectiveDone(say: string) {
     audio.objective();
     const left = chosen.filter((o) => !done(o)).length;
@@ -1341,13 +1815,23 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     hearts: () => `Burst the Blood Hearts (${Math.min(3, state.hearts)}/3)`,
     warden: () => 'Slay The Gaoler',
     key: () => 'Recover the Bone Key',
-    brood: () => 'Destroy The Brood Mother',
+    brood: () => (gaol ? 'Destroy The Bloated Mother' : 'Destroy The Brood Mother'),
+    braziers: () => `Light the cold braziers (${Math.min(4, state.braziers)}/4)`,
+    levers: () => `Pull the rusted levers (${Math.min(3, state.levers)}/3)`,
+    shards: () => `Gather the sigil shards (${Math.min(4, state.shards)}/4)`,
+    marked: () => `Slay the Marked (${Math.min(3, state.marked)}/3)`,
   };
   const script: AreaScript = {
-    title: NAMES[Math.floor(rng() * NAMES.length)],
+    title: gaol ? GAOL_NAMES[Math.floor(rng() * GAOL_NAMES.length)] : NAMES[Math.floor(rng() * NAMES.length)],
     interactables,
     finished: false,
-    objectives: () => [
+    objectives: () =>
+      descent
+        ? [
+            { text: 'Find the stair down', done: false },
+            { text: 'Slay Gaolmaster Vorn (optional)', done: state.guard },
+          ]
+        : [
       ...chosen.map((o) => ({ text: text[o](), done: done(o) })),
       ...(state.sealBroken ? [{ text: `Destroy ${bossName}`, done: state.bossDead }] : [{ text: 'Break the seal on the vault', done: false }]),
     ],
@@ -1384,12 +1868,20 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
       } else if (m.spawn.tag === 'brood' && !state.brood) {
         state.brood = true;
         objectiveDone('The brood is broken');
+      } else if (m.spawn.tag === 'marked') {
+        state.marked++;
+        ctx.say(`The mark breaks (${state.marked}/3)`);
+        if (state.marked === 3) objectiveDone('The Marked are dead');
+      } else if (m.spawn.tag === 'guard' && !state.guard) {
+        state.guard = true;
+        audio.objective();
+        ctx.banner('Gaolmaster Vorn Falls', 'The stair to the lower cells lies open');
       } else if (m.spawn.tag === 'boss' && m.spawn.boss && !state.bossDead) {
         state.bossDead = true;
         script.finished = true;
         audio.objective();
         ctx.banner(`${bossName} Is Destroyed`, 'Light falls into the vault: the way up is open');
-        exits.push({ pos: portalPos.clone(), radius: 1.2, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' });
+        exits.push(homeExit(portalPos.clone()));
         portal.visible = true;
         pool.add(portalPos.clone().setY(2), 14, 10, 0);
         ctx.effects.pillar(portalPos.clone(), new THREE.Color(2.0, 1.4, 0.7));
@@ -1408,9 +1900,17 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     spawn: entryPos,
     spawnYaw: entryYaw,
     title: script.title,
-    subtitle: 'Three seals bind the vault. Break them, and face what waits within.',
+    subtitle: descent
+      ? 'Somewhere below, a stair leads deeper'
+      : gaol
+        ? "Two seals bar the Inquisitor's court. Break them, and face his judgement."
+        : 'Three seals bind the vault. Break them, and face what waits within.',
     exits,
-    entries: { start: { pos: entryPos, yaw: entryYaw } },
+    entries: {
+      start: { pos: entryPos, yaw: entryYaw },
+      // Coming back up from the lower cells: beside the head of the stair.
+      ...(descent ? { down: { pos: stairTop.clone().add(new THREE.Vector3(dir[0], 0, dir[1]).multiplyScalar(2.4)), yaw: Math.atan2(dir[0], dir[1]) } } : {}),
+    },
     monsterSpawns: spawns,
     cameraYaw: THREE.MathUtils.degToRad(45),
     extent: HALF,
@@ -1420,6 +1920,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
     update(dt, t) {
       Fire.tick(t);
       pool.update(t);
+      waterTime.value = t;
       // Unlit circles smoulder; charging ones brighten; lit ones burn and pulse.
       for (const r of runes) {
         const k = r.lit ? 1.6 + Math.sin(t * 3 + r.pos.x) * 0.35 : 0.18 + r.charge * 1.2 + Math.sin(t * 2 + r.pos.z) * 0.04;
@@ -1441,6 +1942,15 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null): Promis
         const b = 1 + Math.max(0, Math.sin(t * 5.5)) ** 6 * 0.12 + Math.max(0, Math.sin(t * 5.5 - 0.6)) ** 8 * 0.06;
         h.scale.setScalar(b);
       }
+      for (const l of levers) {
+        if (l.t < 0 || l.t >= 1) continue;
+        l.t = Math.min(1, l.t + dt * 2.2);
+        l.arm.rotation.x = -0.75 + 1.5 * (1 - (1 - l.t) ** 3);
+      }
+      shards.forEach((sh, i) => {
+        sh.rotation.y = t * 1.3 + i;
+        sh.position.y = 1.1 + Math.sin(t * 2 + i) * 0.07;
+      });
       if (keyMesh) {
         keyMesh.rotation.y = t * 0.8;
         keyMesh.position.y = 1.15 + Math.sin(t * 2) * 0.05;

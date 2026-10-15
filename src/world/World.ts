@@ -6,7 +6,7 @@ import type { Npc } from '../actors/Npc';
 import type { Monster, MonsterSpawn } from '../actors/Monster';
 import type { Effects } from '../game/Effects';
 
-export type AreaName = 'town' | 'zone' | 'dungeon' | 'swamp';
+export type AreaName = 'town' | 'zone' | 'dungeon' | 'swamp' | 'gaol1' | 'gaol2';
 
 /** A way out of an area: walk into it to travel. */
 export interface Exit {

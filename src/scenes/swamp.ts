@@ -11,6 +11,7 @@ import { bones, brazier, grassTuft } from '../procgen/props';
 import { Fire } from '../engine/Fire';
 import { LightPool } from '../engine/LightPool';
 import { buildWaypoint } from '../world/Waypoint';
+import { bloodWater } from '../procgen/bloodWater';
 import { NavGrid } from '../world/NavGrid';
 import { createNightScene, type World } from '../world/World';
 import type { MonsterKind, MonsterSpawn } from '../actors/Monster';
@@ -95,101 +96,6 @@ function mossy(mat: THREE.Material, mossAmount = 1) {
   const prevKey = mat.customProgramCacheKey.bind(mat);
   mat.customProgramCacheKey = () => prevKey() + '|mossy';
   mat.needsUpdate = true;
-}
-
-/** Blood-red swamp water: glossy, wind-rippled, with rings of red light spreading where things move beneath. */
-function bloodWater(time: { value: number }, depthMap: THREE.Texture): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.022, 0.0015, 0.0015), roughness: 0.16, metalness: 0.0, envMapIntensity: 0.3 });
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.waterTime = time;
-    shader.uniforms.waterDepth = { value: depthMap };
-    shader.uniforms.waterSize = { value: SIZE };
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWaterP;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvWaterP = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        varying vec2 vWaterP;
-        uniform float waterTime;
-        uniform sampler2D waterDepth;
-        uniform float waterSize;
-        float waterShallow;
-        float waterShore;
-        vec2 waterHash( vec2 p ) { p = vec2( dot( p, vec2( 127.1, 311.7 ) ), dot( p, vec2( 269.5, 183.3 ) ) ); return fract( sin( p ) * 43758.5453 ); }
-        float waterNoise( vec2 p ) {
-          vec2 i = floor( p ); vec2 f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
-          return mix( mix( waterHash( i ).x, waterHash( i + vec2( 1, 0 ) ).x, f.x ), mix( waterHash( i + vec2( 0, 1 ) ).x, waterHash( i + vec2( 1, 1 ) ).x, f.x ), f.y );
-        }
-        // Expanding rings from a jittered point per 7 m cell. Returns intensity, writes the slope.
-        float waterRings( vec2 p, float t, out vec2 grad ) {
-          vec2 cell = floor( p / 7.0 );
-          float sum = 0.0;
-          grad = vec2( 0.0 );
-          for ( int j = -1; j <= 1; j++ ) for ( int i = -1; i <= 1; i++ ) {
-            vec2 c = cell + vec2( float( i ), float( j ) );
-            vec2 h = waterHash( c );
-            if ( h.x > 0.3 ) continue;
-            vec2 center = ( c + 0.2 + h * 0.6 ) * 7.0;
-            float period = 2.6 + h.y * 3.0;
-            float ph = fract( t / period + h.x * 7.0 );
-            float r = ph * 4.2;
-            vec2 rel = p - center;
-            float d = length( rel ) + 1e-4;
-            float fade = ( 1.0 - ph ) * ( 1.0 - ph );
-            float e1 = exp( -pow( ( d - r ) * 5.0, 2.0 ) );
-            float e2 = exp( -pow( ( d - r * 0.55 ) * 5.5, 2.0 ) ) * 0.45;
-            sum += ( e1 + e2 ) * fade;
-            float de = ( -2.0 * 25.0 * ( d - r ) * e1 - 2.0 * 30.25 * ( d - r * 0.55 ) * e2 ) * fade;
-            grad += de * rel / d;
-          }
-          return sum;
-        }`,
-      )
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        {
-          // Depth from the height field: the bottom shows through the shallows,
-          // and a rim of red light runs along every shore.
-          float ground = texture2D( waterDepth, vWaterP / waterSize + 0.5 ).r * 2.5 - 1.5;
-          float depth = -ground;
-          waterShallow = 1.0 - smoothstep( 0.0, 0.4, depth );
-          float wob = waterNoise( vWaterP * 1.3 + waterTime * 0.3 ) * 0.04;
-          waterShore = exp( -pow( ( depth - 0.03 - wob ) * 30.0, 2.0 ) ) * step( -0.05, depth );
-          diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.045, 0.014, 0.008 ), waterShallow * 0.8 );
-          diffuseColor.rgb *= 0.75 + 0.5 * waterNoise( vWaterP * 0.35 );
-        }`,
-      )
-      .replace(
-        '#include <normal_fragment_maps>',
-        `#include <normal_fragment_maps>
-        vec2 ringGrad;
-        float ringI = waterRings( vWaterP, waterTime, ringGrad );
-        {
-          float t = waterTime;
-          vec2 p = vWaterP;
-          // Slow wind ripples plus the rings, tilted into the view-space normal.
-          vec2 slope = vec2(
-            sin( p.x * 1.7 + t * 1.3 + sin( p.y * 0.9 ) ) * 0.04 + sin( p.x * 4.1 - t * 2.1 + p.y * 2.3 ) * 0.02,
-            sin( p.y * 1.5 - t * 1.1 + sin( p.x * 0.8 ) ) * 0.04 + sin( p.y * 3.7 + t * 1.7 - p.x * 1.9 ) * 0.02 );
-          slope += ringGrad * 0.012;
-          vec3 wn = normalize( vec3( -slope.x, 1.0, -slope.y ) );
-          normal = normalize( ( viewMatrix * vec4( wn, 0.0 ) ).xyz );
-        }`,
-      )
-      .replace(
-        '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>
-        {
-          float slow = waterNoise( vWaterP * 0.09 + waterTime * 0.015 ) * waterNoise( vWaterP * 0.23 - waterTime * 0.02 );
-          totalEmissiveRadiance += vec3( 1.5, 0.05, 0.02 ) * min( ringI, 1.5 ) * 0.4 * ( 1.0 - waterShallow * 0.7 ) + vec3( 0.06, 0.003, 0.002 ) * slow;
-          totalEmissiveRadiance += vec3( 0.9, 0.035, 0.015 ) * waterShore * smoothstep( 0.3, 0.7, waterNoise( vWaterP * 0.5 ) ) * ( 0.2 + 0.15 * sin( waterTime * 1.5 + vWaterP.x * 0.4 + vWaterP.y * 0.3 ) );
-        }`,
-      );
-  };
-  return mat;
 }
 
 /** Hanging moss strands for a dead tree: thin ribbons drooping from its upper branches. */
@@ -413,7 +319,7 @@ export async function buildSwamp(seed: number): Promise<World> {
     t.needsUpdate = true;
     return t;
   })();
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(SIZE + 30, SIZE + 30).rotateX(-Math.PI / 2), bloodWater(waterTime, depthTex));
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(SIZE + 30, SIZE + 30).rotateX(-Math.PI / 2), bloodWater(SIZE, waterTime, depthTex));
   water.receiveShadow = true;
   scene.add(water);
 
@@ -739,6 +645,7 @@ export async function buildSwamp(seed: number): Promise<World> {
       placed++;
     }
   };
+  const scattered: THREE.InstancedMesh[] = [];
   const instanced = (geos: THREE.BufferGeometry[], mat: THREE.Material, count: number, scale: [number, number], test: (x: number, z: number) => boolean, block: number, extra?: { geos: THREE.BufferGeometry[]; mat: THREE.Material }) => {
     const per = Math.ceil(count / geos.length) + 1;
     const make = (g: THREE.BufferGeometry, m: THREE.Material, cast: boolean) => {
@@ -747,6 +654,7 @@ export async function buildSwamp(seed: number): Promise<World> {
       im.castShadow = cast;
       im.receiveShadow = true;
       scene.add(im);
+      scattered.push(im);
       return im;
     };
     const meshes = geos.map((g) => make(g, mat, true));
@@ -874,6 +782,107 @@ export async function buildSwamp(seed: number): Promise<World> {
   })();
   const waypoint = buildWaypoint(scene, height, nav, wp.x, wp.y, mats.stone, seed + 61);
 
+  // The way down to the Drowned Gaol: a broken octagonal tower on open
+  // ground, its door onto a stair into red light. It moves with the mire.
+  const gaolAt = (() => {
+    const grng = mulberry32(seed + 91);
+    const open = (x: number, z: number, radii: number[]) => {
+      if (!reachable(x, z) || !reachable(x, z + 7)) return false;
+      for (let a = 0; a < 12; a++) for (const r of radii) if (!reachable(x + Math.cos(a * 0.5236) * r, z + Math.sin(a * 0.5236) * r)) return false;
+      return true;
+    };
+    for (const radii of [[1.5, 3, 4.5, 5.5], [1.5, 3, 4.2], [1.5, 3]]) {
+      for (let i = 0; i < 3000; i++) {
+        const x = range(grng, -HALF + 14, HALF - 14);
+        const z = range(grng, gateZ + 30, HALF - 16);
+        const d = Math.hypot(x - gateX, z - gateZ);
+        if (d < 45 || d > 125 || Math.hypot(x - wp.x, z - wp.y) < 28 || nearSite(x, z, 4)) continue;
+        if (open(x, z, radii)) return new THREE.Vector2(x, z);
+      }
+    }
+    return new THREE.Vector2(gateX + 12, gateZ + 30);
+  })();
+  const GR = 3.0; // tower apothem
+  const gaolDoor = new THREE.Vector3(gaolAt.x, 0, gaolAt.y + GR - 0.25);
+  {
+    const x0 = gaolAt.x;
+    const z0 = gaolAt.y;
+    let low = Infinity;
+    let high = -Infinity;
+    for (let a = 0; a < 16; a++) {
+      const h = height(x0 + Math.cos(a * 0.3927) * 3.8, z0 + Math.sin(a * 0.3927) * 3.8);
+      low = Math.min(low, h);
+      high = Math.max(high, h);
+    }
+    const base = high + 0.15;
+    const b = new MeshBuilder();
+    const trng = mulberry32(seed + 92);
+    const oct = (r: number, y0: number, y1: number) => new THREE.CylinderGeometry(r, r * 1.03, y1 - y0, 8).rotateY(Math.PI / 8).translate(x0, (y0 + y1) / 2, z0);
+    b.add('trim', oct(3.9, low - 0.4, base - 0.18));
+    b.add('trim', oct(3.6, base - 0.2, base));
+    const EDGE = 2 * GR * Math.tan(Math.PI / 8);
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4; // k = 0 faces +Z, toward the camera
+      const cxk = x0 + Math.sin(a) * (GR + 0.3);
+      const czk = z0 + Math.cos(a) * (GR + 0.3);
+      const at = (u: number, y: number, w: number, h: number, d = 0.6) => b.add('stone', new THREE.BoxGeometry(w, h, d), xf(cxk + Math.cos(a) * u, base + y + h / 2, czk - Math.sin(a) * u, a));
+      if (k === 0) {
+        // The doorway: jambs, a lintel with a red-lit seal, the dark beyond.
+        const jw = (EDGE - 1.7) / 2;
+        for (const s2 of [-1, 1]) at(s2 * (0.85 + jw / 2), 0, jw + 0.1, 4.1);
+        at(0, 2.5, 1.8, 1.6);
+        b.add('trim', new THREE.BoxGeometry(2.3, 0.3, 0.8), xf(cxk, base + 2.5, czk + 0.05, a));
+        b.add('dark', new THREE.PlaneGeometry(1.7, 2.5), xf(cxk, base + 1.25, czk + 0.05, a), 0);
+        b.add('glow', new THREE.TorusGeometry(0.28, 0.04, 6, 20), xf(cxk, base + 3.35, czk + 0.32, a), 0);
+        // A portcullis hauled up into the lintel, its spiked foot showing.
+        for (let q = -3; q <= 3; q++) {
+          b.add('iron', new THREE.CylinderGeometry(0.03, 0.03, 0.6, 6), xf(cxk + q * 0.22, base + 2.2, czk + 0.36, a), 0);
+          b.add('iron', new THREE.ConeGeometry(0.045, 0.14, 6).rotateX(Math.PI), xf(cxk + q * 0.22, base + 1.84, czk + 0.36, a), 0);
+        }
+        b.add('iron', new THREE.BoxGeometry(1.6, 0.06, 0.06), xf(cxk, base + 2.0, czk + 0.36, a), 0);
+      } else {
+        // Broken to a ragged top, higher at the back.
+        const back = Math.abs(Math.cos(a)) * -Math.sign(Math.cos(a)) * 0.5 + 0.5;
+        const h = 2.2 + back * 2.6 + range(trng, -0.4, 0.6);
+        at(0, 0, EDGE + 0.32, h);
+        at(range(trng, -0.5, 0.5), h, EDGE * range(trng, 0.3, 0.6), range(trng, 0.3, 0.9));
+        b.add('trim', new THREE.BoxGeometry(EDGE + 0.4, 0.22, 0.75), xf(cxk, base + 0.11, czk, a));
+        if (trng() < 0.5) b.add('rock', rock(trng, range(trng, 0.35, 0.6)), xf(x0 + Math.sin(a) * (GR + 1.3), base, z0 + Math.cos(a) * (GR + 1.3), trng() * 6), 0.5);
+      }
+    }
+    // Inside: the shaft, nothing but darkness from above.
+    b.add('dark', new THREE.CircleGeometry(GR - 0.15, 8).rotateX(-Math.PI / 2).rotateY(Math.PI / 8), xf(x0, base + 0.03, z0), 0);
+    // Skulls on spikes either side of the door, chains from the lintel.
+    for (const s2 of [-1, 1]) {
+      const px = x0 + s2 * 1.7;
+      const pz = z0 + GR + 1.1;
+      b.add('wood', new THREE.CylinderGeometry(0.035, 0.05, 2.2, 5), xf(px, base + 1.0, pz, 0, 1, 1, 1, range(trng, -0.08, 0.08), range(trng, -0.08, 0.08)), 0.5);
+      b.add('bone', new THREE.SphereGeometry(0.13, 10, 8).scale(0.85, 1, 1.05), xf(px, base + 2.15, pz, trng() * 6), 0);
+      b.add('dark', new THREE.SphereGeometry(0.035, 6, 4), xf(px - 0.045, base + 2.17, pz + 0.11), 0);
+      b.add('dark', new THREE.SphereGeometry(0.035, 6, 4), xf(px + 0.045, base + 2.17, pz + 0.11), 0);
+    }
+    const g = b.build(mats);
+    scene.add(g);
+    nav.blockCircle(x0, z0, GR + 0.8);
+    nav.unblockRect(gaolDoor.x, gaolDoor.z + 0.3, 0.7, 0.8);
+    for (const s2 of [-1, 1]) nav.blockCircle(x0 + s2 * 1.7, z0 + GR + 1.1, 0.25);
+    firePool.add(new THREE.Vector3(gaolDoor.x, base + 1.3, gaolDoor.z + 0.4), 16, 9, 0.3, 0xff2a10);
+    // Clear the trees and rocks scattered earlier off the tower and its forecourt.
+    const im4 = new THREE.Matrix4();
+    const ip = new THREE.Vector3();
+    for (const im of scattered) {
+      for (let i = 0; i < im.count; i++) {
+        im.getMatrixAt(i, im4);
+        ip.setFromMatrixPosition(im4);
+        if (Math.hypot(ip.x - x0, ip.z - (z0 + 1.5)) > 7.5) continue;
+        im.setMatrixAt(i, im4.makeScale(0, 0, 0));
+        im.instanceMatrix.needsUpdate = true;
+        if (Math.hypot(ip.x - x0, ip.z - z0) > GR + 1 && height(ip.x, ip.z) > DEEP + 0.3) nav.unblockRect(ip.x, ip.z, 0.35, 0.35);
+      }
+    }
+    for (const s2 of [-1, 1]) placeBrazier(x0 + s2 * 2.9, z0 + GR + 2.4);
+  }
+
   let spawns: MonsterSpawn[] = [];
   let pack = 0;
   // Deeper in (further from the gate) is deadlier.
@@ -942,7 +951,7 @@ export async function buildSwamp(seed: number): Promise<World> {
   }
   group(lair.x, lair.z, [['rootHorror', 2], ['toad', 3], ['mireWraith', 2]], lair.r * 0.6, { kind: 'rootHorror', name: 'Mother Rot' });
 
-  spawns = spawns.filter((m) => Math.hypot(m.pos.x - wp.x, m.pos.z - wp.y) > 9);
+  spawns = spawns.filter((m) => Math.hypot(m.pos.x - wp.x, m.pos.z - wp.y) > 9 && Math.hypot(m.pos.x - gaolAt.x, m.pos.z - gaolAt.y) > 9);
 
   const entryZ = gateZ + 10;
   return {
@@ -955,8 +964,14 @@ export async function buildSwamp(seed: number): Promise<World> {
     spawnYaw: 0,
     title: 'The Bleeding Mire',
     subtitle: 'The old city drowned, and something still walks its ruins',
-    exits: [{ pos: new THREE.Vector3(gateX, 0, gateZ - 0.4), radius: 1.6, to: 'zone', entry: 'mire', label: 'To the Blighted Fields' }],
-    entries: { gate: { pos: new THREE.Vector3(gateX, 0, entryZ), yaw: 0 } },
+    exits: [
+      { pos: new THREE.Vector3(gateX, 0, gateZ - 0.4), radius: 1.6, to: 'zone', entry: 'mire', label: 'To the Blighted Fields' },
+      { pos: gaolDoor.clone(), radius: 0.9, to: 'gaol1', entry: 'start', label: 'Descend into the Drowned Gaol' },
+    ],
+    entries: {
+      gate: { pos: new THREE.Vector3(gateX, 0, entryZ), yaw: 0 },
+      gaol: { pos: new THREE.Vector3(gaolDoor.x, 0, gaolDoor.z + 3.6), yaw: 0 },
+    },
     monsterSpawns: spawns,
     waypoint,
     cameraYaw: THREE.MathUtils.degToRad(20),

@@ -56,6 +56,8 @@ const AREA_TITLES: Record<AreaName, [string, string]> = {
   zone: ['The Blighted Fields', 'Where the dead were buried, they do not rest'],
   dungeon: ['Into the Crypt', 'A new dark is dug for every soul that descends'],
   swamp: ['The Bleeding Mire', 'It is never the same swamp twice'],
+  gaol1: ['The Drowned Gaol', 'Torture halls flooded with blood, dug anew for every soul that descends'],
+  gaol2: ['The Lower Cells', 'Where the Inquisitor passes judgement'],
 };
 
 /** Stands in for a frozen rig's updateMatrixWorld, so scene updates skip it. */
@@ -350,6 +352,15 @@ export class Game {
       if (prev !== area && prev.world.indoor && prev.world.script?.finished) this.discard(prev);
     }
     this.area = area;
+    // The gaol is one run, both levels: walk out of it (other than by town
+    // portal) and the next descent digs a new one.
+    if (name !== 'gaol1' && name !== 'gaol2' && !(name === 'town' && entry === 'portal')) {
+      for (const n of ['gaol1', 'gaol2'] as const) {
+        const g = this.areas.get(n);
+        if (g) this.discard(g);
+        else this.building.delete(n);
+      }
+    }
     audio.setArea(name);
     this.dialogue.close();
     this.shop.close();
@@ -396,6 +407,8 @@ export class Game {
       const left = this.worldState.swampLeftAt;
       if (left === null || this.playTime - left < Game.SWAMP_FORGET - 60) this.preloadSoon('swamp', 10000);
     }
+    if (name === 'swamp') this.preloadSoon('gaol1', 8000);
+    if (name === 'gaol1') this.preloadSoon('gaol2', 6000);
     this.travelling = false;
     this.saveNow();
   }

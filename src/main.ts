@@ -142,7 +142,7 @@ if (sceneName === 'test' || sceneName === 'character') {
     character = await chooseCharacter();
   }
   // Saved heroes always wake in town.
-  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' ? sceneName : 'town';
+  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' || sceneName === 'gaol1' || sceneName === 'gaol2' ? sceneName : 'town';
   await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : startArea === 'swamp' ? 'The Bleeding Mire' : 'Into the Crypt', 'Forging a world out of nothing');
   loading.range(0, 0.12);
   await loading.step('Dressing the hero', 0);
@@ -152,7 +152,9 @@ if (sceneName === 'test' || sceneName === 'character') {
   loading.range(0.12, 0.22);
   heroLight(hero.root);
   addSilhouette(hero.root);
-  game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(game!.swampSeed), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss')) }, hero, cam, renderer, sky, environment);
+  game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(game!.swampSeed), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss'), 'crypt', params.get('unlock')),
+    gaol1: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'gaol1'),
+    gaol2: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'gaol2', params.get('unlock')) }, hero, cam, renderer, sky, environment);
   if (params.has('sseed')) game.swampSeed = Number(params.get('sseed'));
   if (character) game.useCharacter(character);
   else game.stats.setClass(classId);
