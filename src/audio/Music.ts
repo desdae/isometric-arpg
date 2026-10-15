@@ -5,6 +5,8 @@
 // arpeggio play; out in the wastes the band comes in, and fights bring the
 // full kit.
 
+import { MireMusic } from './MireMusic';
+
 export type Mood = 'town' | 'explore' | 'combat';
 
 type Rng = () => number;
@@ -122,6 +124,9 @@ export class Music {
   private area = 'town';
   private seed = Math.floor(Math.random() * 1e9);
   private arpRng = rngFrom(7);
+  /** The Bleeding Mire has its own score; the band rests while it plays. */
+  private mire: MireMusic;
+  private mireSince = -1;
 
   constructor(
     private ctx: AudioContext,
@@ -169,6 +174,7 @@ export class Music {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
     this.startDrone();
+    this.mire = new MireMusic(ctx, out);
   }
 
   start() {
@@ -199,6 +205,12 @@ export class Music {
   private applyMood() {
     const t = this.ctx.currentTime;
     const m = this.effective;
+    const mire = this.area === 'swamp';
+    if (mire && this.mireSince < 0) this.mireSince = t;
+    if (!mire) this.mireSince = -1;
+    this.bus.gain.setTargetAtTime(mire ? 0 : 0.45, t, mire ? 1.6 : 2.2);
+    this.mire.setActive(mire);
+    this.mire.setTension(mire && m === 'combat' ? 1 : 0);
     this.band.gain.setTargetAtTime(m === 'combat' ? 1 : m === 'explore' ? 0.42 : 0, t, m === 'combat' ? 0.4 : 2);
     this.drums.gain.setTargetAtTime(m === 'combat' ? 1 : m === 'explore' ? 0.5 : 0, t, m === 'combat' ? 0.3 : 2);
     this.pad.gain.setTargetAtTime(m === 'town' ? 1 : 0.25, t, 2);
@@ -214,6 +226,7 @@ export class Music {
     }
     // Fell behind (tab in background): skip ahead rather than burst.
     if (this.next < ctx.currentTime - 0.1) this.next = ctx.currentTime + 0.05;
+    this.mire.scheduleUntil(ctx.currentTime + 1.2);
     while (this.next < ctx.currentTime + 0.6) {
       this.playStep(this.next);
       this.next += 60 / this.song.tempo / 4;
@@ -241,6 +254,8 @@ export class Music {
     const s16 = 60 / this.song.tempo / 4;
     const m = this.effective;
     const lastBars = this.rep === sec.reps - 1 && this.step >= STEPS - 4;
+    // Once the band has faded out under the mire's score, stop playing it.
+    if (this.mireSince >= 0 && t - this.mireSince > 8) return;
 
     if (m !== 'town') {
       for (const n of sec.riff) {
