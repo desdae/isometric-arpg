@@ -5,7 +5,7 @@
 // arpeggio play; out in the wastes the band comes in, and fights bring the
 // full kit.
 
-import { MireMusic } from './MireMusic';
+import { MireMusic, type ScoreKind } from './MireMusic';
 
 export type Mood = 'town' | 'explore' | 'combat';
 
@@ -124,9 +124,10 @@ export class Music {
   private area = 'town';
   private seed = Math.floor(Math.random() * 1e9);
   private arpRng = rngFrom(7);
-  /** The Bleeding Mire has its own score; the band rests while it plays. */
-  private mire: MireMusic;
+  /** The Bleeding Mire and its gaol have their own scores; the band rests while one plays. */
+  private scores: Partial<Record<ScoreKind, MireMusic>> = {};
   private mireSince = -1;
+  private out: AudioNode;
 
   constructor(
     private ctx: AudioContext,
@@ -174,7 +175,7 @@ export class Music {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
     this.startDrone();
-    this.mire = new MireMusic(ctx, out);
+    this.out = out;
   }
 
   start() {
@@ -205,12 +206,15 @@ export class Music {
   private applyMood() {
     const t = this.ctx.currentTime;
     const m = this.effective;
-    const mire = this.area === 'swamp';
-    if (mire && this.mireSince < 0) this.mireSince = t;
-    if (!mire) this.mireSince = -1;
-    this.bus.gain.setTargetAtTime(mire ? 0 : 0.45, t, mire ? 1.6 : 2.2);
-    this.mire.setActive(mire);
-    this.mire.setTension(mire && m === 'combat' ? 1 : 0);
+    const kind: ScoreKind | null = this.area === 'swamp' ? 'mire' : this.area === 'gaol1' || this.area === 'gaol2' ? this.area : null;
+    if (kind && !this.scores[kind]) this.scores[kind] = new MireMusic(this.ctx, this.out, Math.floor(Math.random() * 1e9), kind);
+    if (kind && this.mireSince < 0) this.mireSince = t;
+    if (!kind) this.mireSince = -1;
+    this.bus.gain.setTargetAtTime(kind ? 0 : 0.45, t, kind ? 1.6 : 2.2);
+    for (const [k, score] of Object.entries(this.scores)) {
+      score.setActive(k === kind);
+      score.setTension(k === kind && m === 'combat' ? 1 : 0);
+    }
     this.band.gain.setTargetAtTime(m === 'combat' ? 1 : m === 'explore' ? 0.42 : 0, t, m === 'combat' ? 0.4 : 2);
     this.drums.gain.setTargetAtTime(m === 'combat' ? 1 : m === 'explore' ? 0.5 : 0, t, m === 'combat' ? 0.3 : 2);
     this.pad.gain.setTargetAtTime(m === 'town' ? 1 : 0.25, t, 2);
@@ -226,7 +230,7 @@ export class Music {
     }
     // Fell behind (tab in background): skip ahead rather than burst.
     if (this.next < ctx.currentTime - 0.1) this.next = ctx.currentTime + 0.05;
-    this.mire.scheduleUntil(ctx.currentTime + 1.2);
+    for (const score of Object.values(this.scores)) score.scheduleUntil(ctx.currentTime + 1.2);
     while (this.next < ctx.currentTime + 0.6) {
       this.playStep(this.next);
       this.next += 60 / this.song.tempo / 4;

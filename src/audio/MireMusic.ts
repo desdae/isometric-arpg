@@ -20,9 +20,6 @@ function rngFrom(seed: number): Rng {
 }
 const pick = <T,>(r: Rng, xs: readonly T[]) => xs[Math.floor(r() * xs.length)];
 
-const BPM = 46;
-const BEAT = 60 / BPM;
-const BAR = BEAT * 4;
 const D = 62; // MIDI D4; every pitch class below is semitones above D
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
@@ -62,6 +59,71 @@ const FORM = [
 ];
 const SCALE = [0, 2, 3, 5, 7, 8, 10];
 
+interface FormPart {
+  p: number;
+  solo: boolean;
+  bell: boolean;
+  roll: boolean;
+  /** Section strings: 'full', a thin pair of voices, or none (the solo alone). */
+  strings?: 'full' | 'thin' | 'none';
+  choir?: boolean;
+  /** Near-silent bars after the phrase: only the last note dying away. */
+  tail?: number;
+}
+export type ScoreKind = 'mire' | 'gaol1' | 'gaol2';
+interface Score {
+  bpm: number;
+  phrases: string[][];
+  form: FormPart[];
+  shapes: string[];
+  /** Solo range and whether it weeps (sobbing falls at the end of notes). */
+  solo: [number, number];
+  weep: boolean;
+  /** Semitones the whole score is moved from D. */
+  key: number;
+}
+// The gaol's lament: slower, barer and lower, in B minor. Its bass walks the
+// old lament line (i, i over the flat seventh, iv6, V), a lone voice weeps
+// over a thin bed of strings, and long silences fall between the phrases.
+// The lower cells add a wordless choir and the full section.
+const LAMENT: string[][] = [
+  ['i', 'i7', 'iv6', 'V', 'i', 'i7', 'iv6', 'V'],
+  ['VI', 'iv', 'N6', 'V', 'i', 'ii7', 'V7', 'i'],
+  ['i', 'iv', 'i', 'V', 'VI', 'iv6', 'Vsus', 'V'],
+];
+const SCORES: Record<ScoreKind, Score> = {
+  mire: { bpm: 46, phrases: PHRASES, form: FORM, shapes: ['sigh', 'sigh', 'sigh2', 'long', 'rise', 'rest'], solo: [57, 77], weep: false, key: 0 },
+  gaol1: {
+    bpm: 36,
+    phrases: LAMENT,
+    form: [
+      { p: 0, solo: false, bell: false, roll: false, strings: 'thin', tail: 1 },
+      { p: 0, solo: true, bell: false, roll: false, strings: 'none', tail: 2 },
+      { p: 1, solo: true, bell: false, roll: false, strings: 'thin', tail: 1 },
+      { p: 2, solo: true, bell: true, roll: false, strings: 'thin', tail: 2 },
+    ],
+    shapes: ['sigh', 'long', 'long', 'rest', 'rest', 'sigh2'],
+    solo: [60, 79],
+    weep: true,
+    key: -3,
+  },
+  gaol2: {
+    bpm: 34,
+    phrases: LAMENT,
+    form: [
+      { p: 0, solo: false, bell: true, roll: false, strings: 'thin', choir: true, tail: 1 },
+      { p: 0, solo: true, bell: false, roll: false, strings: 'none', choir: true, tail: 2 },
+      { p: 1, solo: true, bell: false, roll: false, strings: 'full', choir: true, tail: 1 },
+      { p: 2, solo: true, bell: false, roll: true, strings: 'thin', choir: false, tail: 2 },
+      { p: 1, solo: false, bell: true, roll: false, strings: 'full', choir: true, tail: 2 },
+    ],
+    shapes: ['sigh', 'sigh', 'long', 'long', 'rest', 'sigh2'],
+    solo: [58, 77],
+    weep: true,
+    key: -3,
+  },
+};
+
 interface MelNote {
   beat: number;
   len: number;
@@ -76,6 +138,9 @@ interface BarPlan {
   bell: boolean;
   roll: boolean;
   phraseStart: boolean;
+  strings: 'full' | 'thin' | 'none';
+  hasChoir: boolean;
+  silent: boolean;
 }
 
 export class MireMusic {
@@ -100,13 +165,20 @@ export class MireMusic {
   private voices = [D, D + 3, D + 7, D + 12];
   private choirV = [D - 12, D - 5];
   private mel = D + 7;
+  private score: Score;
+  private BEAT: number;
+  private BAR: number;
 
   constructor(
     private ctx: BaseAudioContext,
     out: AudioNode,
     seed = Math.floor(Math.random() * 1e9),
+    kind: ScoreKind = 'mire',
   ) {
     this.seed = seed;
+    this.score = SCORES[kind];
+    this.BEAT = 60 / this.score.bpm;
+    this.BAR = this.BEAT * 4;
     this.bus = this.gain(0, out);
     // The cold hall: a long, bright-tailed impulse with its lows thinned out.
     this.hall = ctx.createConvolver();
@@ -191,7 +263,7 @@ export class MireMusic {
         this.barIx = 0;
       }
       this.playBar(this.plan[this.barIx++], this.nextBar);
-      this.nextBar += BAR;
+      this.nextBar += this.BAR;
     }
   }
 
@@ -200,8 +272,8 @@ export class MireMusic {
   private compose(seed: number): BarPlan[] {
     const r = rngFrom(seed);
     const bars: BarPlan[] = [];
-    for (const f of FORM) {
-      const names = PHRASES[f.p];
+    for (const f of this.score.form) {
+      const names = this.score.phrases[f.p];
       for (let k = 0; k < names.length; k++) {
         const chord = C[names[k]];
         const next = C[names[(k + 1) % names.length]];
@@ -217,8 +289,12 @@ export class MireMusic {
           bell: f.bell && k % 4 === 0,
           roll: f.roll && k === names.length - 1,
           phraseStart: k === 0,
+          strings: f.strings ?? 'full',
+          hasChoir: f.choir ?? !this.score.weep,
+          silent: false,
         });
       }
+      for (let k = 0; k < (f.tail ?? 0); k++) bars.push({ ...bars[bars.length - 1], melody: [], bell: false, roll: false, phraseStart: false, silent: true });
     }
     return bars;
   }
@@ -245,8 +321,7 @@ export class MireMusic {
   }
 
   private melodyBar(r: Rng, chord: Chord, next: Chord, k: number, n: number): MelNote[] {
-    const lo = 57;
-    const hi = 77;
+    const [lo, hi] = this.score.solo;
     // An arch over the phrase: climbing to its middle, sinking to its end.
     const drift = k < n / 2 ? pick(r, [-2, 1, 2, 3, 4]) : pick(r, [-4, -3, -2, -1, 1]);
     const target = this.nearestTone(chord.pcs, this.mel + drift, lo, hi);
@@ -259,7 +334,7 @@ export class MireMusic {
     if (k === n - 1) {
       out = [{ beat: 0, len: 4, midi: target }];
     } else {
-      const shape = pick(r, ['sigh', 'sigh', 'sigh2', 'long', 'rise', 'rest']);
+      const shape = pick(r, this.score.shapes);
       const app = above(target, r() < 0.3);
       switch (shape) {
         case 'sigh':
@@ -318,26 +393,39 @@ export class MireMusic {
   // ---- Performance -----------------------------------------------------
 
   private playBar(b: BarPlan, t: number) {
-    // Strings: the chord swells and overlaps the next one.
-    b.voices.forEach((m, i) => this.bowed(this.strings, hz(m), t, BAR, 0.05 - i * 0.004, 1.4, 2.6, 3));
-    this.bowed(this.lows, hz(b.bass), t, BAR, 0.09, 0.9, 2.2, 2);
-    this.bowed(this.lows, hz(b.bass - 12), t, BAR, 0.035, 1.2, 2.4, 1);
-    b.choir.forEach((m) => this.voice(hz(m), t + 0.2, BAR, 0.05));
+    const BAR = this.BAR;
+    const BEAT = this.BEAT;
+    const k = this.score.key;
+    const f = (m: number) => hz(m + k);
+    const bare = this.score.weep;
+    if (b.silent) {
+      // A breath of near-silence: only the basses, barely there.
+      if (b.strings !== 'none') this.bowed(this.lows, f(b.bass), t, BAR * 0.6, 0.035, 2.5, 3.5, 2);
+    } else {
+      // Strings: the chord swells and overlaps the next one.
+      if (b.strings === 'full') b.voices.forEach((m, i) => this.bowed(this.strings, f(m), t, BAR, (bare ? 0.04 : 0.05) - i * 0.004, 1.4, 2.6, 3));
+      else if (b.strings === 'thin') [b.voices[0], b.voices[2]].forEach((m) => this.bowed(this.strings, f(m), t, BAR, 0.034, 2.2, 3.2, 2));
+      if (b.strings !== 'none') {
+        this.bowed(this.lows, f(b.bass), t, BAR, bare ? 0.07 : 0.09, 0.9, 2.2, 2);
+        if (!bare || b.strings === 'full') this.bowed(this.lows, f(b.bass - 12), t, BAR, 0.035, 1.2, 2.4, 1);
+      }
+      if (b.hasChoir) b.choir.forEach((m) => this.voice(f(m), t + 0.2, BAR, bare ? 0.06 : 0.05));
+    }
     let prevEnd = -1;
     for (const n of b.melody) {
       const at = t + n.beat * BEAT;
-      this.cello(hz(n.midi), at, n.len * BEAT, Math.abs(at - prevEnd) < 0.01);
+      this.cello(f(n.midi), at, n.len * BEAT, Math.abs(at - prevEnd) < 0.01);
       prevEnd = at + n.len * BEAT;
     }
-    if (b.melody.length && b.melody[b.melody.length - 1].beat + b.melody[b.melody.length - 1].len < 4) {
-      this.soloEnv.gain.setTargetAtTime(0, prevEnd, 0.4);
-    }
-    if (b.bell) this.bell(hz(pick(Math.random, [D - 12, D - 5, D])), t + 0.05);
-    if (b.phraseStart) this.timpani(hz(38), t, 0.5);
-    if (b.roll) for (let s = 0; s < 16; s++) this.timpani(hz(45), t + s * (BEAT / 4), 0.08 + (s / 16) * 0.35, 0.6);
+    const last = b.melody[b.melody.length - 1];
+    if (last && last.beat + last.len < 4) this.soloEnv.gain.setTargetAtTime(0, prevEnd, 0.4);
+    if (!b.melody.length) this.soloEnv.gain.setTargetAtTime(0, t, 0.6);
+    if (b.bell) this.bell(f(pick(Math.random, [D - 12, D - 5, D])), t + 0.05);
+    if (b.phraseStart) this.timpani(f(38), t, bare ? 0.3 : 0.5);
+    if (b.roll) for (let s = 0; s < 16; s++) this.timpani(f(45), t + s * (BEAT / 4), 0.08 + (s / 16) * 0.35, 0.6);
     // The hunt: spiccato eighths on the bass note, timpani on one and three.
-    for (let e = 0; e < 8; e++) this.spiccato(hz(b.bass + 12), t + e * (BEAT / 2), e % 4 === 0 ? 0.16 : 0.1);
-    for (const beat of [0, 2]) this.timpani(hz(38), t + beat * BEAT, 0.35, 1, this.tension);
+    for (let e = 0; e < 8; e++) this.spiccato(f(b.bass + 12), t + e * (BEAT / 2), e % 4 === 0 ? 0.16 : 0.1);
+    for (const beat of [0, 2]) this.timpani(f(38), t + beat * BEAT, 0.35, 1, this.tension);
   }
 
   /** A section's bowed note: several detuned saws, slow bow-in, long release. */
@@ -411,6 +499,8 @@ export class MireMusic {
       e.setTargetAtTime(peak, t + 0.1, 0.25);
     }
     e.setTargetAtTime(peak * 0.75, t + dur * 0.55, dur * 0.3);
+    // Weeping: the note sags at its end, as a voice breaking.
+    if (this.score.weep && dur > 1.2) for (const o of this.solo) o.frequency.setTargetAtTime(f * 0.955, t + dur * 0.8, 0.22);
     const v = this.vibDepth.gain;
     v.setTargetAtTime(f * 0.001, t, 0.05);
     v.setTargetAtTime(f * 0.0065, t + Math.min(0.5, dur * 0.4), 0.35);
