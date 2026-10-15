@@ -455,7 +455,9 @@ export async function buildSwamp(seed: number): Promise<World> {
     return [s.x + lx * c + lz * sn, s.z - lx * sn + lz * c];
   };
 
+  let raised = 0;
   for (const s of sites) {
+    if (++raised % 4 === 0) await loading.step('Raising broken walls and arches', 0.55);
     const b = new MeshBuilder();
     ruinGroups.push(b);
     if (s.kind === 'chapel') {
@@ -601,6 +603,7 @@ export async function buildSwamp(seed: number): Promise<World> {
       placed++;
     }
   }
+  await loading.step('Raising broken walls and arches', 0.58);
   for (const b of ruinGroups) scene.add(b.build(mats));
 
   // Kerb stones along the causeway edges, some lost to the water.

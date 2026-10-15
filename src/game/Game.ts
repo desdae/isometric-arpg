@@ -245,7 +245,7 @@ export class Game {
       const monsters: Monster[] = [];
       for (const s of world.monsterSpawns ?? []) {
         monsters.push(createMonster(s, this.monsterMats, scene));
-        if (monsters.length % 4 === 0) await loading.step('Summoning the monsters', 0.97);
+        if (monsters.length % (loading.active ? 4 : 1) === 0) await loading.step('Summoning the monsters', 0.97);
       }
       const exitLabels = (world.exits ?? []).map((exit) => ({ exit, el: this.label(exit.label, () => this.player.moveTo(exit.pos)) }));
       const usable = [...(world.script?.interactables ?? [])];

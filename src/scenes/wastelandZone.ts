@@ -124,6 +124,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   const ground = terrainMesh(height, -HALF, -HALF, SIZE, 280, splatMaterial(earthSet, 45, cobbleSet, 64, mask));
   scene.add(ground);
 
+  await loading.step('Shaping the blighted earth', 0.4);
   const nav = new NavGrid(-HALF, -HALF, SIZE, SIZE, 0.5);
   // The town is out of bounds for now; so is the map edge.
   for (let z = -HALF; z < HALF; z += 0.5) nav.blockBox(WALL_X - 15, z, 14.5, 0.5, 0);
@@ -207,6 +208,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
   }
   scene.add(skyline.build(mats, false));
 
+  await loading.step('Raising the town walls', 0.5);
   // ---- Fires -----------------------------------------------------------
   // A handful of real lights handed to the braziers nearest the hero.
   const firePool = new LightPool(scene, 6, 0xff7a2a);

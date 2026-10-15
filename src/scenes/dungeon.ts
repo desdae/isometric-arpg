@@ -647,7 +647,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
   const waterTime = { value: 0 };
   let dryFlood = (_x: number, _z: number, _hw: number, _hl: number, _yaw: number) => {};
   if (gaol) {
-    const R = 512;
+    const R = 256;
     const data = new Uint8Array(R * R * 4);
     for (let v = 0; v < R; v++) {
       for (let u = 0; u < R; u++) {
@@ -689,6 +689,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
     scene.add(flood);
   }
 
+  await loading.step('Flooding the cells', 0.45);
   const nav = new NavGrid(-HALF, -HALF, SIZE, SIZE, 0.5);
   for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) if (!at(i, j)) nav.blockBox(cx(i), cx(j), CELL / 2 + 0.3, CELL / 2 + 0.3, 0);
 
@@ -907,8 +908,10 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
     if (rng() < 0.6) lowMist(roomCentre(r).x, roomCentre(r).z, Math.min(r.w, r.h) * CELL * 0.9);
   };
 
+  let dressed = 0;
   for (const r of rooms) {
     if (r.boss) continue;
+    if (++dressed % 2 === 0) await loading.step('Hanging chains and drawing runes', 0.72);
     const big = r.w >= 6 && r.h >= 6;
     const mx = -HALF + r.x * CELL;
     const mz = -HALF + r.y * CELL;
@@ -949,6 +952,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
     if (rng() < 0.3 && r !== start) runeCircle(roomCentre(r).x, roomCentre(r).z, range(rng, 1.6, 2.2), new THREE.Color(0.22, 0.02, 0.01));
   }
 
+  await loading.step('Dressing the rooms', 0.76);
   // ---- Entrance stairs ---------------------------------------------------
   // A flight climbing into the wall of the entrance room, back up to the fields.
   const stairFace = (() => {
@@ -1108,6 +1112,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
   const back = U(doorA + Math.PI, APO - 1.6);
   const backYaw = doorA;
   const themed = { pool: null as THREE.Mesh | null, shaft: null as THREE.Mesh | null };
+  await loading.step('Sealing the vault', 0.86);
   // The gaol's upper vault: a stairwell sunk in the middle of the floor,
   // walled with a parapet, braziers at its corners, red light from below.
   const stairYaw = Math.atan2(-dir[0], -dir[1]); // local -Z faces the vault door

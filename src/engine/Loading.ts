@@ -30,7 +30,9 @@ const SIGIL = `<svg class="splash-sigil" viewBox="0 0 100 100" fill="none" strok
   <circle cx="50" cy="50" r="6" fill="#b0281c"/></svg>`;
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+// In the background a step waits for a painted frame too: back-to-back
+// timeouts can run for seconds without the browser ever drawing a frame.
+const tick = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
 class Loading {
   private root: HTMLDivElement | null = null;
