@@ -2,6 +2,7 @@ import { loading } from '../engine/Loading';
 import type { Monster } from '../actors/Monster';
 import type { Npc } from '../actors/Npc';
 import type { World } from '../world/World';
+import { store } from '../engine/store';
 
 // The corner minimap, the full map overlay (M or Tab) and the fog of war.
 //
@@ -428,7 +429,7 @@ export class Minimap {
       this.timer = TICK;
     });
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as { zoom?: unknown; hidden?: unknown };
+      const p = JSON.parse(store.get(PREFS_KEY) ?? '{}') as { zoom?: unknown; hidden?: unknown };
       if (typeof p.zoom === 'number' && p.zoom >= 0 && p.zoom < ZOOMS.length) this.zoomIx = Math.floor(p.zoom);
       this.hidden = p.hidden === true;
     } catch {
@@ -442,7 +443,7 @@ export class Minimap {
 
   private savePrefs() {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ zoom: this.zoomIx, hidden: this.hidden }));
+      store.set(PREFS_KEY, JSON.stringify({ zoom: this.zoomIx, hidden: this.hidden }));
     } catch {
       /* per-browser nicety only */
     }

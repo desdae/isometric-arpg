@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Music, type Mood } from './Music';
 import { settings } from '../game/Settings';
+import { store } from '../engine/store';
 
 // All sound is synthesised at runtime with Web Audio: no audio files. Sound
 // effects are built per event from oscillators and filtered noise; positional
@@ -45,7 +46,7 @@ class AudioEngine {
 
   constructor() {
     try {
-      this.muted = localStorage.getItem(MUTE_KEY) === '1';
+      this.muted = store.get(MUTE_KEY) === '1';
     } catch {
       /* storage unavailable */
     }
@@ -117,7 +118,7 @@ class AudioEngine {
   toggleMute() {
     this.muted = !this.muted;
     try {
-      localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
+      store.set(MUTE_KEY, this.muted ? '1' : '0');
     } catch {
       /* storage unavailable */
     }

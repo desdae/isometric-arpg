@@ -4,8 +4,9 @@ import { SKILL, branchClass, type SkillId } from './Skills';
 import { SLOTS, type Stats } from './Stats';
 import type { QuestLog } from './Quests';
 import type { FogSave } from './Minimap';
+import { store } from '../engine/store';
 
-// Character saves, kept in the browser's localStorage, one key per character
+// Character saves, kept in the game's storage (see store.ts), one key per character
 // so a damaged entry costs one hero, not the whole roster.
 //
 // Staying loadable across versions:
@@ -77,8 +78,8 @@ export const storage = {
   available(): boolean {
     try {
       const k = PREFIX + 'probe';
-      localStorage.setItem(k, '1');
-      localStorage.removeItem(k);
+      store.set(k, '1');
+      store.remove(k);
       return true;
     } catch {
       return false;
@@ -170,10 +171,7 @@ export function listSlots(): SlotEntry[] {
   const out: SlotEntry[] = [];
   let keys: string[] = [];
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith(PREFIX) && k !== PREFIX + 'probe') keys.push(k);
-    }
+    keys = store.keys().filter((k) => k.startsWith(PREFIX) && k !== PREFIX + 'probe');
   } catch {
     keys = [];
   }
@@ -181,7 +179,7 @@ export function listSlots(): SlotEntry[] {
   const later: SlotEntry[] = [];
   for (const key of keys) {
     try {
-      const save = upgrade(JSON.parse(localStorage.getItem(key) ?? 'null'));
+      const save = upgrade(JSON.parse(store.get(key) ?? 'null'));
       save.id = key.slice(PREFIX.length);
       if (taken.has(save.slot)) later.push({ slot: -1, save });
       else {
@@ -210,7 +208,7 @@ export function listSlots(): SlotEntry[] {
 
 export function writeSave(save: CharacterSave): boolean {
   try {
-    localStorage.setItem(PREFIX + save.id, JSON.stringify(save));
+    store.set(PREFIX + save.id, JSON.stringify(save));
     return true;
   } catch {
     return false;
@@ -219,7 +217,7 @@ export function writeSave(save: CharacterSave): boolean {
 
 export function deleteSave(idOrKey: string) {
   try {
-    localStorage.removeItem(idOrKey.startsWith(PREFIX) ? idOrKey : PREFIX + idOrKey);
+    store.remove(idOrKey.startsWith(PREFIX) ? idOrKey : PREFIX + idOrKey);
   } catch {
     /* nothing to delete */
   }

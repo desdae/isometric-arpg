@@ -2,6 +2,7 @@ import { CLASSES, TABARDS, classDef, tabard } from './Classes';
 import { MAX_SLOTS, SAVE_VERSION, deleteSave, listSlots, newCharacter, storage, writeSave, type CharacterSave, type SlotEntry } from './Save';
 import { esc } from './Inventory';
 import { options } from './Options';
+import { desktop } from '../engine/store';
 
 // The first screen: a roster of character slots down the left, the chosen
 // slot on the right. A filled slot shows the hero and plays them; an empty
@@ -135,7 +136,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
         <p class="csel-sub">${used} of ${MAX_SLOTS} slots taken</p>
         ${canStore ? '' : '<div class="csel-warn">This browser is blocking site storage, so heroes made now will be lost when the page closes.</div>'}
         <div class="csel-cols"><div class="csel-list">${list}</div><div class="csel-panel">${panel()}</div></div>
-        <div class="csel-opts"><button type="button" class="csel-btn" data-options>Options</button></div>
+        <div class="csel-opts"><button type="button" class="csel-btn" data-options>Options</button>${desktop ? ' <button type="button" class="csel-btn" data-exit>Quit</button>' : ''}</div>
       </div>`;
       root.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) =>
         b.addEventListener('click', () => {
@@ -145,6 +146,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
         }),
       );
       root.querySelector('[data-options]')!.addEventListener('click', () => options().show());
+      root.querySelector('[data-exit]')?.addEventListener('click', () => desktop?.quit());
       wire();
     };
 

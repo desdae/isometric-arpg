@@ -1,3 +1,5 @@
+import { store } from '../engine/store';
+
 // Player options: sound levels, graphics quality, screen shake and key
 // bindings. Kept in this browser's storage, separate from the hero saves, so
 // every hero shares them. Listeners hear every change and apply it live.
@@ -99,7 +101,7 @@ function load(): SettingsData {
   const d = defaults();
   let raw: Partial<SettingsData> | null = null;
   try {
-    raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+    raw = JSON.parse(store.get(KEY) ?? 'null');
   } catch {
     /* storage unavailable or corrupt */
   }
@@ -162,7 +164,7 @@ class Settings {
   update(fn: (s: SettingsData) => void) {
     fn(this.data);
     try {
-      localStorage.setItem(KEY, JSON.stringify(this.data));
+      store.set(KEY, JSON.stringify(this.data));
     } catch {
       /* storage unavailable: the change lasts this session */
     }

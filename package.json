@@ -6,16 +6,41 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:release": "tsc --noEmit && vite build --mode release",
+    "build:release": "tsc --noEmit && vite build --mode release --outDir dist-release --emptyOutDir",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "desktop": "npm run build:release && electron .",
+    "desktop:pack": "npm run build:release && electron-builder --dir --linux --win"
   },
-  "dependencies": {
-    "three": "0.170.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/three": "0.170.0",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "three": "0.170.0",
     "typescript": "5.7.2",
     "vite": "6.0.7"
+  },
+  "description": "A gothic isometric action RPG",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.desdae.isometricarpg",
+    "productName": "Isometric ARPG",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**",
+      "dist-release/**",
+      "package.json"
+    ],
+    "asar": true,
+    "linux": {
+      "target": "dir",
+      "category": "Game"
+    },
+    "win": {
+      "target": "dir"
+    }
   }
 }

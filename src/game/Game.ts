@@ -5,6 +5,7 @@ import type { IsoCamera } from '../engine/IsoCamera';
 import type { Renderer } from '../engine/Renderer';
 import { Mist, type Sky } from '../engine/Atmosphere';
 import { settings } from './Settings';
+import { desktop } from '../engine/store';
 import { options } from './Options';
 import { Dialogue } from '../engine/Dialogue';
 import { Player } from '../actors/Player';
@@ -168,6 +169,10 @@ export class Game {
     };
     // Graphics options that live in each area: the drifting mist.
     settings.watch((st) => this.area?.mist.setDensity(st.graphics.mist));
+    this.menu.onExit = () => {
+      this.saveNow();
+      desktop?.quit();
+    };
     this.menu.onQuit = () => {
       this.saveNow();
       location.reload();
