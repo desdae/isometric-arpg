@@ -31,6 +31,7 @@ import type { DialogueAction } from '../engine/Dialogue';
 import type { Character } from '../actors/Character';
 import { telemetry } from './Telemetry';
 import { heroLevel } from './Balance';
+import { Minimap, buildMapBase, type MapBase } from './Minimap';
 
 // Runs the playable game: keeps each area (town, wasteland) alive once built,
 // moves the hero between them through the gates, routes mouse and keyboard
@@ -45,6 +46,8 @@ interface AreaState {
   monsters: Monster[];
   exitLabels: { exit: Exit; el: HTMLButtonElement }[];
   useLabels: { it: Interactable; el: HTMLButtonElement }[];
+  /** The area's pre-drawn map ground, built once with the area. */
+  mapBase: MapBase | null;
 }
 
 export type AreaBuilder = () => Promise<World>;
@@ -69,6 +72,7 @@ export class Game {
   readonly stats = new Stats();
   readonly player: Player;
   readonly hud = new Hud();
+  readonly minimap = new Minimap(this.hud.root);
   readonly floaters = new FloatingText();
   readonly dialogue = new Dialogue();
   readonly inventory: Inventory;
@@ -105,7 +109,7 @@ export class Game {
   /** The hero being played; null for views opened straight from the URL, which never save. */
   private character: CharacterSave | null = null;
   /** The hero's mire seed and when they last left it (the save's copy, or a scratch one for unsaved views). */
-  private worldState: CharacterSave['world'] = { swampSeed: Math.floor(Math.random() * 1e9), swampLeftAt: null, waypoints: ['town'] };
+  private worldState: CharacterSave['world'] = { swampSeed: Math.floor(Math.random() * 1e9), swampLeftAt: null, waypoints: ['town'], fog: {} };
   get swampSeed(): number {
     return this.worldState.swampSeed;
   }
@@ -149,6 +153,10 @@ export class Game {
     this.hud.onRevive = () => this.revive();
     this.hud.onMute = () => audio.toggleMute();
     this.hud.onMenu = () => this.toggleMenu();
+    this.minimap.npcMark = (n) => {
+      const name = n.def.name;
+      return this.quests.ready(name) ? 3 : this.quests.available(name) ? 1 : this.quests.current(name) ? 2 : 0;
+    };
     this.waypointMenu.onTravel = (to) => {
       if (!this.travelling && !this.player.dead) void this.enter(to as AreaName, 'waypoint');
     };
@@ -183,6 +191,7 @@ export class Game {
   useCharacter(save: CharacterSave) {
     this.character = save;
     this.worldState = save.world;
+    this.minimap.reset();
     this.playTime = save.playTime;
     applySave(save, this.stats, this.quests);
   }
@@ -190,6 +199,7 @@ export class Game {
   /** Writes the hero's progress to storage now (a no-op for unsaved views). */
   saveNow() {
     if (!this.character) return;
+    this.minimap.store(this.worldState.fog);
     captureSave(this.character, this.stats, this.quests, this.area?.name ?? 'town', this.playTime);
     writeSave(this.character);
     this.saveTimer = 0;
@@ -242,6 +252,13 @@ export class Game {
       const loot = new LootLayer(world.heightAt, (g) => this.pickUp(g), world.nav);
       loot.setVisible(false);
       scene.add(loot.group);
+      // The map's ground, drawn from the nav grid a few rows at a time.
+      let mapBase: MapBase | null = null;
+      try {
+        mapBase = await buildMapBase(world, 'Charting the paths', 0.96);
+      } catch {
+        /* the map shows markers and fog only */
+      }
       await loading.step('Summoning the monsters', 0.97);
       // A few monsters at a time, so building an area in the background
       // doesn't freeze the one being played.
@@ -258,7 +275,7 @@ export class Game {
         it,
         el: this.label(it.label, () => this.player.interact(it.pos, it.radius, () => it.active() && it.use())),
       }));
-      const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels, useLabels };
+      const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels, useLabels, mapBase };
       // A build that was thrown away while it ran (the mire rerolled) doesn't replace the new one.
       if (!p || this.building.get(name) === p) this.areas.set(name, state);
       telemetry.mark(`built:${name}`);
@@ -387,6 +404,7 @@ export class Game {
     if (w.cameraYaw !== undefined) this.cam.yaw = this.cam.targetYawValue = w.cameraYaw;
     this.cam.target.copy(this.player.position);
     this.cam.update(0);
+    this.minimap.setArea(name, AREA_TITLES[name][0], AREA_TITLES[name][1], area, area.mapBase, this.worldState.fog);
     if (splash) {
       // Compile every shader now, behind the splash, instead of stuttering
       // through the first seconds of play.
@@ -893,12 +911,22 @@ export class Game {
         this.inventory.toggle();
         audio.click();
       }
-      if (k === 'm') audio.toggleMute();
+      if (k === 'n') audio.toggleMute();
+      if (k === 'm' || e.key === 'Tab') {
+        e.preventDefault();
+        if (this.area) {
+          audio.click();
+          this.minimap.toggleOverlay();
+        }
+      }
+      if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') this.minimap.zoom(1);
+      if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') this.minimap.zoom(-1);
       if (k === 't') void this.openPortal();
       if (k === 'l' || k === 'j') this.toggleJournal();
       if (k === 'escape') {
         // Escape closes whatever is open; with nothing open it brings up the menu.
-        const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open || this.waypointMenu.open;
+        const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open || this.waypointMenu.open || this.minimap.overlayOpen;
+        this.minimap.toggleOverlay(false);
         this.waypointMenu.toggle(false);
         this.inventory.toggle(false);
         this.hud.showJournal(null);
@@ -1028,6 +1056,7 @@ export class Game {
     this.hud.showTarget(shown ? { name: shown.name, hp: shown.hp, maxHp: shown.maxHp, level: shown.level, elite: shown.elite, kind: shown.def.name } : null);
     this.floaters.update(dt, this.cam.camera);
     this.hud.update(dt, this.stats, (id) => this.player.cooldownFrac(id));
+    this.minimap.update(dt, p.position.x, p.position.z, p.facingYaw, this.cam.yaw);
     if (this.deathTimer > 0) {
       this.deathTimer -= dt;
       if (this.deathTimer <= 0) this.hud.showDeath(true);

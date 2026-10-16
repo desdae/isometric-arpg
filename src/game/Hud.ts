@@ -191,12 +191,12 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>M</b> sound · <b>F3</b> debug<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>N</b> sound · <b>F3</b> debug<br><b>M / Tab</b> map · <b>+/−</b> minimap zoom<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
       <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>
       <div class="journal" hidden></div>
-      <div class="menu"><button type="button" data-act="menu">Menu</button><button type="button" data-act="mute">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="menu"><button type="button" data-act="menu">Menu</button><button type="button" data-act="mute" title="Sound (N)">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
