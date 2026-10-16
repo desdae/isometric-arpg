@@ -184,6 +184,7 @@ export class Player implements Combatant {
    */
   cast(id: SkillId, ctx: PlayerContext): string | null {
     if (this.dead || !this.area) return null;
+    telemetry.mark(`cast:${id}`);
     const def = SKILL[id];
     const r = this.stats.rank(id);
     if (!def.active || r <= 0) return 'Not learned';

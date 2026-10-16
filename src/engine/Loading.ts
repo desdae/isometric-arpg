@@ -101,7 +101,13 @@ class Loading {
   }
 
   /** Reports a step; `f` is how far through the current range it starts. */
+  /** The last step reported and when, so a stall can be traced to the build work around it. */
+  lastStep = '';
+  lastStepAt = 0;
+
   async step(text: string, f: number) {
+    this.lastStep = text;
+    this.lastStepAt = performance.now();
     if (!this.active) return tick();
     this.set(this.lo + (this.hi - this.lo) * f, text);
     // Long waits (texture baking in a worker, shader compiles) give no

@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import { loading } from '../engine/Loading';
 import type { Monster } from '../actors/Monster';
 import type { Stats } from './Stats';
 
@@ -23,6 +24,22 @@ declare const __BUILD_TIME__: string;
 
 /** Seconds between periodic writes while there is new data. */
 const FLUSH_EVERY = 45;
+
+let device: Record<string, unknown> | null = null;
+/** The browser and graphics card, so stalls can be compared across machines. */
+function deviceInfo() {
+  if (device) return device;
+  device = { ua: navigator.userAgent.slice(0, 160), cores: navigator.hardwareConcurrency, dpr: window.devicePixelRatio, w: window.innerWidth, h: window.innerHeight };
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    if (gl && ext) device.gpu = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).slice(0, 120);
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch {
+    /* unknown */
+  }
+  return device;
+}
 /** After a hit or a blow struck, the hero counts as in combat this long. */
 const COMBAT_LINGER = 4;
 const MAX_DEATHS = 40;
@@ -150,6 +167,7 @@ class Telemetry {
     if (typeof window === 'undefined') return;
     try {
       void this.connect();
+      this.watchFrames();
       const away = () => void this.flush('hidden');
       window.addEventListener('pagehide', away);
       document.addEventListener('visibilitychange', () => {
@@ -197,10 +215,51 @@ class Telemetry {
         this.dirty = true;
       }
       this.sinceFlush += dt;
-      if (this.dirty && this.sinceFlush >= this.every) void this.flush('timer');
+      // Writes go out at quiet moments only (area changes, page hidden,
+      // death); the timer is a fallback and waits for a lull in the fighting.
+      const calm = !hunted && this.playSec - this.lastFight > 8;
+      if (this.dirty && calm && this.sinceFlush >= Math.max(this.every, 180)) void this.flush('timer');
     } catch {
       /* never break the frame */
     }
+  }
+
+  /** Notes something that just happened, so a stall right after it can be traced to it. */
+  mark(label: string) {
+    this.marks[this.markI] = label;
+    this.markT[this.markI] = performance.now();
+    this.markI = (this.markI + 1) % 4;
+  }
+  private marks = ['', '', '', ''];
+  private markT = [0, 0, 0, 0];
+  private markI = 0;
+  private hitches: { sec: number; ms: number; zone: string; step: string; stepAgoMs: number; recent: string[]; flushing: boolean }[] = [];
+
+  /** Watches frame gaps; a long one is logged with what was going on around it. */
+  private watchFrames() {
+    let last = performance.now();
+    const frame = () => {
+      const now = performance.now();
+      const gap = now - last;
+      last = now;
+      if (gap > 250 && gap < 20000 && document.visibilityState === 'visible') {
+        const recent: string[] = [];
+        for (let i = 0; i < 4; i++) if (this.marks[i] && now - this.markT[i] < gap + 3000) recent.push(`${this.marks[i]}@-${Math.round(now - this.markT[i])}ms`);
+        this.hitches.push({
+          sec: Math.round(this.playSec),
+          ms: Math.round(gap),
+          zone: this.zone,
+          step: loading.lastStep,
+          stepAgoMs: Math.round(now - loading.lastStepAt),
+          recent,
+          flushing: this.flushing,
+        });
+        if (this.hitches.length > 60) this.hitches.shift();
+        this.dirty = true;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
   }
 
   /** A boss names the ability whose blow is about to land. */
@@ -320,7 +379,6 @@ class Telemetry {
       }
       if (this.levelUps.length > MAX_LEVELUPS) this.levelUps.splice(0, this.levelUps.length - MAX_LEVELUPS);
       this.dirty = true;
-      void this.flush('levelup');
     }
     this.zone = zone;
     this.level = stats.level;
@@ -484,12 +542,14 @@ class Telemetry {
       buckets,
       deaths: this.deaths,
       levelUps: this.levelUps,
+      hitches: this.hitches,
+      device: deviceInfo(),
     };
   }
 
   /** Writes the whole session document now (one write in flight at a time). */
   async flush(reason: string): Promise<void> {
-    void reason;
+    this.mark(`flush:${reason}`);
     if (!this.dirty || this.off) return;
     if (this.flushing) {
       this.again = true;

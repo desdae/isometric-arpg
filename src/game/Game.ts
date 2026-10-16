@@ -226,6 +226,7 @@ export class Game {
     if (cached) return cached;
     let p: Promise<AreaState> | null = null;
     p = (async () => {
+      telemetry.mark(`build:${name}`);
       const world = await this.builders[name]!();
       const scene = world.scene;
       scene.environment = this.environment;
@@ -260,6 +261,7 @@ export class Game {
       const state: AreaState = { name, world, mist, effects, loot, monsters, exitLabels, useLabels };
       // A build that was thrown away while it ran (the mire rerolled) doesn't replace the new one.
       if (!p || this.building.get(name) === p) this.areas.set(name, state);
+      telemetry.mark(`built:${name}`);
       return state;
     })();
     this.building.set(name, p);
@@ -334,6 +336,8 @@ export class Game {
 
   /** Moves the hero to `name` at `entry`, fading out and in. */
   async enter(name: AreaName, entry: string, fade = true) {
+    telemetry.mark(`enter:${name}`);
+    void telemetry.flush('area');
     this.travelling = true;
     if (this.area) audio.travel();
     if (name === 'swamp' && this.area?.name !== 'swamp') this.rerollSwampIfForgotten();

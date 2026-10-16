@@ -121,6 +121,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     const wet = smoothstep(0.1, 0.6, fbm2(x * 0.05 + 5, z * 0.05, 4, seed + 90)) * 0.6 + road * 0.3;
     return [Math.max(road, apron), blood, wet];
   });
+  await loading.step('Shaping the blighted earth', 0.37);
   const ground = terrainMesh(height, -HALF, -HALF, SIZE, 280, splatMaterial(earthSet, 45, cobbleSet, 64, mask));
   scene.add(ground);
 
@@ -143,6 +144,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     gaps: [{ side: 'n', u: MIRE_X, width: 12 }],
   });
   scene.add(rim.group);
+  await loading.step('Shaping the blighted earth', 0.42);
 
   // The mire gate: a drowned-looking gatehouse in the pass, its towers solid,
   // only the arch open. Nothing beyond it is walkable.
@@ -168,6 +170,7 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
     })(),
     xf(WALL_X, 0, 0, wallRot),
   );
+  await loading.step('Raising the town walls', 0.46);
   const segment = 13.5;
   for (const dir of [-1, 1]) {
     let z = dir * 8.5;
@@ -182,7 +185,9 @@ export async function buildWastelandZone(seed = 7): Promise<World> {
       }
     }
   }
+  await loading.step('Raising the town walls', 0.47);
   scene.add(arch.build(mats));
+  await loading.step('Raising the town walls', 0.48);
 
   // Cathedral spires and tall roofs rising behind the wall. They are backdrop
   // only, so they skip shadow casting (their shadows would streak the field).
