@@ -42,6 +42,8 @@ export interface MonsterBody {
   die(): void;
   /** Point the attack comes from (staff tip, mouth), in world space. */
   muzzle?(): THREE.Vector3;
+  /** Bursts up out of water it lay hidden in (mire leeches), over `dur` seconds. */
+  emerge?(dur: number): void;
 }
 
 let cached: Promise<MonsterMaterials> | null = null;

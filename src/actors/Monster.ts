@@ -440,6 +440,8 @@ export interface MonsterSpawn {
   tag?: string;
   /** Will not wake until a script rouses it (sealed behind a door). */
   dormant?: boolean;
+  /** Lies hidden under deep water and surfaces when the hero comes near (see SurfacingLeech). */
+  submerged?: boolean;
 }
 
 /** What a monster sees of the world each frame. */
