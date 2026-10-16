@@ -78,6 +78,14 @@ export interface World {
   /** Multiplies the distance fog density. */
   fogScale?: number;
   script?: AreaScript;
+  /**
+   * Names this area's layout for the map's fog of war: explored ground is
+   * remembered per layout, so a seeded area dug anew starts unexplored.
+   * Fixed areas leave it out and use the area name.
+   */
+  layoutKey?: string;
+  /** Height of standing water; ground below it is drawn as water on the map. */
+  waterLevel?: number;
   update(dt: number, t: number): void;
 }
 

@@ -1021,6 +1021,8 @@ export async function buildSwamp(seed: number): Promise<World> {
     cameraYaw: THREE.MathUtils.degToRad(20),
     extent: HALF,
     fogScale: 0.85,
+    layoutKey: `swamp:${seed}`,
+    waterLevel: 0,
     update(dt, t) {
       wind.value = t;
       waterTime.value = t;

@@ -1921,6 +1921,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
     extent: HALF,
     indoor: true,
     fogScale: 1.35,
+    layoutKey: `${variant}:${seed}`,
     script,
     update(dt, t) {
       Fire.tick(t);

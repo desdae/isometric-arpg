@@ -3,6 +3,7 @@ import { classDef, tabard } from './Classes';
 import { SKILL, branchClass, type SkillId } from './Skills';
 import { SLOTS, type Stats } from './Stats';
 import type { QuestLog } from './Quests';
+import type { FogSave } from './Minimap';
 
 // Character saves, kept in the browser's localStorage, one key per character
 // so a damaged entry costs one hero, not the whole roster.
@@ -59,9 +60,11 @@ export interface CharacterSave {
    * a while (in play time) away from it; `swampLeftAt` is the play time when
    * they last walked out, or null if they haven't been since it was laid out.
    * `waypoints` lists the areas whose waypoint the hero has found; town's is
-   * known from the start.
+   * known from the start. `fog` is the map's explored ground per area,
+   * tagged with the layout it belongs to (see Minimap.ts): a run-length
+   * bitmask in base64, one bit per square metre.
    */
-  world: { swampSeed: number; swampLeftAt: number | null; waypoints: string[] };
+  world: { swampSeed: number; swampLeftAt: number | null; waypoints: string[]; fog: Record<string, FogSave> };
   /** Room for systems that don't exist yet (a stash, achievements, a second act). */
   ext: Json;
 }
@@ -132,6 +135,7 @@ export function upgrade(raw: unknown): CharacterSave {
       swampSeed: Math.floor(num(obj(d.world).swampSeed, newSeed(), 0)),
       swampLeftAt: typeof obj(d.world).swampLeftAt === 'number' ? num(obj(d.world).swampLeftAt, 0, 0) : null,
       waypoints: waypointList(obj(d.world).waypoints),
+      fog: fogList(obj(d.world).fog),
     },
     ext: obj(d.ext),
   };
@@ -141,6 +145,16 @@ export function upgrade(raw: unknown): CharacterSave {
 function waypointList(v: unknown): string[] {
   const found = Array.isArray(v) ? v.filter((a): a is string => typeof a === 'string') : [];
   return ['town', ...new Set(found.filter((a) => a !== 'town'))];
+}
+
+/** Explored-map entries that are well formed; anything else is dropped (that area is just unexplored again). */
+function fogList(v: unknown): Record<string, FogSave> {
+  const out: Record<string, FogSave> = {};
+  for (const [area, raw] of Object.entries(obj(v))) {
+    const f = obj(raw);
+    if (typeof f.k === 'string' && typeof f.d === 'string' && typeof f.w === 'number' && typeof f.h === 'number') out[area] = { k: f.k, w: f.w, h: f.h, d: f.d };
+  }
+  return out;
 }
 
 function newSeed() {
@@ -228,7 +242,7 @@ export function newCharacter(slot: number, name: string, classId: string, tabard
     hero: { level: 1, xp: 0, gold: 0, potions: 3, ranks: { ...cls.startRanks }, belt: [...cls.startBelt], equipped: {}, bag: [] },
     quests: { active: [], done: [] },
     area: 'town',
-    world: { swampSeed: newSeed(), swampLeftAt: null, waypoints: ['town'] },
+    world: { swampSeed: newSeed(), swampLeftAt: null, waypoints: ['town'], fog: {} },
     ext: {},
   });
 }
