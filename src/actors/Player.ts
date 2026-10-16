@@ -4,7 +4,9 @@ import type { Character } from './Character';
 import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import type { Combatant, FloatingText } from '../game/Combat';
-import { mitigate, rollDamage } from '../game/Combat';
+import { rollDamage } from '../game/Combat';
+import { LEECH_PER_SEC, LEECH_RESERVE, mitigateHero } from '../game/Balance';
+import { prewarmTelegraph } from '../game/Telegraph';
 import type { Effects } from '../game/Effects';
 import type { Stats } from '../game/Stats';
 import { BossFx, prewarmBossFx } from '../game/BossFx';
@@ -68,6 +70,8 @@ export class Player implements Combatant {
   private bfx: BossFx | null = null;
   private swingIndex = 0;
   private potionCd = 0;
+  /** Life steal still available to heal (see LEECH_PER_SEC). */
+  private leechPool = 0;
   private hurtCd = 0;
   dead = false;
 
@@ -115,6 +119,7 @@ export class Player implements Combatant {
     this.consecrations = [];
     this.tickers.length = 0;
     prewarmBossFx(area.scene);
+    prewarmTelegraph(area.scene);
     this.velocity.set(0, 0);
     this.shove.set(0, 0);
     this.syncTransform();
@@ -642,7 +647,7 @@ export class Player implements Combatant {
 
   takeDamage(amount: number, crit: boolean, from: THREE.Vector3): number {
     if (this.dead) return 0;
-    const dealt = mitigate(amount, this.stats.armor);
+    const dealt = mitigateHero(amount, this.stats.armor, this.stats.level);
     this.stats.hp -= dealt;
     void crit;
     void from;
@@ -691,7 +696,12 @@ export class Player implements Combatant {
     audio.hit(at, roll.crit, m.kind === 'crawler');
     ctx.floaters.spawn(String(dealt), at.clone().setY(at.y + m.height * 0.45), roll.crit ? 'crit' : '');
     ctx.effects.blood(at, this.position, roll.crit ? 30 : 16, m.def.blood, roll.crit ? 1.3 : 1);
-    if (s.lifeSteal > 0) s.hp = Math.min(s.maxHp, s.hp + dealt * s.lifeSteal);
+    if (s.lifeSteal > 0) {
+      // Leech pays out of a pool that refills with time, so it can't out-heal a fight.
+      const heal = Math.min(dealt * s.lifeSteal, this.leechPool);
+      this.leechPool -= heal;
+      s.hp = Math.min(s.maxHp, s.hp + heal);
+    }
     if (!m.alive) {
       ctx.effects.blood(at, this.position, 40, m.def.blood, 1.5);
       ctx.effects.splat(m.position.x, m.position.z, m.radius * 4.2);
@@ -768,6 +778,7 @@ export class Player implements Combatant {
       return;
     }
     s.hp = Math.min(s.maxHp, s.hp + s.regen * dt);
+    this.leechPool = Math.min(s.maxHp * LEECH_RESERVE, this.leechPool + s.maxHp * LEECH_PER_SEC * dt);
     s.mana = Math.min(s.maxMana, s.mana + s.manaRegen * dt);
     if (this.swingTick && this.swingTick(dt)) {
       this.swingTick = null;
