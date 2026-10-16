@@ -332,7 +332,7 @@ function meteorLands(p: Player, ctx: PlayerContext, fx: BossFx, at: THREE.Vector
   ctx.effects.addShake(0.55);
   ctx.effects.flash(at.clone().setY(at.y + 1), 0xff6a20, 40, 11, 0.5);
   ctx.effects.spell.fireBurst(at.clone().setY(at.y + 0.6), 3.5, 1.6);
-  ctx.effects.spell.dust(at, 3.5, 22, new THREE.Color(0.22, 0.17, 0.13), 1.2);
+  ctx.effects.spell.dust(at, 3.5, 22, undefined, 1.2);
   fx.nova(at, 3.5, FIRE.clone().multiplyScalar(0.5), 0.6, 0.8);
   fx.cracks(at, 3.2, EMBER, 3);
   fx.debris(at, 26, 1.4);

@@ -560,8 +560,8 @@ const ringBase = new THREE.ShaderMaterial({
       float n = noise(vec2(a * 6.0 + seed, r * 3.0 - k * 4.0)) * 0.6 + noise(vec2(a * 17.0 - seed, r * 9.0)) * 0.4;
       // Thick leading edge, ragged and torn, trailing into a faint wash.
       float lead = smoothstep(0.55, 0.95, r) * smoothstep(1.0, 0.93, r);
-      float wash = smoothstep(0.2, 0.95, r) * 0.25;
-      float alpha = (lead * (0.35 + n * 1.1) + wash * n) * (1.0 - k) * (1.0 - k * 0.5);
+      float wash = smoothstep(0.5, 0.95, r) * 0.07;
+      float alpha = (lead * (0.3 + n * 0.9) + wash * n) * (1.0 - k) * (1.0 - k * 0.5) * 0.7;
       alpha *= smoothstep(0.25, 0.55, n + lead * 0.3);
       gl_FragColor = vec4(color * alpha * (1.0 + lead * 0.8), alpha * (1.0 - add));
     }
@@ -671,8 +671,8 @@ export class SpellFx {
         life: rnd(0.8, 1.2),
         size: size * 3,
         size1: size * 9,
-        color: C(0.06, 0.05, 0.045),
-        color1: C(0.16, 0.15, 0.14),
+        color: C(0.025, 0.02, 0.018),
+        color1: C(0.07, 0.065, 0.06),
         alpha: 0.5,
         lit: 1,
         erode: 0.8,
@@ -721,7 +721,7 @@ export class SpellFx {
     const base = at.clone().setY(Math.max(at.y, gy + r * 0.3));
     this.fx.flash(base.clone().setY(base.y + 0.8), 0xff6a20, 14 * power, r * 3.5, 0.4);
     // White-hot heart.
-    for (let i = 0; i < 6; i++)
+    for (let i = 0; i < 3; i++)
       this.puff({ pos: base.clone().add(v3(rnd(-0.3, 0.3), rnd(-0.1, 0.3), rnd(-0.3, 0.3)).multiplyScalar(r)), vel: v3(rnd(-1, 1), rnd(0, 1.5), rnd(-1, 1)), life: rnd(0.18, 0.28), size: r * 0.4, size1: r * 1.1, color: C(1.8, 1.0, 0.35), color1: C(1.0, 0.25, 0.04), alpha: 0.45, add: 1, hot: 0.4, erode: 0.7, drag: 4 });
     // Billowing flame.
     const n = Math.round(10 + r * 4);
@@ -730,14 +730,14 @@ export class SpellFx {
       const up = rnd(0.1, 0.9);
       const d = v3(Math.cos(a) * (1 - up * 0.6), up, Math.sin(a) * (1 - up * 0.6)).normalize();
       this.puff({
-        pos: base.clone().addScaledVector(d, r * 0.15),
+        pos: base.clone().addScaledVector(d, r * 0.35),
         vel: d.multiplyScalar(r * rnd(3, 5.5)),
         life: rnd(0.45, 0.8),
         size: r * rnd(0.35, 0.5),
         size1: r * rnd(0.6, 0.85),
         color: C(1.5, 0.5, 0.1),
         color1: C(0.45, 0.05, 0.01),
-        alpha: 0.6,
+        alpha: 0.45,
         add: 1,
         hot: 0.35,
         erode: 0.95,
@@ -755,8 +755,8 @@ export class SpellFx {
         life: rnd(1.4, 2.4),
         size: r * 0.45,
         size1: r * rnd(1.0, 1.4),
-        color: C(0.06, 0.05, 0.045),
-        color1: C(0.17, 0.16, 0.15),
+        color: C(0.025, 0.02, 0.018),
+        color1: C(0.07, 0.065, 0.06),
         alpha: 0.42,
         lit: 1,
         erode: 0.85,
@@ -797,7 +797,7 @@ export class SpellFx {
     if (Math.random() < dt * 30 * fade) {
       const p = front.clone().addScaledVector(side, rnd(-half, half));
       p.y = this.ground(p.x, p.z) + 1;
-      this.puff({ pos: p, vel: v3(0, rnd(1, 1.6), 0).addScaledVector(dir, 1), life: rnd(1, 1.6), size: 0.8, size1: 2.2, color: C(0.05, 0.04, 0.035), color1: C(0.16, 0.15, 0.14), alpha: 0.5, lit: 1, erode: 0.85, gravity: 0.4, fadeIn: 0.2 });
+      this.puff({ pos: p, vel: v3(0, rnd(1, 1.6), 0).addScaledVector(dir, 1), life: rnd(1, 1.6), size: 0.8, size1: 2.2, color: C(0.025, 0.02, 0.018), color1: C(0.07, 0.065, 0.06), alpha: 0.5, lit: 1, erode: 0.85, gravity: 0.4, fadeIn: 0.2 });
     }
   }
 
@@ -950,7 +950,7 @@ export class SpellFx {
   }
 
   /** Billowing dust thrown outward along the ground from a heavy impact. */
-  dust(at: THREE.Vector3, r: number, count = 20, color = C(0.3, 0.26, 0.21), speed = 1) {
+  dust(at: THREE.Vector3, r: number, count = 20, color = C(0.05, 0.036, 0.026), speed = 1) {
     const gy = this.ground(at.x, at.z);
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + Math.random() * 0.3;
@@ -959,11 +959,11 @@ export class SpellFx {
         pos: at.clone().setY(gy + rnd(0.2, 0.45)).addScaledVector(d, r * 0.2),
         vel: d.multiplyScalar(r * rnd(2.2, 3.4) * speed).setY(rnd(0.2, 0.9)),
         life: rnd(0.9, 1.5),
-        size: r * 0.3,
-        size1: r * rnd(0.7, 1.0),
+        size: r * 0.22,
+        size1: r * rnd(0.45, 0.65),
         color,
-        color1: color.clone().multiplyScalar(1.3),
-        alpha: 0.62,
+        color1: color.clone().multiplyScalar(1.2),
+        alpha: 0.5,
         lit: 1,
         erode: 0.85,
         drag: 3,
@@ -1001,18 +1001,12 @@ export class SpellFx {
   /** Streaks of displaced air and grit along a sword arc. */
   sweep(center: THREE.Vector3, yaw: number, radius: number, arc: number, color: THREE.Color) {
     const n = Math.round(arc * 4);
-    for (let i = 0; i < n; i++) {
-      const a = yaw + (i / Math.max(1, n - 1) - 0.5) * arc;
-      const d = v3(Math.sin(a), 0, Math.cos(a));
-      const t = v3(Math.cos(a), 0, -Math.sin(a));
-      const p = center.clone().addScaledVector(d, radius * rnd(0.6, 1));
-      this.puff({ pos: p, vel: d.clone().multiplyScalar(2).addScaledVector(t, rnd(-2, 2)), life: rnd(0.2, 0.35), size: 0.6, size1: 1.1, color, color1: color.clone().multiplyScalar(0.3), add: 1, erode: 0.95, drag: 5, delay: (i / n) * 0.08 });
-    }
+    void color;
     const gy = this.ground(center.x, center.z);
     for (let i = 0; i < Math.round(n / 2); i++) {
       const a = yaw + (Math.random() - 0.5) * arc;
       const d = v3(Math.sin(a), 0, Math.cos(a));
-      this.puff({ pos: center.clone().setY(gy + 0.2).addScaledVector(d, radius * rnd(0.5, 0.9)), vel: d.multiplyScalar(rnd(1, 2)).setY(0.4), life: rnd(0.6, 0.9), size: 0.4, size1: 1.0, color: C(0.3, 0.26, 0.21), alpha: 0.4, lit: 1, erode: 0.85, drag: 3 });
+      this.puff({ pos: center.clone().setY(gy + 0.2).addScaledVector(d, radius * rnd(0.5, 0.9)), vel: d.multiplyScalar(rnd(1, 2)).setY(0.4), life: rnd(0.6, 0.9), size: 0.35, size1: 0.8, color: C(0.05, 0.036, 0.026), alpha: 0.4, lit: 1, erode: 0.85, drag: 3 });
     }
   }
 

@@ -365,8 +365,7 @@ export class Player implements Combatant {
         fx.debris(to, 28, 1.35);
         fx.nova(to, 3.2, EMBER.clone().multiplyScalar(0.6), 0.45);
         const sp = ctx.effects.spell;
-        sp.dust(to, 3.4, 28, new THREE.Color(0.3, 0.25, 0.2), 1.1);
-        sp.ring(to, 3.4, new THREE.Color(0.55, 0.47, 0.38), 0.7, false);
+        sp.dust(to, 3.4, 28, undefined, 1.1);
         sp.energyBurst(to.clone().setY(to.y + 0.3), 1.3, new THREE.Color(3.2, 1.3, 0.35), new THREE.Color(0.8, 0.12, 0.02), 10, 0);
         sp.decal('scorch', to.x, to.z, 2.4, 5, 0.6);
         ctx.effects.sparks(to.clone().setY(to.y + 0.3), 30, EMBER, 5.5, 0.7);
@@ -443,9 +442,9 @@ export class Player implements Combatant {
         ctx.effects.addShake(0.3);
         ctx.effects.shockwave(at, 6, new THREE.Color(1.4, 1.0, 0.35));
         ctx.effects.flash(at.clone().setY(at.y + 1.4), 0xffd070, 26, 9, 0.4);
-        fx.nova(at, 6, GOLD.clone().multiplyScalar(0.6), 0.6, 1.3, 0.8);
+        fx.nova(at, 6, GOLD.clone().multiplyScalar(0.4), 0.6, 1.3, 0.8);
         ctx.effects.sparks(at.clone().setY(at.y + 1.6), 30, GOLD, 3.5, 0.7);
-        ctx.effects.spell.dust(at, 5, 30, new THREE.Color(0.32, 0.28, 0.22), 1.2);
+        ctx.effects.spell.dust(at, 5, 30, undefined, 1.2);
         ctx.effects.spell.energyBurst(at.clone().setY(at.y + 1.4), 1.6, new THREE.Color(2.6, 1.9, 0.6), new THREE.Color(0.7, 0.35, 0.05), 14, 26);
         const stun = SK.warCryStun(r);
         for (const m of this.near(ctx, at, 6)) {
@@ -588,15 +587,15 @@ export class Player implements Combatant {
         ctx.effects.addShake(0.35);
         ctx.effects.flash(p.clone().setY(p.y + 1), 0xff2010, 34, 10, 0.45);
         ctx.effects.shockwave(p, 7, new THREE.Color(1.3, 0.1, 0.06));
-        fx.nova(p, 7, CRIMSON.clone().multiplyScalar(0.6), 0.7, 1.5, 0.6);
+        fx.nova(p, 7, CRIMSON.clone().multiplyScalar(0.35), 0.7, 1.5, 0.6);
         ctx.effects.sparks(p.clone().setY(p.y + 1), 40, CRIMSON, 5, 0.7);
         const sp = ctx.effects.spell;
-        sp.energyBurst(p.clone().setY(p.y + 1), 2.2, new THREE.Color(2.4, 0.15, 0.08), new THREE.Color(0.35, 0.0, 0.02), 22, 0);
+        sp.energyBurst(p.clone().setY(p.y + 1), 1.5, new THREE.Color(1.8, 0.12, 0.06), new THREE.Color(0.3, 0.0, 0.02), 12, 0);
         // A mist of blood rolling out with the blast.
         for (let i = 0; i < 22; i++) {
           const a = (i / 22) * Math.PI * 2;
           const d = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-          sp.puff({ pos: p.clone().setY(p.y + 0.6).addScaledVector(d, 0.5), vel: d.multiplyScalar(14 + Math.random() * 6).setY(0.6), life: 1 + Math.random() * 0.5, size: 1, size1: 2.6, color: new THREE.Color(0.22, 0.01, 0.01), color1: new THREE.Color(0.12, 0.02, 0.02), alpha: 0.55, lit: 1, erode: 0.85, drag: 3.2 });
+          sp.puff({ pos: p.clone().setY(p.y + 0.6).addScaledVector(d, 0.5), vel: d.multiplyScalar(14 + Math.random() * 6).setY(0.6), life: 1 + Math.random() * 0.5, size: 0.8, size1: 1.9, color: new THREE.Color(0.16, 0.008, 0.008), color1: new THREE.Color(0.08, 0.015, 0.015), alpha: 0.5, lit: 1, erode: 0.85, drag: 3.2 });
         }
         let total = 0;
         for (const m of this.near(ctx, p, 7)) total += this.strike(m, ctx, SK.novaMult(r));
