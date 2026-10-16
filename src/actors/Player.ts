@@ -8,6 +8,7 @@ import { mitigate, rollDamage } from '../game/Combat';
 import type { Effects } from '../game/Effects';
 import type { Stats } from '../game/Stats';
 import { BossFx, prewarmBossFx } from '../game/BossFx';
+import { prewarmSpellFx } from '../game/SpellFx';
 import { SK, SKILL, type SkillId } from '../game/Skills';
 import type { Monster } from './Monster';
 import { collapse, keyedAction } from './monsters/humanoid';
@@ -115,6 +116,7 @@ export class Player implements Combatant {
     this.consecrations = [];
     this.tickers.length = 0;
     prewarmBossFx(area.scene);
+    prewarmSpellFx(area.scene);
     this.velocity.set(0, 0);
     this.shove.set(0, 0);
     this.syncTransform();
@@ -292,6 +294,8 @@ export class Player implements Combatant {
         hit = true;
         audio.cleave();
         ctx.effects.slash(this.position.clone().setY(this.position.y + 1.0), startYaw, 2.7, new THREE.Color(1.8, 0.7, 0.45), true);
+        ctx.effects.spell.dust(this.position, 1.5, 14, undefined, 0.8);
+        ctx.effects.sparks(this.position.clone().setY(this.position.y + 0.9), 12, EMBER, 4, 0.35);
         for (const m of this.near(ctx, this.position, 2.5)) this.strike(m, ctx, mult);
       }
     });
@@ -317,6 +321,7 @@ export class Player implements Combatant {
     const dur = 0.42 + dist * 0.035;
     audio.whoosh(from, 1.3);
     ctx.effects.sparks(from.clone().setY(from.y + 0.2), 14, EMBER, 2.2, 0.5);
+    ctx.effects.spell.dust(from, 1.2, 10, undefined, 0.7);
     const c = this.character;
     this.busy(dur + 0.22, () => this.restPose());
     c.play(dur + 0.22, (k0) => {
@@ -347,12 +352,18 @@ export class Player implements Combatant {
       land: () => {
         audio.slam(to, 1.3);
         audio.quake(to, 0.8);
-        ctx.effects.addShake(0.45);
-        ctx.effects.shockwave(to, 3.4, new THREE.Color(1.2, 0.55, 0.25));
-        ctx.effects.flash(to.clone().setY(to.y + 0.6), 0xff7a30, 30, 8, 0.35);
-        fx.cracks(to, 3.2, EMBER, 2.4);
-        fx.debris(to, 18, 1.1);
-        fx.nova(to, 3.2, EMBER, 0.45);
+        ctx.effects.shockwave(to, 3.6, new THREE.Color(1.2, 0.55, 0.25));
+        ctx.effects.addShake(0.4);
+        ctx.effects.flash(to.clone().setY(to.y + 0.6), 0xff7a30, 34, 9, 0.4);
+        fx.cracks(to, 3.2, EMBER, 2.8);
+        fx.debris(to, 28, 1.35);
+        fx.nova(to, 3.2, EMBER.clone().multiplyScalar(0.6), 0.45);
+        const sp = ctx.effects.spell;
+        sp.dust(to, 3.4, 28, new THREE.Color(0.3, 0.25, 0.2), 1.1);
+        sp.ring(to, 3.4, new THREE.Color(0.55, 0.47, 0.38), 0.7, false);
+        sp.energyBurst(to.clone().setY(to.y + 0.3), 1.3, new THREE.Color(3.2, 1.3, 0.35), new THREE.Color(0.8, 0.12, 0.02), 10, 0);
+        sp.decal('scorch', to.x, to.z, 2.4, 5, 0.6);
+        ctx.effects.sparks(to.clone().setY(to.y + 0.3), 30, EMBER, 5.5, 0.7);
         const stun = SK.leapStun(r);
         for (const m of this.near(ctx, to, 2.8)) {
           this.strike(m, ctx, SK.leapMult(r));
@@ -426,8 +437,10 @@ export class Player implements Combatant {
         ctx.effects.addShake(0.3);
         ctx.effects.shockwave(at, 6, new THREE.Color(1.4, 1.0, 0.35));
         ctx.effects.flash(at.clone().setY(at.y + 1.4), 0xffd070, 26, 9, 0.4);
-        fx.nova(at, 6, GOLD, 0.6, 1.3, 0.8);
+        fx.nova(at, 6, GOLD.clone().multiplyScalar(0.6), 0.6, 1.3, 0.8);
         ctx.effects.sparks(at.clone().setY(at.y + 1.6), 30, GOLD, 3.5, 0.7);
+        ctx.effects.spell.dust(at, 5, 30, new THREE.Color(0.32, 0.28, 0.22), 1.2);
+        ctx.effects.spell.energyBurst(at.clone().setY(at.y + 1.4), 1.6, new THREE.Color(2.6, 1.9, 0.6), new THREE.Color(0.7, 0.35, 0.05), 14, 26);
         const stun = SK.warCryStun(r);
         for (const m of this.near(ctx, at, 6)) {
           m.stun(stun);
@@ -466,6 +479,8 @@ export class Player implements Combatant {
         fx.pool(at, 3.5, new THREE.Color(0.36, 0.25, 0.07), 6);
         fx.column(at, 0.7, 6, GOLD, 0.9);
         fx.cracks(at, 2.6, GOLD, 6);
+        ctx.effects.spell.energyBurst(at.clone().setY(at.y + 0.4), 1.8, new THREE.Color(2.8, 2.1, 0.8), new THREE.Color(0.6, 0.35, 0.05), 16, 30);
+        ctx.effects.spell.dust(at, 2.2, 16, undefined, 0.8);
         ctx.effects.flash(at.clone().setY(at.y + 1.0), 0xffd27a, 24, 8, 0.5);
         this.consecrations.push({ at, radius: 3.5, left: 6, next: 0.1, mult: SK.consecrateMult(r), heal: SK.consecrateHeal(r) });
       }
@@ -496,12 +511,9 @@ export class Player implements Combatant {
     const area = this.area!;
     const dir = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const start = this.position.clone().setY(this.position.y + 1.15).addScaledVector(dir, 0.6);
-    const obj = new THREE.Group();
-    const coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 0.25, 0.15), fog: false });
-    const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 0.04, 0.02), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-    const coreGeo = new THREE.ConeGeometry(0.07, 1.3, 8).rotateX(Math.PI / 2);
-    const haloGeo = new THREE.ConeGeometry(0.2, 1.8, 10).rotateX(Math.PI / 2).translate(0, 0, -0.2);
-    obj.add(new THREE.Mesh(coreGeo, coreMat), new THREE.Mesh(haloGeo, haloMat));
+    const sp = ctx.effects.spell;
+    const obj = sp.orb('crimson', 0.14, new THREE.Color(1.2, 0.05, 0.03));
+    (obj.userData.core as THREE.Object3D).scale.set(0.12, 0.12, 0.7);
     obj.position.copy(start);
     obj.lookAt(start.clone().add(dir));
     ctx.effects.group.add(obj);
@@ -510,7 +522,7 @@ export class Player implements Combatant {
     const speed = 24;
     const hitSet = new Set<Monster>();
     let done = false;
-    ctx.effects.after(range / speed, obj, (k) => {
+    ctx.effects.after(range / speed, obj, (k, dt) => {
       if (done) return;
       const p = start.clone().addScaledVector(dir, range * k);
       obj.position.copy(p);
@@ -521,7 +533,8 @@ export class Player implements Combatant {
         ctx.effects.sparks(p, 18, CRIMSON, 2.5, 0.5);
         return;
       }
-      if (Math.random() < 0.9) ctx.effects.mote(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.2, (Math.random() - 0.5) * 0.6), 0.45, 0.09, CRIMSON, true);
+      sp.energyTrail(p, dir, 0.16, new THREE.Color(1.6, 0.1, 0.06), new THREE.Color(0.4, 0.0, 0.02), dt, false);
+      if (Math.random() < 0.6) ctx.effects.mote(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.2, (Math.random() - 0.5) * 0.6), 0.45, 0.07, CRIMSON, true);
       for (const m of ctx.monsters) {
         if (!m.alive || hitSet.has(m)) continue;
         if (Math.hypot(m.position.x - p.x, m.position.z - p.z) < m.radius + 0.45) {
@@ -529,13 +542,9 @@ export class Player implements Combatant {
           this.strike(m, ctx, mult);
           audio.boltHit(p);
           ctx.effects.sparks(p, 12, CRIMSON, 2.2, 0.4);
+          sp.energyBurst(p, 0.6, new THREE.Color(1.8, 0.12, 0.06), new THREE.Color(0.4, 0, 0.02), 6, 0);
         }
       }
-    }, () => {
-      coreGeo.dispose();
-      haloGeo.dispose();
-      coreMat.dispose();
-      haloMat.dispose();
     });
   }
 
@@ -573,8 +582,16 @@ export class Player implements Combatant {
         ctx.effects.addShake(0.35);
         ctx.effects.flash(p.clone().setY(p.y + 1), 0xff2010, 34, 10, 0.45);
         ctx.effects.shockwave(p, 7, new THREE.Color(1.3, 0.1, 0.06));
-        fx.nova(p, 7, CRIMSON, 0.7, 1.5, 0.6);
+        fx.nova(p, 7, CRIMSON.clone().multiplyScalar(0.6), 0.7, 1.5, 0.6);
         ctx.effects.sparks(p.clone().setY(p.y + 1), 40, CRIMSON, 5, 0.7);
+        const sp = ctx.effects.spell;
+        sp.energyBurst(p.clone().setY(p.y + 1), 2.2, new THREE.Color(2.4, 0.15, 0.08), new THREE.Color(0.35, 0.0, 0.02), 22, 0);
+        // A mist of blood rolling out with the blast.
+        for (let i = 0; i < 22; i++) {
+          const a = (i / 22) * Math.PI * 2;
+          const d = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+          sp.puff({ pos: p.clone().setY(p.y + 0.6).addScaledVector(d, 0.5), vel: d.multiplyScalar(14 + Math.random() * 6).setY(0.6), life: 1 + Math.random() * 0.5, size: 1, size1: 2.6, color: new THREE.Color(0.22, 0.01, 0.01), color1: new THREE.Color(0.12, 0.02, 0.02), alpha: 0.55, lit: 1, erode: 0.85, drag: 3.2 });
+        }
         let total = 0;
         for (const m of this.near(ctx, p, 7)) total += this.strike(m, ctx, SK.novaMult(r));
         const heal = Math.round(total * SK.novaHeal(r));
@@ -607,6 +624,8 @@ export class Player implements Combatant {
         w.next += 0.3;
         audio.whoosh(this.position, 0.9);
         ctx.effects.slash(this.position.clone().setY(this.position.y + 1.0), this.yaw + Math.random() * 6, 2.5, new THREE.Color(1.7, 0.75, 0.45), true);
+        ctx.effects.spell.dust(this.position, 1.3, 8, undefined, 0.7);
+        ctx.effects.sparks(this.position.clone().setY(this.position.y + 0.9), 8, EMBER, 4.5, 0.3);
         for (const m of this.near(ctx, this.position, 2.4)) this.strike(m, ctx, w.mult);
       }
     }
@@ -615,6 +634,7 @@ export class Player implements Combatant {
       const z = this.consecrations[i];
       z.left -= dt;
       z.next -= dt;
+      ctx.effects.spell.rising(z.at, z.radius, new THREE.Color(1.8, 1.3, 0.4), new THREE.Color(0.5, 0.25, 0.03), dt, 16 * Math.min(1, z.left));
       if (z.next <= 0 && !this.dead) {
         z.next += 0.5;
         for (const m of this.near(ctx, z.at, z.radius)) this.strike(m, ctx, z.mult);

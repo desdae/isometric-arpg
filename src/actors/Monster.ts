@@ -554,6 +554,7 @@ export class Monster implements Combatant {
 
   update(dt: number, ctx: MonsterContext) {
     const rig = this.body.rig;
+    ctx.effects.spell.frostTint(this, this.state === 'dead' ? 0 : this.chilled > 0 ? (this.stunned > 0 ? 2 : 1) : 0, dt);
     if (this.state === 'dead') {
       this.deadFor += dt;
       if (rig.acting) rig.update(dt, 0);
@@ -568,7 +569,8 @@ export class Monster implements Combatant {
     if (this.stunned > 0) {
       // Dazed: stands swaying, does nothing.
       this.stunned -= dt;
-      rig.update(dt, 0);
+      // Frozen solid holds still; merely dazed sways.
+      if (this.chilled <= 0) rig.update(dt, 0);
       this.position.y = ctx.height(this.position.x, this.position.z);
       this.sync();
       rig.root.rotation.z = Math.sin(this.stunned * 9) * 0.06;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { audio } from '../audio/Audio';
 import type { BossFx } from '../game/BossFx';
+import { crystalMesh } from '../game/SpellFx';
 import { SK, type SkillId } from '../game/Skills';
 import type { Monster } from './Monster';
 import type { Player, PlayerContext } from './Player';
@@ -13,21 +14,6 @@ const FIRE = new THREE.Color(2.6, 0.9, 0.22);
 const EMBER = new THREE.Color(1.9, 0.5, 0.12);
 const ICE = new THREE.Color(0.9, 1.9, 2.8);
 const FROST = new THREE.Color(0.35, 0.8, 1.4);
-
-const iceMat = new THREE.MeshStandardMaterial({ color: 0x9ad8ff, emissive: new THREE.Color(0.1, 0.35, 0.6), roughness: 0.15, metalness: 0, transparent: true, opacity: 0.85 });
-const sphere = new THREE.SphereGeometry(1, 12, 8);
-const cone = new THREE.ConeGeometry(1, 1, 6).rotateX(Math.PI / 2);
-const glowMats = new Map<string, THREE.MeshBasicMaterial>();
-/** Shared glow materials, so spells never compile a new shader mid-fight. */
-function glow(c: THREE.Color, opacity = 1): THREE.MeshBasicMaterial {
-  const key = `${c.getHexString()}${opacity}`;
-  let m = glowMats.get(key);
-  if (!m) {
-    m = new THREE.MeshBasicMaterial({ color: c, fog: false, transparent: opacity < 1, opacity, blending: opacity < 1 ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: opacity >= 1 });
-    glowMats.set(key, m);
-  }
-  return m;
-}
 
 const dirOf = (yaw: number) => new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
 const flat = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -92,6 +78,8 @@ interface BoltOpts {
   size: number;
   /** Long thin shard instead of a ball. */
   shard?: boolean;
+  /** A churning ball of fire rather than arcane force. */
+  fire?: boolean;
   /** Keeps turning toward this monster while it lives. */
   home?: Monster;
   /** Flies through foes, hitting each once, instead of stopping on the first. */
@@ -105,18 +93,22 @@ interface BoltOpts {
 /** A glowing projectile with a trail of motes. */
 function bolt(p: Player, ctx: PlayerContext, o: BoltOpts) {
   const area = p.area!;
-  const obj = new THREE.Group();
+  const sfx = ctx.effects.spell;
+  let obj: THREE.Group;
   if (o.shard) {
-    const core = new THREE.Mesh(cone, iceMat);
-    core.scale.set(o.size * 0.5, o.size * 0.5, o.size * 4);
+    obj = new THREE.Group();
+    const core = crystalMesh();
+    core.castShadow = false;
+    core.rotation.x = Math.PI / 2;
+    core.position.z = -o.size * 2.5;
+    core.scale.set(o.size * 0.9, o.size * 5, o.size * 0.9);
     obj.add(core);
+  } else if (o.fire) {
+    obj = sfx.orb('fire', o.size * 1.25, new THREE.Color(1.4, 0.45, 0.08));
   } else {
-    const core = new THREE.Mesh(sphere, glow(o.color.clone().multiplyScalar(1.5)));
-    core.scale.setScalar(o.size);
-    const halo = new THREE.Mesh(sphere, glow(o.color.clone().multiplyScalar(0.45), 0.5));
-    halo.scale.setScalar(o.size * 2.2);
-    obj.add(core, halo);
+    obj = sfx.orb('arcane', o.size * 1.1, ARCANE.clone().multiplyScalar(0.35));
   }
+  const core = obj.userData.core as THREE.Object3D | undefined;
   const pos = o.from.clone();
   const dir = o.dir.clone().setY(0).normalize();
   obj.position.copy(pos);
@@ -143,7 +135,12 @@ function bolt(p: Player, ctx: PlayerContext, o: BoltOpts) {
     travelled += step;
     obj.position.copy(pos);
     obj.lookAt(pos.clone().add(dir));
-    if (Math.random() < 0.85) ctx.effects.mote(pos.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.25, (Math.random() - 0.5) * 0.5), 0.4, o.size * 0.7, o.color, true);
+    if (core) core.rotation.set(core.rotation.x + dt * 5, core.rotation.y + dt * 7, 0);
+    if (o.shard) sfx.frostTrail(pos, dir, dt);
+    else if (o.fire) {
+      sfx.fireTrail(pos, dir, o.size, dt);
+      if (Math.random() < 0.5) ctx.effects.mote(pos.clone(), new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.6 + Math.random(), (Math.random() - 0.5) * 1.2), 0.5, 0.06, EMBER, true);
+    } else sfx.energyTrail(pos, dir, o.size, ARCANE.clone().multiplyScalar(0.55), new THREE.Color(0.3, 0.08, 0.7), dt);
     if (!area.nav.walkable(pos.x, pos.z) && travelled > 0.6) return finish(pos.clone(), false);
     for (const m of ctx.monsters) {
       if (!m.alive || hit.has(m)) continue;
@@ -174,7 +171,8 @@ export function staffBolt(p: Player, m: Monster, ctx: PlayerContext) {
       home: m,
       onHit: (t, at) => {
         p.strike(t, ctx, SK.staffMult);
-        ctx.effects.sparks(at, 10, ARCANE, 2, 0.35);
+        ctx.effects.sparks(at, 8, ARCANE, 2, 0.35);
+        ctx.effects.spell.energyBurst(at, 0.5, ARCANE.clone().multiplyScalar(0.6), new THREE.Color(0.25, 0.05, 0.6), 5, 6);
       },
     });
   });
@@ -193,13 +191,10 @@ export function castMage(p: Player, id: SkillId, r: number, ctx: PlayerContext, 
         const burst = (at: THREE.Vector3) => {
           at.y = p.area!.heightAt(at.x, at.z) + 0.6;
           audio.blast(at, 'blood', 0.7);
-          ctx.effects.flash(at, 0xff7a2a, 26, 7, 0.3);
-          ctx.effects.shockwave(at.clone().setY(at.y - 0.55), 2.2, new THREE.Color(1.5, 0.55, 0.15));
-          fx.nova(at.clone().setY(at.y - 0.55), 2.2, FIRE, 0.4);
-          ctx.effects.sparks(at, 26, FIRE, 4, 0.55);
+          ctx.effects.spell.fireBurst(at, 2.2);
           for (const m of p.near(ctx, at, 2.2)) p.strike(m, ctx, SK.fireballMult(r));
         };
-        bolt(p, ctx, { from, dir: aimDir, speed: 16, range: 15, color: FIRE, size: 0.2, onHit: () => {}, onEnd: (at, struck) => (struck || flat(at, from) > 1) && burst(at) });
+        bolt(p, ctx, { from, dir: aimDir, speed: 16, range: 15, color: FIRE, size: 0.2, fire: true, onHit: () => {}, onEnd: (at, struck) => (struck || flat(at, from) > 1) && burst(at) });
       });
     case 'flameWave':
       return thrust(p, 0.55 * speedUp, () => flameWave(p, ctx, aimDir, SK.flameWaveMult(r)));
@@ -210,7 +205,7 @@ export function castMage(p: Player, id: SkillId, r: number, ctx: PlayerContext, 
         audio.charge(at, 0.8, 'blood');
         // A ring on the ground warns where it will land.
         fx.nova(at, 3.5, EMBER, 0.85, 0.05);
-        fx.fall(at, 0.85, FIRE, () => meteorLands(p, ctx, fx, at, SK.meteorMult(r)));
+        meteorFall(ctx, at, 0.85, () => meteorLands(p, ctx, fx, at, SK.meteorMult(r)));
       });
     }
     case 'frostNova':
@@ -219,10 +214,9 @@ export function castMage(p: Player, id: SkillId, r: number, ctx: PlayerContext, 
         audio.blast(at, 'soul', 1.1);
         ctx.effects.addShake(0.2);
         ctx.effects.flash(at.clone().setY(at.y + 1), 0x8ad8ff, 26, 9, 0.4);
-        ctx.effects.shockwave(at, 5, new THREE.Color(0.18, 0.4, 0.6));
-        fx.nova(at, 5, FROST.clone().multiplyScalar(0.45), 0.5, 0.6);
-        fx.spikes(at, 22, 4.6, 0.9, iceMat, 1.0);
-        ctx.effects.sparks(at.clone().setY(at.y + 0.5), 40, ICE, 4.5, 0.7);
+        fx.nova(at, 5, FROST.clone().multiplyScalar(0.3), 0.5, 0.5);
+        ctx.effects.spell.frostBurst(at, 5, 26);
+        ctx.effects.sparks(at.clone().setY(at.y + 0.5), 24, ICE, 4.5, 0.7);
         const freeze = SK.frostNovaFreeze(r);
         for (const m of p.near(ctx, at, 5)) {
           p.strike(m, ctx, SK.frostNovaMult(r));
@@ -250,7 +244,10 @@ export function castMage(p: Player, id: SkillId, r: number, ctx: PlayerContext, 
             onHit: (m, at) => {
               p.strike(m, ctx, SK.shardsMult(r));
               m.chill(1.5);
-              ctx.effects.sparks(at, 10, ICE, 2.4, 0.4);
+              ctx.effects.sparks(at, 6, ICE, 2.4, 0.4);
+              ctx.effects.spell.glitter(at, 0.2, 10, 1.8);
+              ctx.effects.spell.shard(at.clone());
+              ctx.effects.spell.shard(at.clone());
             },
             onEnd: (at) => audio.boltHit(at),
           });
@@ -278,27 +275,22 @@ function flameWave(p: Player, ctx: PlayerContext, dir: THREE.Vector3, mult: numb
   const half = 1.7;
   const hit = new Set<Monster>();
   const g = new THREE.Group();
-  const flames: THREE.Mesh[] = [];
-  for (let i = 0; i < 7; i++) {
-    const f = new THREE.Mesh(cone, glow(new THREE.Color(0.8, 0.2, 0.04), 0.55));
-    f.rotation.x = -Math.PI / 2;
-    f.position.copy(side.clone().multiplyScalar((i / 6 - 0.5) * half * 2));
-    g.add(f);
-    flames.push(f);
-  }
   ctx.effects.group.add(g);
+  const sfx = ctx.effects.spell;
+  let lastScorch = 0;
   audio.whoosh(start, 1.4);
   audio.cast(start);
-  ctx.effects.after(0.75, g, (k) => {
+  ctx.effects.after(0.75, g, (k, dt) => {
     const front = start.clone().addScaledVector(d, range * k);
     g.position.set(front.x, area.heightAt(front.x, front.z), front.z);
     const fade = Math.min(1, (1 - k) / 0.25, k / 0.1);
-    flames.forEach((f, i) => {
-      const h = (0.7 + Math.sin(k * 40 + i * 2.1) * 0.25) * fade * 1.3;
-      f.scale.set(0.35, 0.35, Math.max(0.01, h));
-      f.position.y = h / 2;
-    });
-    for (let i = 0; i < 3; i++) {
+    sfx.flameWall(front, side, d, half, dt, Math.max(0.2, fade));
+    // A burnt swathe left behind it.
+    if (k - lastScorch > 0.12) {
+      lastScorch = k;
+      sfx.decal('scorch', front.x, front.z, half * 0.9, 4, 0.6);
+    }
+    for (let i = 0; i < 2; i++) {
       const at = front.clone().addScaledVector(side, (Math.random() - 0.5) * half * 2);
       at.y = area.heightAt(at.x, at.z) + 0.2;
       ctx.effects.mote(at, new THREE.Vector3(0, 1.6 + Math.random(), 0).addScaledVector(d, 2), 0.45, 0.18, FIRE, true);
@@ -314,16 +306,37 @@ function flameWave(p: Player, ctx: PlayerContext, dir: THREE.Vector3, mult: numb
   });
 }
 
+/** A blazing rock dropping out of the sky at a slant, trailing fire and smoke. */
+function meteorFall(ctx: PlayerContext, at: THREE.Vector3, dur: number, onLand: () => void) {
+  const sfx = ctx.effects.spell;
+  const ball = sfx.orb('fire', 0.55, new THREE.Color(1.6, 0.5, 0.1));
+  const from = at.clone().add(new THREE.Vector3(-5, 15, -3));
+  const dir = at.clone().sub(from).normalize();
+  ctx.effects.group.add(ball);
+  let landed = false;
+  ctx.effects.after(dur, ball, (k, dt) => {
+    ball.position.lerpVectors(from, at, k * k);
+    (ball.userData.core as THREE.Object3D).rotation.x += dt * 6;
+    sfx.fireTrail(ball.position, dir, 0.45, dt);
+    sfx.fireTrail(ball.position, dir, 0.3, dt);
+    if (!landed && k >= 1) {
+      landed = true;
+      onLand();
+    }
+  });
+}
+
 function meteorLands(p: Player, ctx: PlayerContext, fx: BossFx, at: THREE.Vector3, mult: number) {
   audio.slam(at, 1.5);
   audio.quake(at, 1.1);
   ctx.effects.addShake(0.55);
   ctx.effects.flash(at.clone().setY(at.y + 1), 0xff6a20, 40, 11, 0.5);
-  ctx.effects.shockwave(at, 4, new THREE.Color(1.6, 0.6, 0.15));
-  fx.nova(at, 3.5, FIRE, 0.6, 1.2);
+  ctx.effects.spell.fireBurst(at.clone().setY(at.y + 0.6), 3.5, 1.6);
+  ctx.effects.spell.dust(at, 3.5, 22, new THREE.Color(0.22, 0.17, 0.13), 1.2);
+  fx.nova(at, 3.5, FIRE.clone().multiplyScalar(0.5), 0.6, 0.8);
   fx.cracks(at, 3.2, EMBER, 3);
-  fx.debris(at, 22, 1.3);
-  ctx.effects.sparks(at.clone().setY(at.y + 0.5), 50, FIRE, 6, 0.8);
+  fx.debris(at, 26, 1.4);
+  ctx.effects.sparks(at.clone().setY(at.y + 0.5), 40, FIRE, 6, 0.8);
   for (const m of p.near(ctx, at, 3.5)) p.strike(m, ctx, mult);
   // The ground keeps burning for a few seconds.
   fx.pool(at, 2.6, new THREE.Color(0.22, 0.05, 0.01), 3);
@@ -332,10 +345,11 @@ function meteorLands(p: Player, ctx: PlayerContext, fx: BossFx, at: THREE.Vector
   p.tickers.push((dt, c) => {
     left -= dt;
     next -= dt;
-    if (Math.random() < 0.5) {
+    c.effects.spell.groundFire(at, 2.3, dt, 30 * Math.min(1, left / 1.5));
+    if (Math.random() < 0.4) {
       const a = Math.random() * Math.PI * 2;
       const rr = Math.sqrt(Math.random()) * 2.4;
-      c.effects.mote(at.clone().add(new THREE.Vector3(Math.cos(a) * rr, 0.1, Math.sin(a) * rr)), new THREE.Vector3(0, 1.4, 0), 0.6, 0.14, EMBER, true);
+      c.effects.mote(at.clone().add(new THREE.Vector3(Math.cos(a) * rr, 0.1, Math.sin(a) * rr)), new THREE.Vector3(0, 1.4, 0), 0.6, 0.06, EMBER, true);
     }
     if (next <= 0) {
       next += 0.5;
@@ -351,13 +365,16 @@ function blizzard(p: Player, _ctx: PlayerContext, fx: BossFx, at: THREE.Vector3,
   audio.blast(at, 'soul', 0.8);
   fx.pool(at, radius, new THREE.Color(0.03, 0.07, 0.11), dur);
   fx.nova(at, radius, FROST.clone().multiplyScalar(0.4), 0.6, 0.3);
+  _ctx.effects.spell.decal('frost', at.x, at.z, radius * 1.1, dur + 1);
+  _ctx.effects.spell.ring(at, radius, new THREE.Color(0.75, 0.85, 1.0), 0.9, false);
   let left = dur;
   let next = 0.2;
   p.tickers.push((dt, c) => {
     left -= dt;
     next -= dt;
-    // Ice falling slantwise through the storm.
-    for (let i = 0; i < 4; i++) {
+    // Snow and ice falling slantwise through swirling mist.
+    c.effects.spell.snow(at, radius, dt);
+    for (let i = 0; i < 2; i++) {
       const a = Math.random() * Math.PI * 2;
       const rr = Math.sqrt(Math.random()) * radius;
       const top = at.clone().add(new THREE.Vector3(Math.cos(a) * rr - 1, 5 + Math.random() * 2, Math.sin(a) * rr));
@@ -366,6 +383,10 @@ function blizzard(p: Player, _ctx: PlayerContext, fx: BossFx, at: THREE.Vector3,
     if (next <= 0 && !p.dead) {
       next += 0.5;
       audio.whoosh(at, 0.5);
+      // Ice crystals keep forming where the storm bites.
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * radius * 0.8;
+      c.effects.spell.crystals(at.clone().add(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr)), 3, 0.5, 0.7, 0.6);
       for (const m of p.near(c, at, radius)) {
         p.strike(m, c, mult);
         m.chill(0.8);
@@ -391,13 +412,15 @@ function blink(p: Player, ctx: PlayerContext, fx: BossFx, mult: number) {
     }
   }
   audio.whoosh(from, 1.2);
-  ctx.effects.sparks(from.clone().setY(from.y + 1), 30, ARCANE, 3, 0.5);
+  ctx.effects.sparks(from.clone().setY(from.y + 1), 20, ARCANE, 3, 0.5);
+  ctx.effects.spell.energyBurst(from.clone().setY(from.y + 1), 1, ARCANE.clone().multiplyScalar(0.5), new THREE.Color(0.2, 0.04, 0.5), 14, 18);
   fx.nova(from, 1.4, ARCANE, 0.35, 1.6);
   p.teleport(to);
   audio.boltHit(to);
   ctx.effects.flash(to.clone().setY(to.y + 1), 0xb08cff, 24, 7, 0.3);
   ctx.effects.shockwave(to, 2.5, new THREE.Color(0.9, 0.6, 1.6));
-  ctx.effects.sparks(to.clone().setY(to.y + 1), 30, ARCANE, 3.5, 0.5);
+  ctx.effects.spell.energyBurst(to.clone().setY(to.y + 0.8), 1.4, ARCANE.clone().multiplyScalar(0.55), new THREE.Color(0.2, 0.04, 0.5), 18, 24);
+  ctx.effects.sparks(to.clone().setY(to.y + 1), 20, ARCANE, 3.5, 0.5);
   for (const m of p.near(ctx, to, 2.5)) p.strike(m, ctx, mult);
   const c = p.character;
   p.busy(0.25, () => p.restPose());
@@ -433,7 +456,8 @@ function barrage(p: Player, _ctx: PlayerContext, mult: number) {
         home: target,
         onHit: (m, at) => {
           p.strike(m, c, mult);
-          c.effects.sparks(at, 8, ARCANE, 2, 0.3);
+          c.effects.sparks(at, 6, ARCANE, 2, 0.3);
+          c.effects.spell.energyBurst(at, 0.4, ARCANE.clone().multiplyScalar(0.5), new THREE.Color(0.25, 0.05, 0.6), 4, 4);
         },
       });
     }

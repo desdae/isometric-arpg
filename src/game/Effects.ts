@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import { fbm2, clamp01, smoothstep } from '../procgen/noise';
+import { SpellFx } from './SpellFx';
 
 // Combat effects for one area: blood spray and pooled splats, sword arcs,
 // blood bolts with trails, shockwaves and flashes. Everything is pooled or
@@ -162,6 +163,8 @@ export class Effects {
    */
   private lights: THREE.PointLight[] = [];
   private freeLights: THREE.PointLight[] = [];
+  /** Textured particle puffs, fire, ice and decals for spells and skills. */
+  readonly spell: SpellFx;
 
   constructor(readonly height: HeightFn) {
     this.dropGeo.setAttribute('position', new THREE.BufferAttribute(this.dropPos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -185,7 +188,7 @@ export class Effects {
       this.freeLights.push(l);
       this.group.add(l);
     }
-
+    this.spell = new SpellFx(this);
   }
 
   /** Spray of blood (or ichor) from a wound, thrown away from `from`. */
@@ -269,13 +272,13 @@ export class Effects {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
-      uniforms: { k: { value: 0 }, color: { value: color }, arc: { value: arc } },
+      uniforms: { k: { value: 0 }, color: { value: color }, arc: { value: arc }, outer: { value: radius } },
       vertexShader: /* glsl */ `
         varying vec2 vP;
         void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
       `,
       fragmentShader: /* glsl */ `
-        uniform float k, arc;
+        uniform float k, arc, outer;
         uniform vec3 color;
         varying vec2 vP;
         void main() {
@@ -284,9 +287,13 @@ export class Effects {
           // Bright leading edge sweeping across, fading behind it.
           float sweep = smoothstep(-1.0, 1.0, a - (k * 2.6 - 1.3));
           float edge = smoothstep(0.0, 0.25, 1.0 - abs(a));
-          float band = smoothstep(0.0, 1.0, fract(r));
-          float alpha = (1.0 - sweep) * edge * (1.0 - k) * 0.85 * (0.6 + 0.4 * band);
-          gl_FragColor = vec4(color * alpha, alpha);
+          float rr = r / outer; // 0.45..1 across the blade's band
+          // Streaks along the stroke, like air torn by the edge.
+          float streak = 0.55 + 0.45 * sin(rr * 46.0 + sin(a * 3.0) * 2.0) * sin(rr * 19.0 - a * 1.5);
+          float across = smoothstep(0.45, 0.62, rr) * smoothstep(1.0, 0.86, rr);
+          float rim = smoothstep(0.86, 0.97, rr) * smoothstep(1.0, 0.97, rr);
+          float alpha = (1.0 - sweep) * edge * (1.0 - k) * (across * streak * 0.8 + rim * 1.4);
+          gl_FragColor = vec4(color * alpha + vec3(rim * alpha * 1.2), alpha);
         }
       `,
     });
@@ -301,27 +308,16 @@ export class Effects {
     holder.renderOrder = 18;
     m.renderOrder = 18;
     this.group.add(holder);
+    this.spell.sweep(center, yaw, radius, arc, color.clone().multiplyScalar(0.45));
     this.after(spin ? 0.42 : 0.22, holder, (k) => (mat.uniforms.k.value = k), () => {
       geo.dispose();
       mat.dispose();
     });
   }
 
-  /** Expanding dust ring where something heavy hit the ground. */
+  /** Expanding ring of force and grit where something heavy hit the ground. */
   shockwave(at: THREE.Vector3, radius = 3, color = new THREE.Color(0.9, 0.45, 0.3)) {
-    const geo = new THREE.RingGeometry(0.8, 1, 48).rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
-    const m = new THREE.Mesh(geo, mat);
-    m.position.copy(at).setY(this.height(at.x, at.z) + 0.08);
-    this.group.add(m);
-    this.after(0.5, m, (k) => {
-      const s = 0.3 + k * radius;
-      m.scale.set(s, 1, s);
-      mat.opacity = (1 - k) * 0.9;
-    }, () => {
-      geo.dispose();
-      mat.dispose();
-    });
+    this.spell.ring(at, radius, color, 0.5);
     this.addShake(0.35);
   }
 
@@ -525,5 +521,6 @@ export class Effects {
         this.bolts.splice(i, 1);
       }
     }
+    this.spell.update(dt);
   }
 }
