@@ -953,6 +953,47 @@ export async function buildSwamp(seed: number): Promise<World> {
     group(b.x - 3, b.z - 2, [['croc', 2]], 4, { kind: 'croc', name: 'Old Ironjaw' });
   }
   group(lair.x, lair.z, [['rootHorror', 2], ['toad', 3], ['mireWraith', 2]], lair.r * 0.6, { kind: 'rootHorror', name: 'Mother Rot' });
+  // Broods of blood leeches lie hidden under the deep water just off the
+  // causeways and island shores; they surface and crawl out when someone
+  // passes (see SurfacingLeech).
+  {
+    const broods: THREE.Vector2[] = [];
+    const bankNear = (x: number, z: number) => {
+      for (let r = 1; r <= 4.5; r += 0.5) for (let a = 0; a < 12; a++) if (reachable(x + Math.cos(a * 0.5236) * r, z + Math.sin(a * 0.5236) * r)) return true;
+      return false;
+    };
+    for (let tries = 0; broods.length < 8 && tries < 600; tries++) {
+      // Somewhere along a causeway, or off an island's shore.
+      let ax: number;
+      let az: number;
+      if (rng() < 0.65) {
+        const q = pick(rng, pick(rng, paths).pts);
+        ax = q.x;
+        az = q.y;
+      } else {
+        const s = pick(rng, ruins);
+        const a = rng() * Math.PI * 2;
+        ax = s.x + Math.cos(a) * s.r;
+        az = s.z + Math.sin(a) * s.r;
+      }
+      const a = rng() * Math.PI * 2;
+      const d = range(rng, 3, 6);
+      const x = ax + Math.cos(a) * d;
+      const z = az + Math.sin(a) * d;
+      if (Math.abs(x) > HALF - 6 || Math.abs(z) > HALF - 6 || !farFromGate(x, z)) continue;
+      if (height(x, z) > DEEP - 0.3 || !bankNear(x, z) || broods.some((b) => Math.hypot(b.x - x, b.y - z) < 16)) continue;
+      broods.push(new THREE.Vector2(x, z));
+      pack++;
+      const count = n(2, 3) + (rng() < 0.25 ? 1 : 0);
+      for (let i = 0, t = 0; i < count && t < 30; t++) {
+        const px = x + range(rng, -1.8, 1.8);
+        const pz = z + range(rng, -1.8, 1.8);
+        if (height(px, pz) > DEEP - 0.2) continue;
+        i++;
+        spawns.push({ kind: 'leech', pos: new THREE.Vector3(px, height(px, pz), pz), level: levelAt(px, pz), pack, wander: 0, submerged: true });
+      }
+    }
+  }
 
   spawns = spawns.filter((m) => Math.hypot(m.pos.x - wp.x, m.pos.z - wp.y) > 9 && Math.hypot(m.pos.x - gaolAt.x, m.pos.z - gaolAt.y) > 9);
 

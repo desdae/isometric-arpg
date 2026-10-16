@@ -3,6 +3,7 @@ import { audio } from '../audio/Audio';
 import { rollDamage } from '../game/Combat';
 import { BossFx } from '../game/BossFx';
 import { Telegraph, type Shape } from '../game/Telegraph';
+import { SurfacingLeech } from './SurfacingLeech';
 import { Monster, type MonsterContext, type MonsterKind, type MonsterSpawn } from './Monster';
 import type { MonsterBody, MonsterMaterials } from './monsters/materials';
 import { ABOMINATION } from './bosses/abomination';
@@ -327,5 +328,6 @@ export class Boss extends Monster {
 
 /** Builds the right kind of monster for a spawn. */
 export function createMonster(spawn: MonsterSpawn, mats: MonsterMaterials, scene: THREE.Scene): Monster {
-  return BOSS_DEFS[spawn.kind] ? new Boss(spawn, mats, scene) : new Monster(spawn, mats, scene);
+  if (BOSS_DEFS[spawn.kind]) return new Boss(spawn, mats, scene);
+  return spawn.submerged ? new SurfacingLeech(spawn, mats, scene) : new Monster(spawn, mats, scene);
 }

@@ -397,6 +397,22 @@ export function buildLeech(m: MonsterMaterials, rng: Rng, scale = 1): MonsterBod
         l.swell = 0;
       });
     },
+    emerge(dur) {
+      l.play(dur, (k) => {
+        // Breaking the surface: the front heaves up out of the water and
+        // rears, thrashing side to side with the mouth gaping, then the
+        // weight comes down onto the bank to crawl.
+        const rear = ease(k, 0.05, 0.45) * (1 - ease(k, 0.72, 1));
+        const thrash = hump(k, 0, 1);
+        l.lift = l.lift * (1 - rear) + 1.3 * rear;
+        l.tipDown = l.tipDown * (1 - rear) + 0.05 * rear;
+        l.swim = Math.max(l.swim, 0.55 + 0.6 * thrash);
+        l.sniffYaw = l.sniffYaw * (1 - thrash) + Math.sin(k * 19) * 0.45 * thrash;
+        l.open = Math.max(l.open, hump(k, 0.2, 0.85) * 0.95);
+        l.bulge = l.bulge * (1 - thrash) + 0.28 * thrash;
+        l.bulgeRate = l.bulgeRate * (1 - thrash) + 12 * thrash;
+      });
+    },
     muzzle() {
       return l.mouth.localToWorld(new THREE.Vector3());
     },
