@@ -4,6 +4,8 @@ import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import type { Combatant } from '../game/Combat';
 import { mitigate, rollDamage } from '../game/Combat';
+import { monsterArmorScale, monsterDamageScale, monsterLifeScale, signatureMult } from '../game/Balance';
+import { Telegraph, type Shape } from '../game/Telegraph';
 import type { Effects } from '../game/Effects';
 import type { FloatingText } from '../game/Combat';
 import type { MonsterBody, MonsterMaterials } from './monsters/materials';
@@ -426,6 +428,44 @@ export const KINDS: Record<MonsterKind, KindDef> = {
   },
 };
 
+/** A monster's heavy, telegraphed attack (see Monster.signature). */
+interface SignatureDef {
+  name: string;
+  /** Telegraph shape; `size` grows for champions. */
+  shape: (size: number) => Shape;
+  /** Mark it on the hero's feet, or ahead of the monster (by `ahead` metres). */
+  at: 'self' | 'target';
+  ahead: number;
+  /** Seconds the mark fills before the blow lands. */
+  windup: number;
+  /** Seconds before landing that the attack animation starts (its own wind-up). */
+  swingLead: number;
+  /** Seconds it stands spent after the blow. */
+  recover: number;
+  cooldown: number;
+  /** Distance to the hero it is used from. */
+  range: [number, number];
+  /** Share of the standard signature blow (Balance.signatureMult). */
+  factor: number;
+  /** Metres the hero is thrown back when caught. */
+  knock: number;
+  /** Metres the body travels as it lands (a lunge). */
+  lunge?: number;
+  color: number;
+  look: 'slam' | 'chop' | 'lunge' | 'wail' | 'roots' | 'mire';
+}
+
+export const SIGNATURES: Partial<Record<MonsterKind, SignatureDef>> = {
+  brute: { name: 'Overhead Slam', shape: (k) => ({ kind: 'circle', r: 2.4 * k }), at: 'self', ahead: 1.9, windup: 1.25, swingLead: 0.7, recover: 0.7, cooldown: 9, range: [0, 4.5], factor: 1, knock: 2.2, color: 0xff4a1a, look: 'slam' },
+  butcher: { name: 'Cleaver Chop', shape: (k) => ({ kind: 'rect', len: 5 * k, w: 1.7 * k }), at: 'self', ahead: 0.4, windup: 1.3, swingLead: 1.1, recover: 0.6, cooldown: 8, range: [0, 5], factor: 1.05, knock: 1.8, color: 0xff3010, look: 'chop' },
+  maiden: { name: 'Iron Embrace', shape: (k) => ({ kind: 'circle', r: 3.2 * k }), at: 'self', ahead: 0.6, windup: 1.45, swingLead: 0.6, recover: 0.8, cooldown: 10, range: [0, 3.8], factor: 1.1, knock: 2.6, color: 0xff5a20, look: 'slam' },
+  croc: { name: 'Death Lunge', shape: (k) => ({ kind: 'rect', len: 6 * k, w: 1.5 * k }), at: 'self', ahead: 0, windup: 0.95, swingLead: 0.4, recover: 0.5, cooldown: 7, range: [2.5, 6], factor: 0.85, knock: 1.2, lunge: 4.5, color: 0xff6a20, look: 'lunge' },
+  gaolCroc: { name: 'Death Lunge', shape: (k) => ({ kind: 'rect', len: 6.5 * k, w: 1.6 * k }), at: 'self', ahead: 0, windup: 0.95, swingLead: 0.4, recover: 0.5, cooldown: 7, range: [2.5, 6.5], factor: 0.9, knock: 1.4, lunge: 5, color: 0xff6a20, look: 'lunge' },
+  weeper: { name: 'Keening Wail', shape: (k) => ({ kind: 'cone', r: 7 * k, half: 0.55 }), at: 'self', ahead: 0, windup: 1.35, swingLead: 0.9, recover: 0.6, cooldown: 9, range: [0, 6.5], factor: 0.9, knock: 1.5, color: 0x7f8cff, look: 'wail' },
+  rootHorror: { name: 'Grasping Roots', shape: (k) => ({ kind: 'circle', r: 2.3 * k }), at: 'target', ahead: 0, windup: 1.4, swingLead: 0.6, recover: 0.6, cooldown: 8, range: [0, 10], factor: 1, knock: 1, color: 0x9ac02a, look: 'roots' },
+  mireWraith: { name: 'Drowning Mire', shape: (k) => ({ kind: 'circle', r: 2.4 * k }), at: 'target', ahead: 0, windup: 1.5, swingLead: 0.7, recover: 0.5, cooldown: 9, range: [3, 13], factor: 0.8, knock: 0, color: 0x5cd04a, look: 'mire' },
+};
+
 export interface MonsterSpawn {
   kind: MonsterKind;
   pos: THREE.Vector3;
@@ -500,12 +540,12 @@ export class Monster implements Combatant {
     this.elite = !!spawn.elite;
     this.level = spawn.level;
     this.body = this.def.build(mats, Math.floor(Math.random() * 1e6), this.elite, !!spawn.boss);
-    const lv = 1 + (spawn.level - 1) * 0.28;
+    // Level curves live in game/Balance.ts.
     const eliteMul = spawn.boss ? 7 : this.elite ? 3.2 : 1;
-    this.maxHp = this.hp = Math.round(this.def.hp * lv * eliteMul);
-    const dm = (1 + (spawn.level - 1) * 0.16) * (spawn.boss ? 1.7 : this.elite ? 1.5 : 1);
+    this.maxHp = this.hp = Math.round(this.def.hp * monsterLifeScale(spawn.level) * eliteMul);
+    const dm = monsterDamageScale(spawn.level) * (spawn.boss ? 1.7 : this.elite ? 1.5 : 1);
     this.dmg = [this.def.dmg[0] * dm, this.def.dmg[1] * dm];
-    this.armor = this.def.armor * lv;
+    this.armor = this.def.armor * monsterArmorScale(spawn.level);
     this.radius = this.def.radius * (spawn.boss ? 1.9 : this.elite ? 1.2 : 1);
     this.height = this.def.height * (spawn.boss ? 2 : this.elite ? 1.2 : 1);
     this.name = spawn.elite ?? this.def.name;
@@ -555,6 +595,7 @@ export class Monster implements Combatant {
   update(dt: number, ctx: MonsterContext) {
     const rig = this.body.rig;
     ctx.effects.spell.frostTint(this, this.state === 'dead' ? 0 : this.chilled > 0 ? (this.stunned > 0 ? 2 : 1) : 0, dt);
+    if (this.sig && (this.state === 'dead' || this.stunned > 0)) this.cancelSignature();
     if (this.state === 'dead') {
       this.deadFor += dt;
       if (rig.acting) rig.update(dt, 0);
@@ -590,6 +631,7 @@ export class Monster implements Combatant {
       this.state = 'return';
       this.path = [];
     }
+    if (this.signature(dt, ctx, dist)) return;
 
     let want = new THREE.Vector2();
     let faceTarget = false;
@@ -843,6 +885,162 @@ export class Monster implements Combatant {
     ctx.effects.flash(at, 0xff3020, 14, 4, 0.3);
   }
 
+  // ---- Signature attacks ---------------------------------------------------
+  // A few kinds have one heavy blow they wind up behind a telegraph on the
+  // floor (the same one bosses paint). It lands for a third or so of a
+  // same-level hero's life, but only on whoever still stands in the mark when
+  // the wind-up runs out. Champions use theirs more often, and wider.
+
+  /** The signature attack being wound up or played out. */
+  protected sig: { def: SignatureDef; tele: Telegraph; t: number; swung: boolean; landed: boolean; at: THREE.Vector3; yaw: number; after: number } | null = null;
+  /** Seconds until this monster may use its signature again (null: not yet in a fight). */
+  protected sigCd: number | null = null;
+
+  protected cancelSignature() {
+    this.sig?.tele.cancel();
+    this.sig = null;
+  }
+
+  /** Starts, runs and resolves the signature attack; true while it owns the frame. */
+  protected signature(dt: number, ctx: MonsterContext, dist: number): boolean {
+    const def = SIGNATURES[this.kind];
+    if (!def || this.spawn.boss) return false;
+    const p = ctx.player;
+    const rig = this.body.rig;
+    if (!this.sig) {
+      if (this.state !== 'chase' && this.state !== 'attack') {
+        if (this.state === 'idle') this.sigCd = null;
+        return false;
+      }
+      // The first one comes a little after the fight starts, not on sight.
+      this.sigCd ??= def.cooldown * (this.elite ? 0.3 : 0.5) * (0.6 + Math.random() * 0.6);
+      this.sigCd -= dt;
+      if (this.sigCd > 0 || rig.acting || !p.alive || dist < def.range[0] || dist > def.range[1]) return false;
+      if (!ctx.nav.lineOfSight(this.position.x, this.position.z, p.position.x, p.position.z)) return false;
+      this.sigCd = def.cooldown * (this.elite ? 0.55 : 1) * (0.85 + Math.random() * 0.3);
+      const yaw = Math.atan2(p.position.x - this.position.x, p.position.z - this.position.z);
+      const size = this.elite ? 1.2 : 1;
+      const at = def.at === 'target' ? p.position.clone() : this.position.clone().add(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(def.ahead * size));
+      at.y = ctx.height(at.x, at.z) + 0.06;
+      const tele = new Telegraph(ctx.effects, def.shape(size), at, yaw, def.windup, def.color);
+      this.sig = { def, tele, t: 0, swung: false, landed: false, at, yaw, after: 0 };
+      this.yaw = yaw;
+      this.speed = 0;
+      this.path = [];
+      this.state = 'attack';
+      rig.cancelAction();
+      audio.voice(this.kind, 'aggro', this.position, this.voiceSize * 1.1);
+    }
+    const s = this.sig;
+    s.t += dt;
+    // Hold still through the wind-up; swing so the blow falls as the mark fills.
+    if (!s.swung && s.t >= Math.max(0, s.def.windup - s.def.swingLead)) {
+      s.swung = true;
+      this.body.attack(() => undefined);
+    }
+    if (!s.landed && s.t >= s.def.windup) {
+      s.landed = true;
+      s.tele.fire();
+      this.landSignature(ctx);
+    }
+    if (s.landed) {
+      // A lunge carries the body down the lane it marked.
+      if (s.def.lunge && s.after < 0.22) {
+        const step = Math.min(dt, 0.22 - s.after) * (s.def.lunge / 0.22);
+        const nx = this.position.x + Math.sin(s.yaw) * step;
+        const nz = this.position.z + Math.cos(s.yaw) * step;
+        if (ctx.nav.walkable(nx, nz)) {
+          this.position.x = nx;
+          this.position.z = nz;
+        }
+      }
+      s.after += dt;
+      if (s.after >= s.def.recover) {
+        this.sig = null;
+        this.cooldown = Math.max(this.cooldown, 0.4);
+      }
+    }
+    this.yaw = s.yaw;
+    this.position.y = ctx.height(this.position.x, this.position.z);
+    rig.update(dt, 0);
+    this.sync();
+    return true;
+  }
+
+  private landSignature(ctx: MonsterContext) {
+    const s = this.sig!;
+    const p = ctx.player;
+    const fx = ctx.effects;
+    const size = this.elite ? 1.2 : 1;
+    const shape = s.def.shape(size);
+    const at = s.at;
+    const fwd = new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw));
+    const ext = shape.kind === 'circle' ? shape.r : shape.kind === 'cone' ? shape.r : shape.kind === 'rect' ? shape.len : shape.r1;
+    switch (s.def.look) {
+      case 'slam':
+        fx.shockwave(at, ext * 1.15);
+        fx.shockwave(at, ext * 0.6, new THREE.Color(1.2, 0.5, 0.25));
+        fx.sparks(at.clone().setY(at.y + 0.3), 26, new THREE.Color(1.4, 0.6, 0.3), 4.5, 0.7);
+        fx.blood(at.clone().setY(at.y + 0.2), this.position, 14, new THREE.Color(0.2, 0.12, 0.08), 1.2);
+        fx.flash(at.clone().setY(at.y + 0.5), 0xff7030, 26, ext * 2.5, 0.3);
+        audio.slam(at, 1.4 * size);
+        fx.addShake(0.45);
+        break;
+      case 'chop':
+        for (let i = 1; i <= 3; i++) {
+          const q = at.clone().addScaledVector(fwd, (ext * i) / 3.5);
+          fx.shockwave(q, 1.3, new THREE.Color(0.9, 0.3, 0.15));
+          fx.sparks(q.clone().setY(q.y + 0.2), 10, new THREE.Color(1.4, 0.5, 0.25), 3.5, 0.5);
+        }
+        fx.splat(at.x + fwd.x * ext * 0.5, at.z + fwd.z * ext * 0.5, 1.6);
+        audio.slam(at, 1.3 * size);
+        fx.addShake(0.4);
+        break;
+      case 'lunge': {
+        const end = at.clone().addScaledVector(fwd, s.def.lunge ?? 4);
+        fx.shockwave(end, 1.6, new THREE.Color(0.3, 0.12, 0.06));
+        fx.blood(end.clone().setY(end.y + 0.4), this.position, 16, this.def.blood, 1.1);
+        audio.splash(end);
+        audio.slam(end, 0.8);
+        fx.addShake(0.25);
+        break;
+      }
+      case 'wail':
+        for (let i = 1; i <= 3; i++) fx.shockwave(this.position.clone().addScaledVector(fwd, (ext * i) / 3.3), ext * 0.15 * i, new THREE.Color(0.45, 0.5, 0.75));
+        fx.slash(this.position.clone().setY(this.position.y + 0.8), s.yaw, ext, new THREE.Color(0.6, 0.7, 1.1));
+        fx.flash(this.position.clone().setY(this.position.y + 1.5), 0x8090ff, 18, ext, 0.4);
+        audio.voice(this.kind, 'attack', this.position, this.voiceSize * 1.3);
+        fx.addShake(0.2);
+        break;
+      case 'roots':
+        fx.rootSpikes(at, ext, 16);
+        fx.rootSpikes(at, ext * 0.55, 7);
+        fx.shockwave(at, ext * 1.1, new THREE.Color(0.35, 0.4, 0.12));
+        audio.slam(at, 1.2 * size);
+        fx.addShake(0.35);
+        break;
+      case 'mire':
+        fx.shockwave(at, ext * 1.1, new THREE.Color(0.25, 0.45, 0.2));
+        fx.shockwave(at, ext * 0.5, new THREE.Color(0.4, 0.7, 0.3));
+        fx.blood(at.clone().setY(at.y + 0.1), at.clone().setY(at.y - 1), 30, new THREE.Color(0.06, 0.1, 0.04), 1.4);
+        fx.sparks(at.clone().setY(at.y + 0.3), 18, new THREE.Color(0.5, 1.2, 0.4), 3, 0.8);
+        fx.flash(at.clone().setY(at.y + 0.6), 0x60ff60, 16, ext * 2.5, 0.35);
+        audio.splash(at);
+        break;
+    }
+    if (!p.alive || !s.tele.hits(p.position, p.radius)) return;
+    // Reckoned from the kind's damage at its level without the champion
+    // multiplier: a champion's mark is wider and comes more often instead.
+    const dm = monsterDamageScale(this.level) * signatureMult(this.level) * s.def.factor * (this.elite ? 1.15 : 1);
+    const roll = rollDamage(this.def.dmg[0] * dm, this.def.dmg[1] * dm, 0);
+    ctx.onPlayerHit(roll.amount, true, this.position);
+    if (s.def.knock > 0) {
+      const push = new THREE.Vector2(p.position.x - this.position.x, p.position.z - this.position.z);
+      if (push.lengthSq() < 1e-4) push.set(Math.sin(s.yaw), Math.cos(s.yaw));
+      (p as { knock?: (d: THREE.Vector2, m: number) => void }).knock?.(push, s.def.knock);
+    }
+  }
+
   protected get voiceSize() {
     return (this.kind === 'brute' || this.kind === 'horror' || this.kind === 'butcher' || this.kind === 'maiden' ? 1.15 : this.kind === 'gaunt' ? 0.85 : this.kind === 'spider' || this.kind === 'rootHorror' ? 1.8 : this.kind === 'toad' ? 1.3 : 1) * (this.spawn.boss ? 1.8 : this.elite ? 1.3 : 1);
   }
@@ -867,6 +1065,8 @@ export class Monster implements Combatant {
   reset() {
     if (this.removed) this.scene.add(this.body.rig.root);
     this.removed = false;
+    this.cancelSignature();
+    this.sigCd = null;
     this.deadFor = 0;
     this.state = 'idle';
     this.awake = false;
