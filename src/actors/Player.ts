@@ -15,6 +15,7 @@ import { SK, SKILL, type SkillId } from '../game/Skills';
 import type { Monster } from './Monster';
 import { collapse, keyedAction } from './monsters/humanoid';
 import { castMage, staffBolt } from './mage';
+import { telemetry } from '../game/Telemetry';
 
 // The hero: click-to-move along the nav grid, walk up to things to interact,
 // sword swings at a target (repeating while the button is held), the skills
@@ -656,6 +657,7 @@ export class Player implements Combatant {
   drinkPotion(ctx: PlayerContext): boolean {
     if (this.dead || this.stats.potions <= 0 || this.potionCd > 0 || this.stats.hp >= this.stats.maxHp) return false;
     this.stats.potions--;
+    telemetry.potion();
     this.potionCd = 0.8;
     const heal = Math.round(this.stats.maxHp * (0.45 + SK.secondWindPotion(this.stats.rank('secondWind'))));
     this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + heal);
@@ -712,6 +714,7 @@ export class Player implements Combatant {
     const roll = rollDamage(s.dmgMin * mult, s.dmgMax * mult, s.crit);
     const dealt = m.takeDamage(roll.amount, roll.crit, this.position);
     if (dealt <= 0) return 0;
+    telemetry.dealt(m, dealt);
     const at = m.position.clone().setY(m.position.y + m.height * 0.6);
     audio.hit(at, roll.crit, m.kind === 'crawler');
     ctx.floaters.spawn(String(dealt), at.clone().setY(at.y + m.height * 0.45), roll.crit ? 'crit' : '');

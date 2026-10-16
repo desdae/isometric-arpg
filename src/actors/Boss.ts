@@ -9,6 +9,7 @@ import { ABOMINATION } from './bosses/abomination';
 import { LICH } from './bosses/lich';
 import { NIGHTWING } from './bosses/nightwing';
 import { INQUISITOR } from './bosses/inquisitor';
+import { telemetry } from '../game/Telemetry';
 
 // Crypt bosses: a monster with a playbook. Between abilities it hunts and
 // strikes like any other; every few seconds it picks one of its abilities
@@ -277,6 +278,7 @@ export class Boss extends Monster {
   /** Deals `mult` times the boss's damage to the hero. */
   hurt(ctx: MonsterContext, mult: number, from: THREE.Vector3 = this.position) {
     const roll = rollDamage(this.dmg[0] * mult, this.dmg[1] * mult, 0.05);
+    telemetry.source(this, this.lastAbility?.name ?? 'ability');
     ctx.onPlayerHit(roll.amount, roll.crit, from);
   }
 

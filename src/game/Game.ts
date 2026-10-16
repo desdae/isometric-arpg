@@ -29,6 +29,7 @@ import { Shop } from './Shop';
 import { PortalFx } from './Portal';
 import type { DialogueAction } from '../engine/Dialogue';
 import type { Character } from '../actors/Character';
+import { telemetry } from './Telemetry';
 
 // Runs the playable game: keeps each area (town, wasteland) alive once built,
 // moves the hero between them through the gates, routes mouse and keyboard
@@ -481,6 +482,7 @@ export class Game {
   }
 
   private onKill(m: Monster) {
+    telemetry.kill(m);
     const s = this.stats;
     // Experience falls off against monsters well below your level.
     const diff = m.level - s.level;
@@ -549,6 +551,7 @@ export class Game {
 
   private onPlayerHit(amount: number, crit: boolean, from: THREE.Vector3) {
     const dealt = this.player.takeDamage(amount, crit, from);
+    telemetry.playerHit(dealt, from, this.area.monsters, this.player.dead);
     if (dealt <= 0) return;
     audio.hit(this.player.position, crit, true);
     if (!this.player.dead) audio.playerHurt();
@@ -953,6 +956,7 @@ export class Game {
     // Music swells when something is hunting the hero.
     const hunted = a.monsters.some((m) => m.alive && m.awake && (m.state === 'chase' || m.state === 'attack') && m.position.distanceTo(p.position) < 26);
     audio.setMood(hunted && !p.dead ? 'combat' : 'explore');
+    telemetry.tick(dt, a.name, this.stats, hunted && !p.dead);
     audio.update(dt);
     if (w.npcs) for (const n of w.npcs) n.update(dt, p.position);
     a.effects.update(dt);
