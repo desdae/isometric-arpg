@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import { fbm2, clamp01, smoothstep } from '../procgen/noise';
 import { SpellFx } from './SpellFx';
+import { BossFx } from './BossFx';
 
 // Combat effects for one area: blood spray and pooled splats, sword arcs,
 // blood bolts with trails, shockwaves and flashes. Everything is pooled or
@@ -424,6 +425,90 @@ export class Effects {
     const b: Bolt = { pos: obj.position, dir: dir.clone().normalize(), speed, age: 0, life: 2.4, obj, light, test };
     (b as Bolt & { onHit: typeof onHit }).onHit = onHit;
     this.bolts.push(b);
+  }
+
+  /**
+   * Fires one of every kind of effect at `at` while the screen is covered, so
+   * the frame drawn next builds every shader and texture they need on the GPU
+   * (some drivers only finish that on a real draw). Clear with clearAll().
+   */
+  rehearse(at: THREE.Vector3): boolean {
+    if (this.rehearsed) return false;
+    this.rehearsed = true;
+    const p = at.clone();
+    const up = p.clone().setY(p.y + 1);
+    const sp = this.spell;
+    const c = new THREE.Color(1.5, 0.6, 0.2);
+    sp.fireBurst(up, 2);
+    sp.frostBurst(p, 3, 6);
+    sp.crystals(p, 4, 1, 1, 0.5);
+    sp.shard(up.clone());
+    sp.decal('scorch', p.x, p.z, 1, 1);
+    sp.decal('frost', p.x, p.z, 1, 1);
+    sp.ring(p, 2, c, 0.5);
+    sp.ring(p, 2, c, 0.5, false);
+    sp.dust(p, 1, 4);
+    sp.energyBurst(up, 1, c, c, 4, 4);
+    sp.glitter(up, 1, 4);
+    for (const pal of ['fire', 'arcane', 'crimson', 'holy', 'frost'] as const) {
+      const o = sp.orb(pal, 0.2, c);
+      o.position.copy(up);
+      this.group.add(o);
+      this.after(0.2, o, () => {});
+    }
+    this.slash(up, 0, 1.5, c, true);
+    this.slash(up, 0, 1.5, c, false);
+    this.shockwave(p, 2, c);
+    this.sparks(up, 4, c);
+    this.blood(up, p, 4);
+    this.splat(p.x, p.z, 1);
+    this.rootSpikes(p, 1, 3);
+    this.pillar(p);
+    this.bolt(up, new THREE.Vector3(1, 0, 0), () => false, () => {});
+    for (const l of this.lights) l.intensity = Math.max(l.intensity, 1);
+    const b = new BossFx(this);
+    b.debris(p, 3);
+    b.cracks(p, 1, c);
+    b.spikes(p, 3, 1, 1);
+    b.column(p, 0.5, 2, c);
+    b.nova(p, 2, c, 0.5, 1);
+    b.lob(up, p, 0.5, c, 0.2, 1, () => {});
+    b.fall(p, 0.5, c, () => {});
+    b.pool(p, 1, c, 1);
+    b.gust(p, 0, 2, 0.5, c);
+    this.shake = 0;
+    return true;
+  }
+  private rehearsed = false;
+
+  /**
+   * Removes every running effect at once. After a rehearsal their materials
+   * are deliberately not disposed: three.js frees a shader program when the
+   * last material using it is disposed, and later casts would then build it
+   * all over again. Keeping one material of each kind alive pins them.
+   */
+  clearAll(keepMaterials = true) {
+    for (const t of this.timed) {
+      if (this.splats.includes(t.obj as THREE.Mesh)) continue;
+      t.obj.parent?.remove(t.obj);
+      if (!keepMaterials) t.dispose?.();
+    }
+    this.timed.length = 0;
+    for (const b of this.bolts) {
+      if (b.light) this.returnLight(b.light);
+      this.group.remove(b.obj);
+    }
+    this.bolts.length = 0;
+    for (const l of this.lights) l.intensity = 0;
+    this.freeLights = [...this.lights];
+    this.drops.length = 0;
+    this.dropGeo.setDrawRange(0, 0);
+    this.glowGeo.setDrawRange(0, 0);
+    for (const m of this.splats) {
+      ((m.material as THREE.Material).userData.spread as { value: number }).value = 0;
+    }
+    this.spell.clear();
+    this.shake = 0;
   }
 
   addShake(amount: number) {

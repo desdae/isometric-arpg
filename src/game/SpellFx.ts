@@ -220,6 +220,14 @@ class Puffs {
     c1[j] = e.r; c1[j + 1] = e.g; c1[j + 2] = e.b; c1[j + 3] = o.fadeIn ?? 0.06;
   }
 
+  /** Kill every live puff. */
+  clear() {
+    for (let i = 0; i < MAX_PUFFS; i++) this.arr[0][i * 4 + 3] = -1e6;
+    this.wrapped = true;
+    this.hi = 0;
+    this.flush();
+  }
+
   /** Upload only the slots written this frame. */
   flush() {
     if (this.hi < 0) return;
@@ -411,9 +419,8 @@ const GLITTER = [new THREE.Color(2.6, 2.9, 3.2), new THREE.Color(0.6, 2.4, 3.0),
 const pick = <T>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
 
 export function crystalMesh(): THREE.Mesh {
-  const m = new THREE.Mesh(pick(crystalGeos), pick(crystalMats));
-  m.castShadow = true;
-  return m;
+  // Translucent ice: no shadow (and no extra shadow shader to build).
+  return new THREE.Mesh(pick(crystalGeos), pick(crystalMats));
 }
 
 // --------------------------------------------------------------------- decals
@@ -624,6 +631,10 @@ export class SpellFx {
 
   puff(o: PuffOpts) {
     this.puffs.spawn(o);
+  }
+
+  clear() {
+    this.puffs.clear();
   }
 
   ground(x: number, z: number) {

@@ -462,13 +462,17 @@ export class Game {
     const roots = area.monsters.map((m) => [m.body.rig.root, m.body.rig.root.visible] as const);
     for (const [r] of roots) r.visible = true;
     const culled: THREE.Object3D[] = [];
+    // One of every spell and skill effect, so the first cast doesn't stall.
+    const rehearsed = area.effects.rehearse(this.player.position);
+    if (rehearsed) area.effects.update(1 / 60);
     area.world.scene.traverse((o) => {
       if (o.frustumCulled) {
         o.frustumCulled = false;
         culled.push(o);
       }
     });
-    this.renderer.render(this.time);
+    this.renderer.render(this.time, true);
+    if (rehearsed) area.effects.clearAll();
     for (const o of culled) o.frustumCulled = true;
     for (const [r, v] of roots) r.visible = v;
   }

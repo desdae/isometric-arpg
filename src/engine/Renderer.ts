@@ -151,14 +151,15 @@ export class Renderer {
   private lastRender = 0;
   private shadowSkipped = false;
 
-  render(time: number) {
+  /** `fullShadow` always redraws the shadow map (warm-up frames). */
+  render(time: number, fullShadow = false) {
     this.grade.uniforms.time.value = time % 100;
     // Above ~125 FPS, redraw the shadow map every other frame: a shadow one
     // frame (under 8 ms) behind is invisible, and the shadow pass is the
     // costliest part of the frame for the CPU. A skipped frame keeps the old
     // shadow matrices too, so the map and its projection always match.
     const now = performance.now();
-    this.shadowSkipped = now - this.lastRender < 8 && !this.shadowSkipped;
+    this.shadowSkipped = !fullShadow && now - this.lastRender < 8 && !this.shadowSkipped;
     this.lastRender = now;
     this.renderer.shadowMap.needsUpdate = !this.shadowSkipped;
     // Walk the scene graph to update matrices once here, not in every render call.

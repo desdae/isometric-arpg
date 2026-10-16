@@ -98,7 +98,6 @@ function bolt(p: Player, ctx: PlayerContext, o: BoltOpts) {
   if (o.shard) {
     obj = new THREE.Group();
     const core = crystalMesh();
-    core.castShadow = false;
     core.rotation.x = Math.PI / 2;
     core.position.z = -o.size * 2.5;
     core.scale.set(o.size * 0.9, o.size * 5, o.size * 0.9);
