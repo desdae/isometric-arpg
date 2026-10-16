@@ -576,6 +576,8 @@ class Telemetry {
     this.dirty = false;
     try {
       await db.doc(`runs/${uid}/sessions/${this.sessionId}`).set(body);
+      // A small index doc per player, so the sessions can be found by listing `runs`.
+      if (this.writes === 0) await db.doc(`runs/${uid}`).set({ lastSession: this.sessionId, updatedAt: new Date().toISOString() }).catch(() => {});
       this.writes++;
       this.every = FLUSH_EVERY;
       this.lastError = null;
