@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Renderer } from './Renderer';
+import { RELEASE } from './build';
 
 // F3 performance overlay: FPS and frame-time graphs (with the update / render
 // / GPU split), what the renderer drew this frame, what the scene holds, and
@@ -92,7 +93,7 @@ export class DebugOverlay {
       c.height = 112;
     }
     window.addEventListener('keydown', (e) => {
-      if (e.key !== 'F3') return;
+      if (e.key !== 'F3' || RELEASE) return;
       e.preventDefault();
       this.toggle();
     });

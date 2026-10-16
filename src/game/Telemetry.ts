@@ -20,6 +20,8 @@ declare global {
     __telemetry?: unknown;
   }
 }
+import { RELEASE } from '../engine/build';
+
 declare const __BUILD_TIME__: string;
 
 /** Seconds between periodic writes while there is new data. */
@@ -173,7 +175,7 @@ class Telemetry {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') away();
       });
-      if (import.meta.env.DEV || new URLSearchParams(location.search).has('telemetry')) {
+      if (import.meta.env.DEV || (!RELEASE && new URLSearchParams(location.search).has('telemetry'))) {
         window.__telemetry = { t: this, doc: () => this.doc(), flush: () => this.flush('manual') };
       }
     } catch {

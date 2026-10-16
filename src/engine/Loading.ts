@@ -1,3 +1,5 @@
+import { RELEASE } from './build';
+
 // Loading splash: a full-screen card with a title, a progress bar and a line
 // naming the step under way. World builders report steps as they go; while
 // the splash is up each report waits for a painted frame, so the bar really
@@ -113,7 +115,7 @@ class Loading {
     // Long waits (texture baking in a worker, shader compiles) give no
     // progress of their own, so the bar creeps on toward the next step.
     this.ceiling = Math.min(this.hi, this.lo + (this.hi - this.lo) * (f + 0.2));
-    if (location.search.includes('debug')) console.log('SIM step', (performance.now() / 1000).toFixed(1), Math.round(this.shown * 100), text);
+    if (!RELEASE && location.search.includes('debug')) console.log('SIM step', (performance.now() / 1000).toFixed(1), Math.round(this.shown * 100), text);
     await nextFrame();
   }
 

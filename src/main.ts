@@ -1,7 +1,9 @@
+import './fonts/fonts';
 import * as THREE from 'three';
 import { audio } from './audio/Audio';
 import { loading } from './engine/Loading';
 import { installHeightFog } from './engine/fog';
+import { RELEASE } from './engine/build';
 import { IsoCamera } from './engine/IsoCamera';
 import { Renderer } from './engine/Renderer';
 import { DebugOverlay } from './engine/DebugOverlay';
@@ -33,8 +35,10 @@ import { MOON_OFFSET, type World } from './world/World';
 
 installHeightFog();
 
-const params = new URLSearchParams(location.search);
-const bench = benchFlags(params);
+// A release build ignores the testing switches in the address (see build.ts).
+const params = new URLSearchParams(RELEASE ? '' : location.search);
+const hash = RELEASE ? '' : location.hash.slice(1);
+const bench = RELEASE ? null : benchFlags(params);
 // A benchmark run builds the same world every time.
 if (bench) Math.random = mulberry32(20261013);
 const hud = document.getElementById('hud')!;
@@ -43,7 +47,7 @@ if (!params.has('debug')) hud.style.visibility = 'hidden';
 
 const t0 = performance.now();
 // Artifacts only pass a bare #anchor, so the hash also picks the starting area.
-const sceneName = bench ? 'zone' : (params.get('scene') ?? (location.hash.slice(1) || 'town'));
+const sceneName = bench ? 'zone' : (params.get('scene') ?? (hash || 'town'));
 
 const cam = new IsoCamera(window.innerWidth / window.innerHeight, document.body);
 const renderer = new Renderer(document.body, new THREE.Scene(), cam.camera);
@@ -139,7 +143,7 @@ if (sceneName === 'test' || sceneName === 'character') {
 } else {
   // Normal play starts at the character roster. Views opened straight to an
   // area (?scene=, #zone, the benchmark) skip it and play an unsaved hero.
-  const direct = !!bench || params.has('scene') || location.hash.length > 1;
+  const direct = !!bench || params.has('scene') || hash.length > 0;
   let character: CharacterSave | null = null;
   if (!direct) {
     document.getElementById('boot')?.remove();
@@ -179,10 +183,12 @@ const freeCam = params.has('x') || params.has('z');
 if (freeCam) cam.target.set(Number(params.get('x') ?? 0), 0, Number(params.get('z') ?? 0));
 if (params.has('ty')) cam.target.y += Number(params.get('ty'));
 // Scripting hooks for automated screenshots.
-(window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
-(window as unknown as { __THREE: typeof THREE }).__THREE = THREE;
-(window as unknown as { __renderer: Renderer }).__renderer = renderer;
-(window as unknown as { __audio: typeof audio }).__audio = audio;
+if (!RELEASE) {
+  (window as unknown as { __game: Game | null; __THREE: typeof THREE }).__game = game;
+  (window as unknown as { __THREE: typeof THREE }).__THREE = THREE;
+  (window as unknown as { __renderer: Renderer }).__renderer = renderer;
+  (window as unknown as { __audio: typeof audio }).__audio = audio;
+}
 if (params.has('walk') && game) {
   const [wx, wz] = params.get('walk')!.split(',').map(Number);
   setTimeout(() => game!.player.moveTo(new THREE.Vector3(wx, 0, wz)), 500);
