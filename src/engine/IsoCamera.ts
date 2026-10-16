@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { settings } from '../game/Settings';
 
 // ARPG-style camera: a narrow-FOV perspective camera looking down at a fixed
 // yaw and pitch, orbiting a ground target. Narrow FOV keeps the near-isometric
 // look while still giving buildings real depth. WASD/arrows pan, the wheel
-// zooms, Q/E rotate in 45 degree steps.
+// zooms, the rotate keys (Q/E unless rebound) turn in 45 degree steps.
 
 export class IsoCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -25,8 +26,8 @@ export class IsoCamera {
     this.camera = new THREE.PerspectiveCamera(30, aspect, 1, 400);
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.key.toLowerCase());
-      if (e.key.toLowerCase() === 'q') this.targetYaw -= Math.PI / 4;
-      if (e.key.toLowerCase() === 'e') this.targetYaw += Math.PI / 4;
+      if (settings.is('rotateLeft', e)) this.targetYaw -= Math.PI / 4;
+      if (settings.is('rotateRight', e)) this.targetYaw += Math.PI / 4;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     dom.addEventListener(

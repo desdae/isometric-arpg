@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Music, type Mood } from './Music';
+import { settings } from '../game/Settings';
 
 // All sound is synthesised at runtime with Web Audio: no audio files. Sound
 // effects are built per event from oscillators and filtered noise; positional
@@ -22,6 +23,11 @@ class AudioEngine {
   private master!: GainNode;
   sfx!: GainNode;
   private amb!: GainNode;
+  /** Volume buses from the options: effects (sfx, ambience and their reverb) and music. */
+  private fxBus!: GainNode;
+  private fxSend!: GainNode;
+  private musicBus!: GainNode;
+  private musicSend!: GainNode;
   /** Shared reverb send; everything that should sit in the space feeds it. */
   reverb!: ConvolverNode;
   private noise!: AudioBuffer;
@@ -61,7 +67,7 @@ class AudioEngine {
     comp.attack.value = 0.005;
     comp.release.value = 0.2;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.9;
+    this.master.gain.value = this.masterLevel();
     // Brick-wall limiter so stacked hits never clip.
     const limit = ctx.createDynamicsCompressor();
     limit.threshold.value = -3;
@@ -70,17 +76,31 @@ class AudioEngine {
     limit.attack.value = 0.001;
     limit.release.value = 0.1;
     this.master.connect(comp).connect(limit).connect(ctx.destination);
+    const vol = settings.data.volume;
+    this.fxBus = ctx.createGain();
+    this.fxBus.gain.value = vol.effects;
+    this.fxBus.connect(this.master);
+    this.musicBus = ctx.createGain();
+    this.musicBus.gain.value = vol.music;
+    this.musicBus.connect(this.master);
     this.sfx = ctx.createGain();
     this.sfx.gain.value = 0.85;
-    this.sfx.connect(this.master);
+    this.sfx.connect(this.fxBus);
     this.amb = ctx.createGain();
     this.amb.gain.value = 0.5;
-    this.amb.connect(this.master);
+    this.amb.connect(this.fxBus);
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.impulse(3.2, 2.6);
     const wet = ctx.createGain();
     wet.gain.value = 0.35;
     this.reverb.connect(wet).connect(this.master);
+    // The reverb is shared, so each bus scales what it sends into it.
+    this.fxSend = ctx.createGain();
+    this.fxSend.gain.value = vol.effects;
+    this.fxSend.connect(this.reverb);
+    this.musicSend = ctx.createGain();
+    this.musicSend.gain.value = vol.music;
+    this.musicSend.connect(this.reverb);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
@@ -88,7 +108,8 @@ class AudioEngine {
     this.shaper = distortionCurve(40);
 
     this.startAmbience();
-    this.music = new Music(ctx, this.master, this.reverb);
+    this.music = new Music(ctx, this.musicBus, this.musicSend);
+    settings.watch(() => this.applyVolume());
     this.music.setArea(this.area);
     this.music.start();
   }
@@ -100,8 +121,29 @@ class AudioEngine {
     } catch {
       /* storage unavailable */
     }
-    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(this.masterLevel(), this.ctx.currentTime, 0.05);
     this.onMuteChange(this.muted);
+  }
+
+  private masterLevel() {
+    return this.muted ? 0 : 0.9 * settings.data.volume.master;
+  }
+
+  /** Follows the volume sliders, with a short glide so drags do not click. */
+  private applyVolume() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const v = settings.data.volume;
+    const t = ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.masterLevel(), t, 0.03);
+    for (const g of [this.fxBus, this.fxSend]) g.gain.setTargetAtTime(v.effects, t, 0.03);
+    for (const g of [this.musicBus, this.musicSend]) g.gain.setTargetAtTime(v.music, t, 0.03);
+  }
+
+  /** A sample hit while the effects slider moves, at most a few a second. */
+  preview() {
+    if (!this.ready() || this.busy('preview', 0.16)) return;
+    this.hit(this.listener, false, true);
   }
 
   /** Hero position and camera orientation, once per frame. */
@@ -177,7 +219,7 @@ class AudioEngine {
     if (send > 0) {
       const s = ctx.createGain();
       s.gain.value = send;
-      p.connect(s).connect(this.reverb);
+      p.connect(s).connect(this.fxSend);
     }
     return g;
   }

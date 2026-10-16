@@ -1,6 +1,7 @@
 import { CLASSES, TABARDS, classDef, tabard } from './Classes';
 import { MAX_SLOTS, SAVE_VERSION, deleteSave, listSlots, newCharacter, storage, writeSave, type CharacterSave, type SlotEntry } from './Save';
 import { esc } from './Inventory';
+import { options } from './Options';
 
 // The first screen: a roster of character slots down the left, the chosen
 // slot on the right. A filled slot shows the hero and plays them; an empty
@@ -55,6 +56,10 @@ const CSS = `
   .csel-btn.danger { color: #e09080; }
   .csel-err { color: #e08060; font-size: 14px; min-height: 20px; margin-top: 6px; }
   .csel-confirm { color: #f0b090; font-style: italic; }
+  .csel-opts { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); right: 16px; }
+  @media (max-width: 720px) { .csel-opts { position: static; display: flex; justify-content: center; margin-top: 22px; } }
+  .csel-opts .csel-btn { background: rgba(0,0,0,.35); border-color: #3a1a14; color: #c8a888; }
+  .csel-opts .csel-btn:hover { border-color: #c0703a; color: #f0d8b8; }
 `;
 
 const fmtTime = (s: number) => {
@@ -130,6 +135,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
         <p class="csel-sub">${used} of ${MAX_SLOTS} slots taken</p>
         ${canStore ? '' : '<div class="csel-warn">This browser is blocking site storage, so heroes made now will be lost when the page closes.</div>'}
         <div class="csel-cols"><div class="csel-list">${list}</div><div class="csel-panel">${panel()}</div></div>
+        <div class="csel-opts"><button type="button" class="csel-btn" data-options>Options</button></div>
       </div>`;
       root.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) =>
         b.addEventListener('click', () => {
@@ -138,6 +144,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
           render();
         }),
       );
+      root.querySelector('[data-options]')!.addEventListener('click', () => options().show());
       wire();
     };
 

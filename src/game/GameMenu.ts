@@ -1,5 +1,5 @@
-// The pause menu (Escape, or the Menu button): resume, or save and go back
-// to the character roster.
+// The pause menu (Escape, or the Menu button): resume, options, or save and
+// go back to the character roster.
 
 const CSS = `
   .gmenu { position: fixed; inset: 0; z-index: 28; display: grid; place-items: center; padding: 0 16px; background: rgba(5,1,1,.6); }
@@ -15,6 +15,7 @@ export class GameMenu {
   private el: HTMLDivElement;
   private sub: HTMLParagraphElement;
   onQuit: () => void = () => {};
+  onOptions: () => void = () => {};
 
   constructor() {
     const style = document.createElement('style');
@@ -25,6 +26,7 @@ export class GameMenu {
     this.el.hidden = true;
     this.el.innerHTML = `<div class="gmenu-box"><h3>Paused</h3><p></p>
       <button type="button" data-resume>Resume</button>
+      <button type="button" data-options>Options</button>
       <button type="button" data-quit>Save and Change Hero</button></div>`;
     this.sub = this.el.querySelector('p')!;
     this.el.addEventListener('pointerdown', (e) => {
@@ -32,6 +34,7 @@ export class GameMenu {
       if (e.target === this.el) this.toggle(false);
     });
     this.el.querySelector('[data-resume]')!.addEventListener('click', () => this.toggle(false));
+    this.el.querySelector('[data-options]')!.addEventListener('click', () => this.onOptions());
     this.el.querySelector('[data-quit]')!.addEventListener('click', () => this.onQuit());
     document.body.appendChild(this.el);
   }

@@ -1,5 +1,8 @@
 import type { Stats } from './Stats';
 import { BELT_KEYS, SKILL, type SkillId } from './Skills';
+import { settings } from './Settings';
+
+const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 // The in-game HUD: life and mana orbs, the skill belt with potions and the
 // experience bar, gold, the target frame, area banners, the hurt vignette,
@@ -191,12 +194,12 @@ export class Hud {
     root.className = 'hud';
     root.innerHTML = `
       <div class="hud-hurt"></div>
-      <div class="help"><b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br><b>Right click, 2–5</b> skills, aimed at the cursor<br><b>1</b> potion · <b>T</b> town portal · <b>K</b> skill tree<br><b>I</b> inventory · <b>L</b> quests · <b>N</b> sound · <b>F3</b> debug<br><b>M / Tab</b> map · <b>+/−</b> minimap zoom<br><b>Wheel</b> zoom · <b>Q/E</b> rotate</div>
+      <div class="help"></div>
       <div class="target" style="opacity:0"><div class="target-name"></div><div class="target-bar"><div class="target-fill"></div></div><div class="target-sub"></div></div>
       <div class="banner"><h2></h2><p></p></div>
       <div class="tracker"><div class="objectives" hidden><h3></h3><ul></ul></div><div class="quests" hidden title="Open the quest log (L)"><h3>Quests</h3><ul></ul></div></div>
       <div class="journal" hidden></div>
-      <div class="menu"><button type="button" data-act="menu">Menu</button><button type="button" data-act="mute" title="Sound (N)">Sound on</button><button type="button" data-act="skills">Skills (K)<span class="badge" hidden></span></button><button type="button" data-act="quests">Quests (L)</button><button type="button" data-act="inv">Inventory (I)</button></div>
+      <div class="menu"><button type="button" data-act="menu">Menu</button><button type="button" data-act="mute" title="Sound (N)">Sound on</button><button type="button" data-act="skills"><span class="lbl">Skills</span><span class="badge" hidden></span></button><button type="button" data-act="quests">Quests</button><button type="button" data-act="inv">Inventory</button></div>
       <div class="hud-bottom">
         <div class="orb life"><div class="orb-fill"></div><div class="orb-glass"></div><div class="orb-text"></div></div>
         <div class="belt">
@@ -264,6 +267,31 @@ export class Hud {
     this.death.addEventListener('pointerdown', (e) => e.stopPropagation());
     document.body.appendChild(this.death);
     setTimeout(() => (this.help.style.opacity = '0.55'), 20000);
+    settings.watch(() => this.drawKeys());
+  }
+
+  /** Every key shown on the HUD follows the bindings in the options. */
+  private drawKeys() {
+    const k = (a: Parameters<typeof settings.keyOf>[0]) => settings.keyOf(a);
+    const r = this.root;
+    this.skillSlots.forEach((el, i) => (el.querySelector('.key')!.textContent = settings.beltLabel(i)));
+    r.querySelector('.slot[data-act="potion"] .key')!.textContent = k('potion');
+    r.querySelector('.slot[data-act="portal"] .key')!.textContent = k('portal');
+    r.querySelector('[data-act="skills"] .lbl')!.textContent = `Skills (${k('skills')})`;
+    r.querySelector('[data-act="quests"]')!.textContent = `Quests (${k('quests')})`;
+    r.querySelector('[data-act="inv"]')!.textContent = `Inventory (${k('inventory')})`;
+    this.muteBtn.title = `Sound (${k('mute')})`;
+    r.querySelector<HTMLElement>('.quests')!.title = `Open the quest log (${k('quests')})`;
+    const skills = [1, 2, 3, 4].map((i) => settings.beltLabel(i)).filter((l) => l !== '–');
+    const ks = (a: Parameters<typeof settings.keysOf>[0]) => settings.keysOf(a);
+    this.help.innerHTML =
+      `<b>Left click</b> move, attack, talk, pick up · hold to keep swinging<br>` +
+      `<b>Right click${skills.length ? `, ${esc(skills.join(' '))}` : ''}</b> skills, aimed at the cursor<br>` +
+      `<b>${esc(k('potion'))}</b> potion · <b>${esc(k('portal'))}</b> town portal · <b>${esc(k('skills'))}</b> skill tree<br>` +
+      `<b>${esc(k('inventory'))}</b> inventory · <b>${esc(k('quests'))}</b> quests · <b>${esc(k('mute'))}</b> sound · <b>Esc</b> menu<br>` +
+      `<b>${esc(ks('map'))}</b> map · <b>${esc(k('zoomIn'))}/${esc(k('zoomOut'))}</b> minimap zoom<br>` +
+      `<b>Wheel</b> zoom · <b>${esc(k('rotateLeft'))}/${esc(k('rotateRight'))}</b> rotate`;
+    this.beltKey = '';
   }
 
   private strikeKind = 'melee';
@@ -303,7 +331,7 @@ export class Hud {
         el.querySelector('svg')?.remove();
         el.classList.toggle('empty', !id);
         if (!id) {
-          el.title = 'Empty: learn an active skill in the skill tree (K)';
+          el.title = `Empty: learn an active skill in the skill tree (${settings.keyOf('skills')})`;
           return;
         }
         const d = SKILL[id];
@@ -385,7 +413,6 @@ export class Hud {
   showJournal(entries: JournalEntry[] | null) {
     this.journal.hidden = entries === null;
     if (!entries) return;
-    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
     this.journal.innerHTML = `<h3>Quest Log <button type="button">Close</button></h3>${
       entries.length
         ? entries

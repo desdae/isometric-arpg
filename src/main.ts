@@ -25,6 +25,7 @@ import { KINDS, type MonsterKind } from './actors/Monster';
 import { monsterMaterials } from './actors/monsters/materials';
 import type { Rig } from './actors/Rig';
 import { Game } from './game/Game';
+import { settings, SHADOW_SIZE } from './game/Settings';
 import { chooseCharacter } from './game/CharacterSelect';
 import { classDef, tabard } from './game/Classes';
 import type { CharacterSave } from './game/Save';
@@ -49,6 +50,9 @@ const renderer = new Renderer(document.body, new THREE.Scene(), cam.camera);
 const environment = buildEnvironment(renderer.renderer);
 const sky = new Sky();
 window.addEventListener('resize', () => cam.resize(window.innerWidth / window.innerHeight));
+// Graphics options apply live; a benchmark always runs at the defaults.
+const debugHud = params.has('debug');
+if (!bench) settings.watch((s) => renderer.applyGraphics(s.graphics));
 
 async function knight(tabardRgb: [number, number, number] = tabard(undefined).rgb): Promise<Character> {
   const [metal, cloth, mail] = await bakeSurfaces([
@@ -239,6 +243,13 @@ function frame() {
   cam.update(dt);
   if (game) cam.camera.position.add(game.shake());
   const moon = world.moon;
+  const shadowSize = bench ? 2048 : SHADOW_SIZE[settings.data.graphics.shadows];
+  if (moon.shadow.mapSize.x !== shadowSize) {
+    // A new size takes a new map; the shader only reads its size from a uniform.
+    moon.shadow.mapSize.set(shadowSize, shadowSize);
+    moon.shadow.map?.dispose();
+    moon.shadow.map = null;
+  }
   // Characters cast through shadow-only meshes on their own layer (see skinRig).
   moon.shadow.camera.layers.enable(SHADOW_LAYER);
   // Fit the shadow box to the ground the camera actually sees (with headroom
@@ -295,7 +306,9 @@ function frame() {
     const fps = frames / fpsTime;
     frames = 0;
     fpsTime = 0;
-    hud.textContent = `${fps.toFixed(0)} fps · world generated in ${genMs.toFixed(0)} ms`;
+    hud.textContent = debugHud ? `${fps.toFixed(0)} fps · world generated in ${genMs.toFixed(0)} ms` : `${fps.toFixed(0)} fps`;
+    // The frame rate shows with ?debug, or when the options ask for it.
+    if (!debugHud) hud.style.visibility = game && settings.data.showFps ? 'visible' : 'hidden';
   }
   requestAnimationFrame(frame);
 }

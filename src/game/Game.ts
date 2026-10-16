@@ -4,6 +4,8 @@ import { loading } from '../engine/Loading';
 import type { IsoCamera } from '../engine/IsoCamera';
 import type { Renderer } from '../engine/Renderer';
 import { Mist, type Sky } from '../engine/Atmosphere';
+import { settings } from './Settings';
+import { options } from './Options';
 import { Dialogue } from '../engine/Dialogue';
 import { Player } from '../actors/Player';
 import { Monster } from '../actors/Monster';
@@ -160,6 +162,12 @@ export class Game {
     this.waypointMenu.onTravel = (to) => {
       if (!this.travelling && !this.player.dead) void this.enter(to as AreaName, 'waypoint');
     };
+    this.menu.onOptions = () => {
+      audio.click();
+      options().show();
+    };
+    // Graphics options that live in each area: the drifting mist.
+    settings.watch((st) => this.area?.mist.setDensity(st.graphics.mist));
     this.menu.onQuit = () => {
       this.saveNow();
       location.reload();
@@ -246,6 +254,7 @@ export class Game {
       const mist = world.indoor
         ? new Mist(Math.min(world.extent, 60), world.heightAt, 90, new THREE.Color(0.42, 0.05, 0.035), 13)
         : new Mist(Math.min(world.extent, 60), world.heightAt, 110);
+      mist.setDensity(settings.data.graphics.mist);
       scene.add(mist.group);
       const effects = new Effects(world.heightAt);
       scene.add(effects.group);
@@ -375,6 +384,7 @@ export class Game {
       if (prev !== area && prev.world.indoor && prev.world.script?.finished) this.discard(prev);
     }
     this.area = area;
+    area.mist.setDensity(settings.data.graphics.mist);
     // The gaol is one run, both levels: walk out of it (other than by town
     // portal) and the next descent digs a new one.
     if (name !== 'gaol1' && name !== 'gaol2' && !(name === 'town' && entry === 'portal')) {
@@ -903,27 +913,49 @@ export class Game {
     });
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
-      const k = e.key.toLowerCase();
-      if (k === '1') this.player.drinkPotion(this.playerCtx());
-      if (k >= '2' && k <= '5') this.castSlot(Number(k) - 1);
-      if (k === 'k') this.toggleTree();
-      if (k === 'i' || k === 'b') {
-        this.inventory.toggle();
-        audio.click();
-      }
-      if (k === 'n') audio.toggleMute();
-      if (k === 'm' || e.key === 'Tab') {
-        e.preventDefault();
-        if (this.area) {
+      // A bound key never reaches the browser (Tab would move focus).
+      const act = settings.actionFor(e);
+      if (act && !e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
+      switch (act) {
+        case 'potion':
+          this.player.drinkPotion(this.playerCtx());
+          break;
+        case 'skill1':
+        case 'skill2':
+        case 'skill3':
+        case 'skill4':
+          this.castSlot(Number(act.slice(5)));
+          break;
+        case 'skills':
+          this.toggleTree();
+          break;
+        case 'inventory':
+          this.inventory.toggle();
           audio.click();
-          this.minimap.toggleOverlay();
-        }
+          break;
+        case 'mute':
+          audio.toggleMute();
+          break;
+        case 'map':
+          if (this.area) {
+            audio.click();
+            this.minimap.toggleOverlay();
+          }
+          break;
+        case 'zoomIn':
+          this.minimap.zoom(1);
+          break;
+        case 'zoomOut':
+          this.minimap.zoom(-1);
+          break;
+        case 'portal':
+          void this.openPortal();
+          break;
+        case 'quests':
+          this.toggleJournal();
+          break;
       }
-      if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') this.minimap.zoom(1);
-      if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') this.minimap.zoom(-1);
-      if (k === 't') void this.openPortal();
-      if (k === 'l' || k === 'j') this.toggleJournal();
-      if (k === 'escape') {
+      if (e.key === 'Escape') {
         // Escape closes whatever is open; with nothing open it brings up the menu.
         const any = this.inventory.open || this.hud.journalOpen || this.tree.open || this.menu.open || this.waypointMenu.open || this.minimap.overlayOpen;
         this.minimap.toggleOverlay(false);
@@ -1065,7 +1097,7 @@ export class Game {
 
   /** Camera shake from the current area's effects. */
   shake(): THREE.Vector3 {
-    return this.area ? this.area.effects.shakeOffset(this.time) : new THREE.Vector3();
+    return this.area ? this.area.effects.shakeOffset(this.time).multiplyScalar(settings.data.shake) : new THREE.Vector3();
   }
 
   get world(): World | null {

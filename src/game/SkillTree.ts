@@ -1,5 +1,6 @@
 import type { Stats } from './Stats';
-import { BELT_KEYS, BRANCHES, SKILLS, TIER_NEEDS, type SkillId } from './Skills';
+import { settings } from './Settings';
+import { BRANCHES, SKILLS, TIER_NEEDS, type SkillId } from './Skills';
 
 // The skill tree screen: three branch columns, three tiers each. Click a
 // skill to spend a point on it; an active skill's key chip moves it along
@@ -109,7 +110,7 @@ export class SkillTree {
             const cls = locked ? 'locked' : r >= d.maxRank ? 'max' : why ? (r ? '' : 'unlearned') : 'can';
             const pips = Array.from({ length: d.maxRank }, (_, i) => `<i class="${i < r ? 'on' : ''}"></i>`).join('');
             const slot = s.belt.indexOf(d.id);
-            const chip = d.active && r > 0 ? `<span class="keychip" data-key="${d.id}" title="Move to the next belt key">${slot >= 0 ? BELT_KEYS[slot] : 'Unbound'} ⟳</span>` : `<span class="kind">${d.active ? 'Active' : 'Passive'}</span>`;
+            const chip = d.active && r > 0 ? `<span class="keychip" data-key="${d.id}" title="Move to the next belt key">${slot >= 0 ? settings.beltLabel(slot) : 'Unbound'} ⟳</span>` : `<span class="kind">${d.active ? 'Active' : 'Passive'}</span>`;
             const now = r > 0 ? `<div class="tx">${d.text(r)}</div>` : `<div class="tx">${d.text(1)}</div>`;
             const next = r > 0 && r < d.maxRank ? `<div class="nx">Next rank: ${d.text(r + 1)}</div>` : '';
             const meta = d.active ? `<div class="meta">${d.cost?.(Math.max(1, r)) ?? 0} mana${d.cooldown?.(1) ? ` · ${d.cooldown(1)}s cooldown` : ''}${d.id === 'bloodNova' ? ' · costs 12% of your life' : ''}</div>` : '';

@@ -137,6 +137,27 @@ export class Renderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /**
+   * Applies the graphics options. None of them changes a shader, so nothing
+   * recompiles: AO and bloom are passes, MSAA is the scene target's sample
+   * count, and resolution is the pixel ratio.
+   */
+  applyGraphics(g: { ao: boolean; bloom: boolean; msaa: boolean; maxDpr: number; scale: number }) {
+    this.ao.enabled = g.ao;
+    this.bloom.enabled = g.bloom;
+    const t = this.composer.renderTarget2;
+    const samples = g.msaa ? 4 : 0;
+    if (t.samples !== samples) {
+      t.samples = samples;
+      t.dispose();
+    }
+    const pr = Math.min(window.devicePixelRatio, g.maxDpr) * g.scale;
+    if (Math.abs(this.renderer.getPixelRatio() - pr) > 1e-3) {
+      this.renderer.setPixelRatio(pr);
+      this.composer.setPixelRatio(pr);
+    }
+  }
+
   /** Switches the rendered scene (travelling between areas). */
   setScene(scene: THREE.Scene) {
     this.renderPass.scene = scene;
@@ -165,9 +186,10 @@ export class Renderer {
     // Walk the scene graph to update matrices once here, not in every render call.
     const scene = this.renderPass.scene;
     this.grade.uniforms.aoIntensity.value = this.ao.enabled ? this.ao.blendIntensity : 0;
-    // The scene (and the bloom added onto it) must land in the multisampled target.
+    // The scene (and the bloom added onto it) must land in the multisampled
+    // target, which also holds the depth texture AO reads.
     const c = this.composer;
-    if (c.readBuffer.samples === 0 && c.writeBuffer.samples > 0) c.swapBuffers();
+    if (c.readBuffer !== c.renderTarget2) c.swapBuffers();
     scene.matrixWorldAutoUpdate = false;
     scene.updateMatrixWorld();
     this.composer.render();

@@ -113,9 +113,16 @@ export class Mist {
     return Math.max(this.cell(i, j), this.cell(i + 1, j), this.cell(i, j + 1), this.cell(i + 1, j + 1));
   }
 
+  /** Draws only a share of the cards (the graphics options' ground mist). */
+  setDensity(f: number) {
+    const n = Math.round(this.cards.length * Math.min(1, Math.max(0, f)));
+    this.mesh.count = n;
+    this.mesh.visible = n > 0;
+  }
+
   update(dt: number) {
     const e = this.extent;
-    for (let i = 0; i < this.cards.length; i++) {
+    for (let i = 0; i < this.mesh.count; i++) {
       const c = this.cards[i];
       const p = c.pos;
       p.x += c.vel.x * dt;
