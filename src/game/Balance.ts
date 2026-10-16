@@ -71,3 +71,13 @@ export const LEECH_RESERVE = 0.04;
 export function signatureMult(level: number) {
   return 4 + 3.4 * (1 - Math.exp(-Math.max(0, level - 3) / 3));
 }
+
+/**
+ * Monsters never fall more than one level below the hero, so the early zones
+ * stay dangerous to an over-levelled hero instead of turning into a faceroll.
+ * Game keeps this in step with the hero's level.
+ */
+export const heroLevel = { value: 1 };
+export function levelFloor() {
+  return Math.min(LEVEL_CAP, heroLevel.value - 1);
+}

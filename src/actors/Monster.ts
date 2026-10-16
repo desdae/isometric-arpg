@@ -4,7 +4,7 @@ import type { NavGrid } from '../world/NavGrid';
 import type { HeightFn } from '../procgen/terrain';
 import type { Combatant } from '../game/Combat';
 import { mitigate, rollDamage } from '../game/Combat';
-import { monsterArmorScale, monsterDamageScale, monsterLifeScale, signatureMult } from '../game/Balance';
+import { levelFloor, monsterArmorScale, monsterDamageScale, monsterLifeScale, signatureMult } from '../game/Balance';
 import { Telegraph, type Shape } from '../game/Telegraph';
 import type { Effects } from '../game/Effects';
 import type { FloatingText } from '../game/Combat';
@@ -508,12 +508,12 @@ export class Monster implements Combatant {
   readonly radius: number;
   readonly height: number;
   readonly name: string;
-  readonly level: number;
+  level: number;
   readonly elite: boolean;
   /** Invisible pick volume for the mouse. */
   readonly hit: THREE.Mesh;
-  hp: number;
-  maxHp: number;
+  hp = 0;
+  maxHp = 0;
   state: State = 'idle';
   protected yaw = Math.random() * Math.PI * 2;
   protected speed = 0;
@@ -521,8 +521,8 @@ export class Monster implements Combatant {
   protected repath = 0;
   protected cooldown = 0;
   protected idleTimer = 1 + Math.random() * 4;
-  protected dmg: [number, number];
-  protected armor: number;
+  protected dmg: [number, number] = [0, 0];
+  protected armor = 0;
   protected flinchCd = 0;
   /** Seconds since death; corpses sink and are removed later. */
   deadFor = 0;
@@ -540,12 +540,7 @@ export class Monster implements Combatant {
     this.elite = !!spawn.elite;
     this.level = spawn.level;
     this.body = this.def.build(mats, Math.floor(Math.random() * 1e6), this.elite, !!spawn.boss);
-    // Level curves live in game/Balance.ts.
-    const eliteMul = spawn.boss ? 7 : this.elite ? 3.2 : 1;
-    this.maxHp = this.hp = Math.round(this.def.hp * monsterLifeScale(spawn.level) * eliteMul);
-    const dm = monsterDamageScale(spawn.level) * (spawn.boss ? 1.7 : this.elite ? 1.5 : 1);
-    this.dmg = [this.def.dmg[0] * dm, this.def.dmg[1] * dm];
-    this.armor = this.def.armor * monsterArmorScale(spawn.level);
+    this.relevel(Math.max(spawn.level, levelFloor()));
     this.radius = this.def.radius * (spawn.boss ? 1.9 : this.elite ? 1.2 : 1);
     this.height = this.def.height * (spawn.boss ? 2 : this.elite ? 1.2 : 1);
     this.name = spawn.elite ?? this.def.name;
@@ -592,8 +587,23 @@ export class Monster implements Combatant {
     return dealt;
   }
 
+  /** Sets its level and the stats that follow from it (curves in game/Balance.ts), keeping its share of life. */
+  relevel(level: number) {
+    const frac = this.maxHp ? this.hp / this.maxHp : 1;
+    this.level = level;
+    const boss = !!this.spawn.boss;
+    const eliteMul = boss ? 7 : this.elite ? 3.2 : 1;
+    this.maxHp = Math.round(this.def.hp * monsterLifeScale(level) * eliteMul);
+    this.hp = Math.max(1, Math.round(this.maxHp * frac));
+    const dm = monsterDamageScale(level) * (boss ? 1.7 : this.elite ? 1.5 : 1);
+    this.dmg = [this.def.dmg[0] * dm, this.def.dmg[1] * dm];
+    this.armor = this.def.armor * monsterArmorScale(level);
+  }
+
   update(dt: number, ctx: MonsterContext) {
     const rig = this.body.rig;
+    // Catch up with an out-levelling hero, but never mid-fight.
+    if (!this.awake && this.state !== 'dead' && levelFloor() > this.level) this.relevel(levelFloor());
     ctx.effects.spell.frostTint(this, this.state === 'dead' ? 0 : this.chilled > 0 ? (this.stunned > 0 ? 2 : 1) : 0, dt);
     if (this.sig && (this.state === 'dead' || this.stunned > 0)) this.cancelSignature();
     if (this.state === 'dead') {

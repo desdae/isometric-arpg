@@ -30,6 +30,7 @@ import { PortalFx } from './Portal';
 import type { DialogueAction } from '../engine/Dialogue';
 import type { Character } from '../actors/Character';
 import { telemetry } from './Telemetry';
+import { heroLevel } from './Balance';
 
 // Runs the playable game: keeps each area (town, wasteland) alive once built,
 // moves the hero between them through the gates, routes mouse and keyboard
@@ -957,6 +958,7 @@ export class Game {
     const hunted = a.monsters.some((m) => m.alive && m.awake && (m.state === 'chase' || m.state === 'attack') && m.position.distanceTo(p.position) < 26);
     audio.setMood(hunted && !p.dead ? 'combat' : 'explore');
     telemetry.tick(dt, a.name, this.stats, hunted && !p.dead);
+    heroLevel.value = this.stats.level;
     audio.update(dt);
     if (w.npcs) for (const n of w.npcs) n.update(dt, p.position);
     a.effects.update(dt);
