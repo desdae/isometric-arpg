@@ -37,6 +37,8 @@ for (const p of prompts) {
     const body = await res.json().catch(() => null);
     if (!res.ok || !body?.result?.image) {
       console.error(`${p.id} (seed ${seed}) failed: ${res.status} ${JSON.stringify(body?.errors ?? body)}`);
+      // 4006: the account's daily Workers AI allocation is used up, so every later call fails too.
+      if (body?.errors?.some((e) => e.code === 4006)) process.exit(1);
       continue;
     }
     fs.writeFileSync(file, Buffer.from(body.result.image, 'base64'));

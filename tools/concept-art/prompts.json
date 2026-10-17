@@ -1,20 +1,108 @@
 {
   "model": "@cf/black-forest-labs/flux-1-schnell",
   "steps": 8,
-  "seeds": [11, 23, 47],
-  "style": "Dark gothic fantasy concept art for an isometric action RPG, painterly, muted desaturated palette with candlelight amber and blood red accents, heavy fog, dramatic rim light, high detail, no text, no watermark",
+  "seeds": [
+    11,
+    23,
+    47
+  ],
+  "style": "Dark gothic fantasy concept art for an isometric action RPG, painterly, muted desaturated palette with candlelight amber and blood red accents, heavy fog, dramatic rim light, high detail, no text, no lettering, no logo, no signature, no watermark",
   "prompts": [
-    { "id": "zone-drowned-parish", "prompt": "Isometric view of a flooded medieval parish at dusk, half-sunken chapels and gravestones in black water, rotting boardwalks, lanterns on poles, a cracked bell tower leaning over the marsh" },
-    { "id": "zone-bell-foundry", "prompt": "Isometric view of a ruined bell foundry carved into a hillside, cold furnaces, giant cracked bronze bells lying in the ash, chains and scaffolding, embers drifting" },
-    { "id": "zone-pilgrim-road", "prompt": "Isometric view of a pilgrims' road through dead orchards, gibbets and wayside shrines, abandoned carts, crows, distant cathedral silhouette under a blood moon" },
-    { "id": "dungeon-ossuary", "prompt": "Isometric dungeon interior, an ossuary crypt with walls of stacked skulls, narrow vaulted corridors, candle niches, a sunken sarcophagus chamber, green grave light" },
-    { "id": "dungeon-belfry-catacomb", "prompt": "Isometric dungeon interior, catacombs beneath a cathedral, rope-hung bells in the ceiling, collapsed pews, flooded sections, iron cages" },
-    { "id": "mob-bellringer-ghoul", "prompt": "Character concept sheet, front and side view, a gaunt ghoul in a torn bell-ringer's cassock dragging a bronze handbell on a chain, hollow eyes, grey skin" },
-    { "id": "mob-drowned-penitent", "prompt": "Character concept sheet, front and side view, a drowned penitent monk, bloated, wrapped in wet sackcloth and chains, waterweed in the hair, holding a rusted censer" },
-    { "id": "mob-carrion-crawler", "prompt": "Creature concept sheet, side and top view, a many-legged carrion crawler made of fused corpses and spider limbs, bone plates, dripping ichor" },
-    { "id": "boss-the-silent-abbess", "prompt": "Boss concept art, a towering undead abbess in a tattered black habit, her face hidden by a cracked bronze bell worn like a veil, ribbons of shadow, a crowd of kneeling dead around her" },
-    { "id": "boss-foundry-colossus", "prompt": "Boss concept art, a hulking colossus forged from melted church bells and slag, molten cracks glowing, a bell clapper for a fist, chains trailing" },
-    { "id": "fx-hallowed-fire", "prompt": "Spell effect concept sheet on a black background, a burst of holy golden fire with embers and smoke trails, several stages from ignition to fade" },
-    { "id": "fx-grave-frost", "prompt": "Spell effect concept sheet on a black background, a nova of pale blue grave frost with ice shards and ghostly mist, several stages from cast to fade" }
+    {
+      "id": "zone-drowned-parish",
+      "prompt": "Isometric view of a flooded medieval parish at dusk, half-sunken chapels and gravestones in black water, rotting boardwalks, lanterns on poles, a cracked bell tower leaning over the marsh"
+    },
+    {
+      "id": "zone-bell-foundry",
+      "prompt": "Isometric view of a ruined bell foundry carved into a hillside, cold furnaces, giant cracked bronze bells lying in the ash, chains and scaffolding, embers drifting"
+    },
+    {
+      "id": "zone-pilgrim-road",
+      "prompt": "Isometric view of a pilgrims' road through dead orchards, gibbets and wayside shrines, abandoned carts, crows, distant cathedral silhouette under a blood moon"
+    },
+    {
+      "id": "dungeon-ossuary",
+      "prompt": "Isometric dungeon interior, an ossuary crypt with walls of stacked skulls, narrow vaulted corridors, candle niches, a sunken sarcophagus chamber, green grave light"
+    },
+    {
+      "id": "dungeon-belfry-catacomb",
+      "prompt": "Isometric dungeon interior, catacombs beneath a cathedral, rope-hung bells in the ceiling, collapsed pews, flooded sections, iron cages"
+    },
+    {
+      "id": "mob-bellringer-ghoul",
+      "prompt": "Character concept sheet, front and side view, a gaunt ghoul in a torn bell-ringer's cassock dragging a bronze handbell on a chain, hollow eyes, grey skin"
+    },
+    {
+      "id": "mob-drowned-penitent",
+      "prompt": "Character concept sheet, front and side view, a drowned penitent monk, bloated, wrapped in wet sackcloth and chains, waterweed in the hair, holding a rusted censer"
+    },
+    {
+      "id": "mob-carrion-crawler",
+      "prompt": "Creature concept sheet, side and top view, a many-legged carrion crawler made of fused corpses and spider limbs, bone plates, dripping ichor"
+    },
+    {
+      "id": "boss-the-silent-abbess",
+      "prompt": "Boss concept art, a towering undead abbess in a tattered black habit, her face hidden by a cracked bronze bell worn like a veil, ribbons of shadow, a crowd of kneeling dead around her"
+    },
+    {
+      "id": "boss-foundry-colossus",
+      "prompt": "Boss concept art, a hulking colossus forged from melted church bells and slag, molten cracks glowing, a bell clapper for a fist, chains trailing"
+    },
+    {
+      "id": "fx-hallowed-fire",
+      "prompt": "Spell effect concept sheet on a black background, a burst of holy golden fire with embers and smoke trails, several stages from ignition to fade"
+    },
+    {
+      "id": "fx-grave-frost",
+      "prompt": "Spell effect concept sheet on a black background, a nova of pale blue grave frost with ice shards and ghostly mist, several stages from cast to fade"
+    },
+    {
+      "id": "zone-drowned-parish-r2",
+      "prompt": "Isometric top-down view of a drowned parish: dark slate-roofed chapels on rotting wooden boardwalk platforms over still black water, gravestones poking out of the water, amber lanterns on tall posts, a tall leaning bell tower, cold teal mist"
+    },
+    {
+      "id": "zone-bell-foundry-r2",
+      "prompt": "Isometric top-down view of a ruined bell foundry yard: huge cracked iron-dark bells lying on grey stone, pools of glowing molten bronze, wooden scaffolding, stairs and hoist chains, furnaces built into rock walls"
+    },
+    {
+      "id": "zone-pilgrim-road-r2",
+      "prompt": "Isometric view of a winding cobbled pilgrims' road through dead black orchards, wayside shrines glowing red with candles, crows on the road, an abandoned cart, a gothic cathedral silhouette on the horizon under a huge orange moon"
+    },
+    {
+      "id": "dungeon-ossuary-r2",
+      "prompt": "Isometric dungeon room seen from above at a steep angle, walls built from stacked skulls, a red-lit sarcophagus in a sunken centre, candle niches, narrow windows glowing with green grave light"
+    },
+    {
+      "id": "dungeon-belfry-catacomb-r2",
+      "prompt": "Isometric dungeon interior of a vaulted crypt nave beneath a cathedral, a great bell hanging from a chain chandelier, rows of iron gibbet cages, broken pews, candelabras, bloodstained flagstones"
+    },
+    {
+      "id": "mob-bellringer-ghoul-r2",
+      "prompt": "Full-body character concept, front and side view on a plain dark grey background, an emaciated hooded ghoul with glowing red eyes and a skull-like face, tattered dark robe, dragging a chain in one hand and holding a bronze handbell lantern in the other"
+    },
+    {
+      "id": "mob-drowned-penitent-r2",
+      "prompt": "Full-body character concept, front and side view on a plain grey background, a bloated drowned old monk with wild grey hair and beard, waterlogged brown sackcloth habit with chains, gripping a tall iron staff with a hanging censer, bloodstains on the robe"
+    },
+    {
+      "id": "mob-carrion-crawler-r2",
+      "prompt": "Creature concept, three-quarter view on a plain light grey background, a huge armoured carrion crawler with many jointed spider legs, a bronze and dark red carapace, a skull-like face with glowing orange eyes, dripping blood"
+    },
+    {
+      "id": "boss-the-silent-abbess-r2",
+      "prompt": "Boss concept art, a towering hooded skeletal abbess in a black habit, a large cracked bronze bell hanging over her chest, ribbons of shadow streaming from her sleeves, long clawed hands, a crowd of small hooded worshippers with candles at her feet, misty grey night"
+    },
+    {
+      "id": "boss-foundry-colossus-r2",
+      "prompt": "Boss concept art, a hulking colossus of black iron armour plates with glowing molten cracks across the chest, a crown of iron crosses, a bronze church bell swinging from a heavy chain in one fist, standing on cooling slag"
+    },
+    {
+      "id": "fx-hallowed-fire-r2",
+      "prompt": "Spell effect concept sheet on a pure black background, several separate bursts of holy golden-orange fire: a flaring pillar, a swirling comet, a ground ring of flame, rising embers and soft smoke wisps"
+    },
+    {
+      "id": "fx-grave-frost-r2",
+      "prompt": "Spell effect concept sheet on a pure black background, several separate pale blue grave-frost novas: radiating ice-shard starbursts, wispy spectral frost tendrils, cold mist"
+    }
   ]
 }
