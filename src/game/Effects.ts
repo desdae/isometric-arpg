@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { HeightFn } from '../procgen/terrain';
 import { fbm2, clamp01, smoothstep } from '../procgen/noise';
 import { SpellFx } from './SpellFx';
+import { SkillFx } from './SkillFx';
 import { BossFx } from './BossFx';
 
 // Combat effects for one area: blood spray and pooled splats, sword arcs,
@@ -166,6 +167,8 @@ export class Effects {
   private freeLights: THREE.PointLight[] = [];
   /** Textured particle puffs, fire, ice and decals for spells and skills. */
   readonly spell: SpellFx;
+  /** Effects for the deeper skill trees (ice stars, flame tongues, runes, lightning). */
+  readonly skill: SkillFx;
 
   constructor(readonly height: HeightFn) {
     this.dropGeo.setAttribute('position', new THREE.BufferAttribute(this.dropPos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -190,6 +193,7 @@ export class Effects {
       this.group.add(l);
     }
     this.spell = new SpellFx(this);
+    this.skill = new SkillFx(this);
   }
 
   /** Spray of blood (or ichor) from a wound, thrown away from `from`. */

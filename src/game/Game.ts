@@ -21,7 +21,7 @@ import { Hud } from './Hud';
 import { Inventory } from './Inventory';
 import { Stats } from './Stats';
 import { SkillTree } from './SkillTree';
-import { SK } from './Skills';
+import { SK, respecCost } from './Skills';
 import { cutaway } from '../engine/cutaway';
 import { makeGold, makeItem, makePotion, makeQuestItem, rollRarity } from './Items';
 import { QuestLog, type Quest } from './Quests';
@@ -649,7 +649,10 @@ export class Game {
     } else if (current) {
       text ??= current.def.waiting;
     }
-    if (d.name === 'Brother Anselm') actions.push({ label: 'Be healed', run: () => this.heal(npc) });
+    if (d.name === 'Brother Anselm') {
+      actions.push({ label: 'Be healed', run: () => this.heal(npc) });
+      if (this.stats.spentPoints > 0) actions.push({ label: 'Atonement (forget skills)', run: () => this.offerRespec(npc) });
+    }
     if (d.name === 'Mirela' || d.name === 'Dusan') {
       actions.push({
         label: 'Trade',
@@ -707,6 +710,43 @@ export class Game {
     this.area.effects.flash(at.clone().setY(at.y + 1.6), 0xffe0a0, 18, 6, 0.9);
     this.say(hurt ? 'Life and mana restored' : 'Blessed', 1.6);
     this.talk(npc, hurt ? 'There. The saint still listens, even now. Go carefully.' : 'You are whole already. Still, take the blessing. You will need it out there.');
+  }
+
+  /** Brother Anselm offers to lift every learned skill, for gold that grows with level; asks first. */
+  private offerRespec(npc: Npc) {
+    audio.click();
+    const s = this.stats;
+    const cost = respecCost(s.level);
+    const pts = s.spentPoints;
+    const price = cost ? `${cost} gold` : 'nothing, since you are new to the road';
+    if (cost > s.gold) {
+      this.dialogue.setText(`To unlearn what you have learned is a long penance: the candles, the vigil, the alms. ${cost} gold, and you carry ${s.gold}. Come back when your purse is heavier.`);
+      this.dialogue.setActions([{ label: 'Be healed', run: () => this.heal(npc) }]);
+      return;
+    }
+    this.dialogue.setText(`Kneel, then, and give your training back to the saint. Every one of your ${pts} skill ${pts === 1 ? 'point' : 'points'} returns to you to spend again. The price is ${price}. Are you certain?`);
+    this.dialogue.setActions([
+      { label: cost ? `Forget all (${cost} gold)` : 'Forget all', run: () => this.respec(npc, cost) },
+      { label: 'Not now', run: () => this.talk(npc, 'As you will. The offer stands.') },
+    ]);
+  }
+
+  private respec(npc: Npc, cost: number) {
+    const s = this.stats;
+    if (s.gold < cost) return this.offerRespec(npc);
+    s.gold -= cost;
+    this.player.clearBuffs();
+    s.respec();
+    audio.atonement();
+    if (cost) audio.coins();
+    const at = this.player.position.clone();
+    this.area.effects.pillar(at.clone());
+    this.area.effects.skill.rune(at, 1.8, 2.5, 'holy', { fill: 0.5 });
+    this.area.effects.spell.rising(at, 1.2, new THREE.Color(2.2, 1.7, 0.6), new THREE.Color(0.6, 0.3, 0.05), 1, 50);
+    this.say(`${s.skillPoints} skill ${s.skillPoints === 1 ? 'point' : 'points'} to spend`, 2);
+    this.inventory.render();
+    if (this.tree.open) this.tree.render();
+    this.talk(npc, 'It is done. You stand before the saint as you first came to her. Choose more wisely, or at least differently.');
   }
 
   /** "!" over townsfolk with an errand to give, "?" over those waiting on one. */

@@ -323,7 +323,7 @@ export class Hud {
   }
 
   private updateBelt(s: Stats, cooldown: (id: SkillId) => number) {
-    const key = s.belt.map((id) => (id ? `${id}${s.rank(id)}` : '-')).join('|');
+    const key = s.belt.map((id) => (id ? `${id}${s.rank(id)}` : '-')).join('|') + (s.has('bloodMagic') ? '*' : '');
     if (key !== this.beltKey) {
       this.beltKey = key;
       s.belt.forEach((id, i) => {
@@ -337,14 +337,13 @@ export class Hud {
         const d = SKILL[id];
         const r = s.rank(id);
         el.insertAdjacentHTML('afterbegin', d.icon);
-        el.title = `${d.name} (rank ${r}): ${d.text(r)} · ${d.cost?.(r) ?? 0} mana${d.cooldown?.(r) ? `, ${d.cooldown(r)}s cooldown` : ''}`;
+        el.title = `${d.name} (rank ${r}): ${d.text(r)} · ${d.cost?.(r) ?? 0} ${s.has('bloodMagic') ? 'life' : 'mana'}${d.cooldown?.(r) ? `, ${d.cooldown(r)}s cooldown` : ''}`;
       });
     }
     s.belt.forEach((id, i) => {
       const el = this.skillSlots[i];
       if (!id) return;
-      const d = SKILL[id];
-      el.classList.toggle('dim', s.mana < (d.cost?.(s.rank(id)) ?? 0));
+      el.classList.toggle('dim', !s.canAfford(id));
       put(this.skillCds[i], 'transform', `scaleY(${cooldown(id).toFixed(3)})`);
     });
   }

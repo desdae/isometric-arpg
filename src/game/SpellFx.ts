@@ -66,7 +66,7 @@ function puffAtlas(): THREE.DataTexture {
 }
 
 let atlas: THREE.DataTexture | null = null;
-const puffClock = { value: 0 };
+export const puffClock = { value: 0 };
 
 const puffMaterial = () =>
   new THREE.ShaderMaterial({
@@ -334,7 +334,7 @@ const churnBase = new THREE.ShaderMaterial({
   `,
 });
 
-type Palette = 'fire' | 'arcane' | 'crimson' | 'holy' | 'frost';
+export type Palette = 'fire' | 'arcane' | 'crimson' | 'holy' | 'frost';
 const PALETTES: Record<Palette, [THREE.Color, THREE.Color, THREE.Color]> = {
   fire: [new THREE.Color(0.5, 0.04, 0.0), new THREE.Color(3.2, 0.95, 0.12), new THREE.Color(5, 3.6, 1.6)],
   arcane: [new THREE.Color(0.25, 0.05, 0.6), new THREE.Color(1.6, 0.6, 3.6), new THREE.Color(3.6, 3.0, 5.0)],
@@ -375,7 +375,7 @@ function glowTexture() {
   return glowTex;
 }
 const glowMats = new Map<string, THREE.SpriteMaterial>();
-function glowMat(c: THREE.Color) {
+export function glowMat(c: THREE.Color) {
   const key = `${c.r.toFixed(2)},${c.g.toFixed(2)},${c.b.toFixed(2)}`;
   let m = glowMats.get(key);
   if (!m) {
@@ -415,7 +415,7 @@ const crystalMats = ICE_TINTS.map(
     }),
 );
 /** Bright glitter colours matching the crystals (HDR, so they bloom). */
-const GLITTER = [new THREE.Color(2.6, 2.9, 3.2), new THREE.Color(0.6, 2.4, 3.0), new THREE.Color(1.2, 1.7, 3.2), new THREE.Color(0.35, 0.7, 3.4), new THREE.Color(1.9, 1.2, 3.2)];
+export const GLITTER = [new THREE.Color(2.6, 2.9, 3.2), new THREE.Color(0.6, 2.4, 3.0), new THREE.Color(1.2, 1.7, 3.2), new THREE.Color(0.35, 0.7, 3.4), new THREE.Color(1.9, 1.2, 3.2)];
 const pick = <T>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
 
 export function crystalMesh(): THREE.Mesh {

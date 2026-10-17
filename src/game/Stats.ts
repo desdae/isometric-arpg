@@ -32,8 +32,14 @@ export class Stats {
   skillPoints = 1;
   /** Which active skill sits on each belt key. */
   readonly belt: (SkillId | null)[] = ['cleave', null, null, null, null];
-  /** Extra armour from War Cry while it lasts. */
+  /** Extra armour from War Cry and Ice Armour while they last. */
   armorBuff = 0;
+  /** Extra attack speed from Battle Fury while it lasts. */
+  speedBuff = 0;
+  /** Multiplier on all damage dealt (keystones). */
+  dmgMore = 1;
+  /** Multiplier on all damage taken (Sanctuary). */
+  dmgTaken = 1;
   readonly equipped: Partial<Record<Slot, Item>> = {};
   readonly bag: Item[] = [];
   readonly bagSize = 40;
@@ -109,7 +115,32 @@ export class Stats {
     this.manaRegen += SK.manaFlow(this.rank('manaFlow'));
     this.regen += SK.secondWindRegen(this.rank('secondWind'));
     this.lifeSteal += SK.bloodthirst(this.rank('bloodthirst'));
-    this.attackSpeed += SK.fervor(this.rank('fervor')) + SK.arcaneHaste(this.rank('arcaneHaste'));
+    this.attackSpeed += SK.fervor(this.rank('fervor')) + SK.arcaneHaste(this.rank('arcaneHaste')) + this.speedBuff;
+    this.dmgTaken = 1 - SK.sanctuary(this.rank('sanctuary'));
+    // Keystones: each a big gain with a price.
+    let more = 1;
+    if (this.has('recklessFury')) {
+      more += SK.recklessDmg;
+      this.attackSpeed += SK.recklessSpeed;
+      this.armor = Math.round(this.armor * 0.5);
+    }
+    if (this.has('ironVow')) {
+      more += SK.ironVowDmg;
+      this.armor = Math.round(this.armor * (1 + SK.ironVowArmor));
+      this.maxHp = Math.round(this.maxHp * (1 + SK.ironVowLife));
+    }
+    if (this.has('bloodMagic')) more += SK.bloodMagicDmg;
+    if (this.has('pyreSoul')) {
+      more += SK.pyreSoulDmg;
+      this.regen = 0;
+    }
+    if (this.has('absoluteZero')) this.attackSpeed += SK.zeroSpeed;
+    if (this.has('overload')) {
+      more += SK.overloadDmg;
+      this.attackSpeed += SK.overloadSpeed;
+      this.manaRegen *= 0.5;
+    }
+    this.dmgMore = more;
     this.hp = Math.min(this.hp, this.maxHp);
     this.mana = Math.min(this.mana, this.maxMana);
   }
@@ -154,6 +185,36 @@ export class Stats {
     return this.ranks[id] ?? 0;
   }
 
+  /** Whether a modifier or keystone (or any skill) has been learned. */
+  has(id: SkillId) {
+    return (this.ranks[id] ?? 0) > 0;
+  }
+
+  /** Whether the hero can pay for a skill right now (mana, or life under Blood Magic). */
+  canAfford(id: SkillId) {
+    const cost = SKILL[id].cost?.(Math.max(1, this.rank(id))) ?? 0;
+    return this.has('bloodMagic') ? this.hp > cost + 1 : this.mana >= cost;
+  }
+
+  /** Points spent in the tree beyond the free starting ranks. */
+  get spentPoints() {
+    return SKILLS.reduce((n, d) => n + Math.max(0, this.rank(d.id) - (this.cls.startRanks[d.id] ?? 0)), 0);
+  }
+
+  /** Forgets every learned skill: back to the class's starting ranks and belt, all points refunded. */
+  respec() {
+    const hpFrac = this.hp / this.maxHp;
+    const refund = this.spentPoints;
+    for (const k of Object.keys(this.ranks)) delete this.ranks[k as SkillId];
+    Object.assign(this.ranks, this.cls.startRanks);
+    this.belt.splice(0, this.belt.length, ...this.cls.startBelt);
+    this.skillPoints += refund;
+    this.armorBuff = 0;
+    this.speedBuff = 0;
+    this.recompute();
+    this.hp = Math.max(1, this.maxHp * hpFrac);
+  }
+
   /** Points already spent in a branch. */
   spentIn(branch: Branch) {
     return SKILLS.filter((d) => d.branch === branch).reduce((n, d) => n + this.rank(d.id) - (this.cls.startRanks[d.id] ?? 0), 0);
@@ -164,6 +225,7 @@ export class Stats {
     const d = SKILL[id];
     if (branchClass(d.branch) !== this.cls.id) return 'Another class';
     if (this.rank(id) >= d.maxRank) return 'Fully learned';
+    if (d.mod && !this.has(d.mod)) return `Learn ${SKILL[d.mod].name} first`;
     const need = TIER_NEEDS[d.tier];
     if (this.spentIn(d.branch) < need) return `Needs ${need} points in ${d.branch[0].toUpperCase() + d.branch.slice(1)}`;
     if (this.skillPoints <= 0) return 'No skill points';
@@ -182,7 +244,7 @@ export class Stats {
     }
     const hpFrac = this.hp / this.maxHp;
     this.recompute();
-    if (id === 'vigor') this.hp = this.maxHp * hpFrac;
+    if (id === 'vigor' || id === 'wintersResolve' || id === 'ironVow') this.hp = this.maxHp * hpFrac;
     return true;
   }
 

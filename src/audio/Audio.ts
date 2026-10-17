@@ -899,6 +899,119 @@ class AudioEngine {
     this.burst(o, t, { f0: 600, f1: 3500, q: 3, gain: 0.3, attack: 0.05, decay: 0.3 });
   }
 
+  // ---- Deeper skill trees ------------------------------------------------
+
+  /** Lunge: boots biting the ground and steel tearing through the air. */
+  lunge(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.1, 0.4);
+    this.burst(o, t, { type: 'lowpass', f0: 900, f1: 200, q: 1, gain: 0.5, decay: 0.15 });
+    this.burst(o, t + 0.03, { type: 'bandpass', f0: 600, f1: 3800, q: 2, gain: 0.45, attack: 0.08, decay: 0.25 });
+    this.tone(o, t + 0.05, { type: 'triangle', f0: 2400, f1: 1800, gain: 0.05, decay: 0.4 });
+  }
+
+  /** Judgement: a choir-like swell as the hammer falls, then a ringing, bell-struck impact. */
+  judgement(pos: THREE.Vector3, phase: 'fall' | 'land') {
+    if (!this.ready()) return;
+    const a = this.at(pos, 4) ?? { gain: 0.5, pan: 0 };
+    const t = this.ctx!.currentTime;
+    if (phase === 'fall') {
+      const o = this.out(a, 0.8, 0.9);
+      for (const f of [392, 494, 587, 784]) this.tone(o, t, { type: 'sine', f0: f * 0.98, f1: f, gain: 0.05, attack: 0.4, decay: 0.3 });
+      this.burst(o, t, { type: 'bandpass', f0: 2000, f1: 6000, q: 4, gain: 0.12, attack: 0.45, decay: 0.1 });
+      return;
+    }
+    const o = this.out(a, 1.4, 1);
+    this.tone(o, t, { f0: 80, f1: 26, gain: 1, decay: 1 });
+    this.burst(o, t, { type: 'lowpass', f0: 4000, f1: 150, gain: 0.8, decay: 0.8 });
+    this.bell(t, 196, 0.25, 4);
+    for (const f of [523, 659, 784]) this.tone(o, t, { type: 'triangle', f0: f * 2, f1: f, gain: 0.05, decay: 1.6 });
+  }
+
+  /** Hemorrhage: a wet tearing rip and a pulse of blood magic. */
+  hemorrhage(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.1, 0.7);
+    this.burst(o, t, { type: 'bandpass', f0: 300, f1: 1800, q: 3, gain: 0.5, attack: 0.04, decay: 0.3 });
+    for (let i = 0; i < 6; i++) this.burst(o, t + 0.04 + i * 0.035, { type: 'bandpass', f0: 500 + Math.random() * 1500, q: 7, gain: 0.15, decay: 0.08 });
+    this.tone(o, t, { type: 'sawtooth', f0: 90, f1: 45, gain: 0.12, decay: 0.7 });
+    this.tone(o, t, { f0: 60, f1: 30, gain: 0.5, decay: 0.5 });
+  }
+
+  /** Fire Wall and burning rings: a roaring, crackling rush of flame. */
+  flameRoar(pos: THREE.Vector3, size = 1) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1.1 * size, 0.6);
+    this.burst(o, t, { type: 'lowpass', f0: 300, f1: 1400, q: 0.8, gain: 0.7, attack: 0.2, decay: 1.4 });
+    this.burst(o, t, { type: 'bandpass', f0: 120, f1: 90, q: 1, gain: 0.5, attack: 0.1, decay: 1.6 });
+    for (let i = 0; i < 18; i++) this.burst(o, t + Math.random() * 1.5, { type: 'highpass', f0: 2500 + Math.random() * 3000, q: 1, gain: 0.08 + Math.random() * 0.08, decay: 0.02 + Math.random() * 0.03 });
+  }
+
+  /** Ice cracking into shards: a bright, glassy shatter with a ringing tail. */
+  iceShatter(pos: THREE.Vector3, size = 1) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1 * size, 0.8);
+    this.burst(o, t, { type: 'highpass', f0: 3000, f1: 1200, q: 1, gain: 0.5, decay: 0.25 });
+    for (let i = 0; i < 9; i++) this.tone(o, t + Math.random() * 0.12, { type: 'triangle', f0: 1800 + Math.random() * 3200, f1: 1500 + Math.random() * 2000, gain: 0.05, decay: 0.3 + Math.random() * 0.5 });
+    this.tone(o, t, { f0: 140 / size, f1: 50, gain: 0.35, decay: 0.35 });
+  }
+
+  /** Ice Armour forming: a cold, rising shimmer of chimes. */
+  iceForm(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.9, 0.9);
+    [1318, 1568, 1976, 2637, 3136].forEach((f, i) => this.tone(o, t + i * 0.06, { type: 'sine', f0: f, gain: 0.05, attack: 0.01, decay: 1.2 }));
+    this.burst(o, t, { type: 'bandpass', f0: 4000, f1: 8000, q: 3, gain: 0.15, attack: 0.3, decay: 0.6 });
+  }
+
+  /** Arcane Orb: a humming, crackling charge loosed. */
+  orbHum(pos: THREE.Vector3) {
+    if (!this.ready()) return;
+    const a = this.at(pos, 3);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.9, 0.7);
+    for (const det of [-12, 0, 12]) this.tone(o, t, { type: 'sawtooth', f0: 110, f1: 220, gain: 0.035, attack: 0.1, decay: 1.6, detune: det });
+    this.tone(o, t, { f0: 880, f1: 440, gain: 0.06, decay: 1.2 });
+    for (let i = 0; i < 8; i++) this.burst(o, t + Math.random() * 1.2, { type: 'highpass', f0: 4000, q: 1, gain: 0.08, decay: 0.03 });
+  }
+
+  /** An electric crack (arcane lightning lashing a foe). */
+  zap(pos: THREE.Vector3) {
+    if (!this.ready() || this.busy('zap', 0.06)) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 0.7, 0.3);
+    this.burst(o, t, { type: 'highpass', f0: 2500, f1: 6000, q: 1, gain: 0.35, decay: 0.07 });
+    this.tone(o, t, { type: 'square', f0: 1400, f1: 300, gain: 0.04, decay: 0.08 });
+  }
+
+  /** Skills forgotten at the cathedral: a low bell and a soft, falling sigh. */
+  atonement() {
+    if (!this.ready()) return;
+    const t = this.ctx!.currentTime;
+    this.bell(t, 147, 0.2, 6);
+    this.bell(t + 0.6, 110, 0.14, 7);
+    const o = this.out({ gain: 1, pan: 0 }, 0.6, 0.9);
+    this.burst(o, t, { type: 'bandpass', f0: 2400, f1: 500, q: 2, gain: 0.12, attack: 0.5, decay: 1.4 });
+  }
+
   boltHit(pos: THREE.Vector3) {
     if (!this.ready()) return;
     const a = this.at(pos, 2);
