@@ -58,7 +58,7 @@ const NAMES = ['The Sunken Ossuary', 'The Weeping Crypt', 'The Charnel Vaults', 
 const GAOL_NAMES = ['The Drowned Gaol', 'The Weeping Cells', 'The Red Oubliette', 'The Flayed Halls', 'The Gaol of Chains'];
 
 /** Which dungeon is being dug: the crypt under the fields, or a level of the gaol under the mire. */
-export type DungeonVariant = 'crypt' | 'gaol1' | 'gaol2';
+export type DungeonVariant = 'crypt' | 'gaol1' | 'gaol2' | 'ossuary';
 
 /** Ways to break the vault's seal; each run draws its own from the pool. */
 export type Objective = 'runes' | 'warden' | 'key' | 'hearts' | 'brood' | 'braziers' | 'levers' | 'shards' | 'marked';
@@ -1788,7 +1788,7 @@ export async function buildDungeon(seed = 1, forcedBoss?: string | null, variant
   const upTo: Exit = variant === 'gaol1' ? { pos: exitPos, radius: 1.3, to: 'swamp', entry: 'gaol', label: 'Climb to the Mire' } : variant === 'gaol2' ? { pos: exitPos, radius: 1.3, to: 'gaol1', entry: 'down', label: 'Climb to the Upper Cells' } : { pos: exitPos, radius: 1.3, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' };
   const exits: Exit[] = [upTo];
   if (descent) exits.push({ pos: stairTop.clone(), radius: 1.0, to: 'gaol2', entry: 'start', label: 'Descend Deeper' });
-  const homeExit = (pos: THREE.Vector3): Exit => (gaol ? { pos, radius: 1.2, to: 'swamp', entry: 'gaol', label: 'Climb to the Mire' } : { pos, radius: 1.2, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' });
+  const homeExit = (pos: THREE.Vector3): Exit => (variant === 'gaol2' ? { pos, radius: 1.2, to: 'road', entry: 'gaol', label: 'Step through to the Pilgrim Road' } : gaol ? { pos, radius: 1.2, to: 'swamp', entry: 'gaol', label: 'Climb to the Mire' } : { pos, radius: 1.2, to: 'zone', entry: 'crypt', label: 'Climb to the Fields' });
   const done = (o: Objective) =>
     o === 'runes' ? state.runes >= 3 : o === 'hearts' ? state.hearts >= 3 : o === 'warden' ? state.warden : o === 'key' ? state.key : o === 'brood' ? state.brood : o === 'braziers' ? state.braziers >= 4 : o === 'levers' ? state.levers >= 3 : o === 'shards' ? state.shards >= 4 : state.marked >= 3;
   function objectiveDone(say: string) {

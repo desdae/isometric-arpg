@@ -206,7 +206,7 @@ export class Music {
   private applyMood() {
     const t = this.ctx.currentTime;
     const m = this.effective;
-    const kind: ScoreKind | null = this.area === 'swamp' ? 'mire' : this.area === 'gaol1' || this.area === 'gaol2' ? this.area : null;
+    const kind: ScoreKind | null = this.area === 'swamp' ? 'mire' : this.area === 'gaol1' || this.area === 'gaol2' || this.area === 'road' || this.area === 'ossuary' ? this.area : null;
     if (kind && !this.scores[kind]) this.scores[kind] = new MireMusic(this.ctx, this.out, Math.floor(Math.random() * 1e9), kind);
     if (kind && this.mireSince < 0) this.mireSince = t;
     if (!kind) this.mireSince = -1;

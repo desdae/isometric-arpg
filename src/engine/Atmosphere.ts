@@ -13,7 +13,7 @@ export class Sky {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      uniforms: { time: { value: 0 } },
+      uniforms: { time: { value: 0 }, ashen: { value: 0 } },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
         void main() {
@@ -23,7 +23,7 @@ export class Sky {
         }
       `,
       fragmentShader: /* glsl */ `
-        uniform float time;
+        uniform float time, ashen;
         varying vec3 vDir;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
@@ -37,13 +37,13 @@ export class Sky {
           vec2 drift = vec2(time * 0.012, time * 0.006);
           float n = fbm(uv + drift + fbm(uv * 0.7 - drift) * 1.5);
           float bright = smoothstep(0.45, 0.85, n);
-          vec3 deep = vec3(0.035, 0.006, 0.006);
-          vec3 cloud = vec3(0.55, 0.05, 0.03);
-          vec3 hot = vec3(1.6, 0.18, 0.08);
+          vec3 deep = mix(vec3(0.035, 0.006, 0.006), vec3(0.05, 0.06, 0.06), ashen);
+          vec3 cloud = mix(vec3(0.55, 0.05, 0.03), vec3(0.2, 0.23, 0.23), ashen);
+          vec3 hot = mix(vec3(1.6, 0.18, 0.08), vec3(0.45, 0.42, 0.36), ashen);
           vec3 c = mix(deep, cloud, smoothstep(0.3, 0.7, n));
           c = mix(c, hot, bright * bright * 0.7);
           float horizon = smoothstep(0.35, -0.05, d.y);
-          c = mix(c, vec3(0.12, 0.015, 0.012), horizon);
+          c = mix(c, mix(vec3(0.12, 0.015, 0.012), vec3(0.2, 0.24, 0.235), ashen), horizon);
           gl_FragColor = vec4(c, 1.0);
         }
       `,
@@ -51,6 +51,11 @@ export class Sky {
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1;
+  }
+
+  /** The blood-red storm, or the pilgrim road's grey overcast. */
+  setPalette(p: 'blood' | 'ashen') {
+    this.material.uniforms.ashen.value = p === 'ashen' ? 1 : 0;
   }
 
   update(time: number, cameraPos: THREE.Vector3) {

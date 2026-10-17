@@ -42,6 +42,7 @@ class AudioEngine {
   private area = 'town';
   private dripTimer = 2;
   private bellTimer = 6;
+  private cawTimer = 3;
   onMuteChange: (muted: boolean) => void = () => {};
 
   constructor() {
@@ -161,8 +162,10 @@ class AudioEngine {
       // Town: low sheltered wind. Wasteland: louder, higher, gustier.
       // Underground: only a deep draught moaning through the passages.
       // The mire: a low, damp, still air.
-      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : name === 'dungeon' ? 0.1 : name === 'swamp' ? 0.16 : 0.32, t, 1);
-      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : name === 'dungeon' ? 170 : name === 'swamp' ? 260 : 620, t, 1);
+      // The pilgrim road: a thin, cold wind. The ossuary: dead still air.
+      const under = name === 'dungeon' || name === 'ossuary';
+      this.ambience.windGain.gain.setTargetAtTime(name === 'town' ? 0.18 : under ? 0.1 : name === 'swamp' ? 0.16 : name === 'road' ? 0.24 : 0.32, t, 1);
+      this.ambience.wind.frequency.setTargetAtTime(name === 'town' ? 380 : under ? 170 : name === 'swamp' ? 260 : name === 'road' ? 480 : 620, t, 1);
     }
   }
 
@@ -181,7 +184,15 @@ class AudioEngine {
       }
     }
     // Water dripping somewhere in the dark, and now and then a far groan of stone.
-    if (this.area === 'dungeon') {
+    // Crows calling somewhere along the road.
+    if (this.area === 'road') {
+      this.cawTimer -= dt;
+      if (this.cawTimer <= 0) {
+        this.cawTimer = 4 + Math.random() * 9;
+        this.caw(this.ctx.currentTime, { gain: 0.35, pan: (Math.random() - 0.5) * 1.5 }, 1 + Math.floor(Math.random() * 3));
+      }
+    }
+    if (this.area === 'dungeon' || this.area === 'ossuary') {
       this.dripTimer -= dt;
       if (this.dripTimer <= 0) {
         this.dripTimer = 0.6 + Math.random() * 3;
@@ -192,6 +203,24 @@ class AudioEngine {
         if (Math.random() < 0.06) this.burst(o, t + 0.2, { type: 'lowpass', f0: 160, f1: 60, q: 3, gain: 0.25, attack: 0.6, decay: 1.6 });
       }
     }
+  }
+
+  /** A crow's harsh call, `n` times over. */
+  private caw(t: number, a: At, n: number) {
+    const o = this.out(a, 1, 0.5);
+    const p = 0.9 + Math.random() * 0.25;
+    for (let i = 0; i < n; i++) this.throat(o, t + i * 0.32, { f0: 620 * p, f1: 480 * p, dur: 0.24, formants: [1300, 2600], gain: 0.07, rough: 0.9, drive: true });
+  }
+
+  /** Crows bursting up off the road: a clatter of wings and an angry caw. */
+  crows(pos: THREE.Vector3) {
+    if (!this.ready() || this.busy('crows', 0.4)) return;
+    const a = this.at(pos, 2);
+    if (!a) return;
+    const t = this.ctx!.currentTime;
+    const o = this.out(a, 1, 0.3);
+    for (let i = 0; i < 7; i++) this.burst(o, t + i * 0.055 + Math.random() * 0.02, { type: 'bandpass', f0: 500 + Math.random() * 500, q: 1.5, gain: 0.28, decay: 0.05 });
+    if (Math.random() < 0.7) this.caw(t + 0.15, a, 1 + Math.floor(Math.random() * 2));
   }
 
   // ---- Building blocks -------------------------------------------------
@@ -743,6 +772,32 @@ class AudioEngine {
         this.throat(o, t + 0.03, { f0: 93 * p, f1: (what === 'die' ? 45 : 82) * p, dur: 1.1 * long, formants: [500, 1200], gain: 0.16, breath: 0.2 });
         this.burst(o, t, { f0: 2400, q: 6, gain: 0.18, attack: 0.3, decay: 0.9 * long });
         break;
+      case 'bellringer':
+        // A wet ghoul shriek and the dull clank of the cracked handbell.
+        this.throat(o, t, { f0: 380 * p, f1: (what === 'die' ? 150 : 560) * p, dur: 0.45 * long, formants: [850, 2200], gain: 0.2, rough: 0.6, wobble: 0.06, breath: 0.08 });
+        if (what !== 'hurt') for (const f of [523, 1180, 1710]) this.tone(o, t + 0.12, { type: 'triangle', f0: f * p, gain: 0.04, decay: 0.9 });
+        break;
+      case 'carrion':
+        // A gurgling hiss from the long jaws, then a click of teeth.
+        this.burst(o, t, { f0: 2800, q: 1.4, gain: 0.25, attack: 0.04, decay: 0.55 * long });
+        this.throat(o, t, { f0: 110 * p, f1: (what === 'die' ? 55 : 150) * p, dur: 0.6 * long, formants: [420, 1100], gain: 0.25, rough: 0.9, wobble: 0.12, drive: true });
+        if (what === 'attack') this.burst(o, t + 0.3, { type: 'bandpass', f0: 2200, q: 4, gain: 0.4, decay: 0.04 });
+        break;
+      case 'penitent':
+        // An old man's cracked prayer, a hiss of candle flame under it.
+        this.throat(o, t, { f0: 118 * p, f1: (what === 'die' ? 62 : 104) * p, dur: 0.8 * long, formants: [480, 1050], gain: 0.15, breath: 0.2, wobble: 0.08 });
+        this.burst(o, t, { type: 'highpass', f0: 3800, gain: 0.08, attack: 0.1, decay: 0.6 * long });
+        break;
+      case 'mourner':
+        // A muffled sob behind the veil.
+        for (let i = 0; i < (what === 'die' ? 3 : 2); i++) this.throat(o, t + i * 0.22, { f0: 300 * p, f1: (what === 'die' ? 120 : 250) * p, dur: 0.2 * long, formants: [650, 1500], gain: 0.1, wobble: 0.25, breath: 0.25 });
+        break;
+      case 'abbess':
+        // She does not speak: a breath through the veil, a low choir, and her bell.
+        this.burst(o, t, { type: 'bandpass', f0: 900, q: 3, gain: 0.18, attack: 0.25, decay: 0.9 * long });
+        for (const f of [147, 220, 262]) this.tone(o, t, { type: 'triangle', f0: f * p, f1: (what === 'die' ? f * 0.5 : f) * p, gain: 0.05, attack: 0.3, decay: 1.2 * long });
+        if (what !== 'hurt') this.tone(o, t + 0.2, { type: 'sine', f0: 392, gain: 0.08, decay: 2.5 });
+        break;
       case 'nightwing':
         // A shriek that tears up through the octaves, over leathery wing cracks.
         this.throat(o, t, { f0: 500 * p, f1: (what === 'die' ? 160 : 1500) * p, dur: 0.7 * long, formants: [1800, 3200], gain: 0.16, rough: 0.4, wobble: 0.08 });
@@ -750,7 +805,7 @@ class AudioEngine {
         for (let i = 0; i < 3; i++) this.burst(o, t + i * 0.12, { type: 'lowpass', f0: 1400, f1: 250, gain: 0.3, decay: 0.08 });
         break;
     }
-    if (what === 'die' && kind !== 'wraith' && kind !== 'mireWraith' && kind !== 'chainWraith' && kind !== 'hanged') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
+    if (what === 'die' && kind !== 'wraith' && kind !== 'abbess' && kind !== 'mireWraith' && kind !== 'chainWraith' && kind !== 'hanged') this.burst(o, t + 0.55, { type: 'lowpass', f0: 700 * size, f1: 150, gain: 0.35, decay: 0.35 }); // body hits the ground
   }
 
   /** A boss's great roar: the voice, a sub-bass swell under it and a long tail. */

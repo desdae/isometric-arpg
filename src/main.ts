@@ -16,6 +16,7 @@ import { buildWastelandZone } from './scenes/wastelandZone';
 import { buildCharacterPreview } from './scenes/characterPreview';
 import { buildTown } from './scenes/town';
 import { buildDungeon } from './scenes/dungeon';
+import { buildPilgrimRoad } from './scenes/pilgrimRoad';
 import { buildSwamp } from './scenes/swamp';
 import { bakeSurfaces, pbrMaterial } from './procgen/textures';
 import { Character } from './actors/Character';
@@ -155,8 +156,8 @@ if (sceneName === 'test' || sceneName === 'character') {
     }
   }
   // Saved heroes always wake in town.
-  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' || sceneName === 'gaol1' || sceneName === 'gaol2' ? sceneName : 'town';
-  await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : startArea === 'swamp' ? 'The Bleeding Mire' : 'Into the Crypt', 'Forging a world out of nothing');
+  const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' || sceneName === 'gaol1' || sceneName === 'gaol2' || sceneName === 'road' || sceneName === 'ossuary' ? sceneName : 'town';
+  await loading.show(startArea === 'town' ? 'Saint Orsolya' : startArea === 'zone' ? 'The Blighted Fields' : startArea === 'swamp' ? 'The Bleeding Mire' : startArea === 'road' ? 'The Pilgrim Road' : startArea === 'ossuary' ? 'The Ossuary' : 'Into the Crypt', 'Forging a world out of nothing');
   loading.range(0, 0.12);
   await loading.step('Dressing the hero', 0);
   // Direct views can try a class with ?class=mage.
@@ -167,7 +168,9 @@ if (sceneName === 'test' || sceneName === 'character') {
   addSilhouette(hero.root);
   game = new Game({ town: buildTown, zone: buildWastelandZone, swamp: () => buildSwamp(game!.swampSeed), dungeon: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), params.get('boss'), 'crypt', params.get('unlock')),
     gaol1: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'gaol1'),
-    gaol2: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'gaol2', params.get('unlock')) }, hero, cam, renderer, sky, environment);
+    gaol2: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'gaol2', params.get('unlock')),
+    road: () => buildPilgrimRoad(),
+    ossuary: () => buildDungeon(Number(params.get('dseed') ?? Math.floor(Math.random() * 1e9)), null, 'ossuary', params.get('unlock')) }, hero, cam, renderer, sky, environment);
   if (params.has('sseed')) game.swampSeed = Number(params.get('sseed'));
   if (character) game.useCharacter(character);
   else game.stats.setClass(classId);

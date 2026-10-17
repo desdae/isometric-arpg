@@ -57,7 +57,7 @@ export type AreaBuilder = () => Promise<World>;
 
 /** What the loading splash says while an area is generated. */
 /** Areas with a waypoint, in the order the travel list shows them. */
-const WAYPOINT_AREAS: AreaName[] = ['town', 'zone', 'swamp'];
+const WAYPOINT_AREAS: AreaName[] = ['town', 'zone', 'swamp', 'road'];
 
 const AREA_TITLES: Record<AreaName, [string, string]> = {
   town: ['Saint Orsolya', 'The last lit town at the edge of the blight'],
@@ -66,6 +66,8 @@ const AREA_TITLES: Record<AreaName, [string, string]> = {
   swamp: ['The Bleeding Mire', 'It is never the same swamp twice'],
   gaol1: ['The Drowned Gaol', 'Torture halls flooded with blood, dug anew for every soul that descends'],
   gaol2: ['The Lower Cells', 'Where the Inquisitor passes judgement'],
+  road: ['The Pilgrim Road', 'The bells fell silent, and the pilgrims never left'],
+  ossuary: ['The Ossuary', 'The sisters keep their dead in the walls'],
 };
 
 /** Stands in for a frozen rig's updateMatrixWorld, so scene updates skip it. */
@@ -252,13 +254,14 @@ export class Game {
       telemetry.mark(`build:${name}`);
       const world = await this.builders[name]!();
       const scene = world.scene;
-      scene.environment = this.environment;
+      // An area may bring its own sky to reflect (the road's ash-grey night).
+      scene.environment ??= this.environment;
       scene.environmentIntensity = 0.45;
       if (world.indoor) scene.environmentIntensity = 0.15;
       // Underground the fog is thicker and bloodier.
       const mist = world.indoor
         ? new Mist(Math.min(world.extent, 60), world.heightAt, 90, new THREE.Color(0.42, 0.05, 0.035), 13)
-        : new Mist(Math.min(world.extent, 60), world.heightAt, 110);
+        : new Mist(Math.min(world.extent, 60), world.heightAt, 110, world.mistColor);
       mist.setDensity(settings.data.graphics.mist);
       scene.add(mist.group);
       const effects = new Effects(world.heightAt);
@@ -407,6 +410,7 @@ export class Game {
     if (name === 'town') this.townVisits++;
     const w = area.world;
     if (!w.indoor) w.scene.add(this.sky.mesh);
+    this.sky.setPalette(w.sky ?? 'blood');
     this.renderer.setScene(w.scene);
     area.loot.setVisible(true);
     area.effects.group.visible = true;
@@ -448,6 +452,8 @@ export class Game {
     }
     if (name === 'swamp') this.preloadSoon('gaol1', 8000);
     if (name === 'gaol1') this.preloadSoon('gaol2', 6000);
+    if (name === 'gaol2') this.preloadSoon('road', 12000);
+    if (name === 'road') this.preloadSoon('ossuary', 8000);
     this.travelling = false;
     this.saveNow();
   }
@@ -1036,6 +1042,7 @@ export class Game {
     if (w.npcs) for (const n of w.npcs) n.update(dt, p.position);
     a.effects.update(dt);
     a.mist.update(dt);
+    w.trackHero?.(p.position);
     w.update(dt, t);
     a.loot.update(dt, this.cam.camera, p.position);
     // Walk over gold and potions to scoop them up.

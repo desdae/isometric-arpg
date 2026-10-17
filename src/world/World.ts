@@ -6,7 +6,7 @@ import type { Npc } from '../actors/Npc';
 import type { Monster, MonsterSpawn } from '../actors/Monster';
 import type { Effects } from '../game/Effects';
 
-export type AreaName = 'town' | 'zone' | 'dungeon' | 'swamp' | 'gaol1' | 'gaol2';
+export type AreaName = 'town' | 'zone' | 'dungeon' | 'swamp' | 'gaol1' | 'gaol2' | 'road' | 'ossuary';
 
 /** A way out of an area: walk into it to travel. */
 export interface Exit {
@@ -86,6 +86,12 @@ export interface World {
   layoutKey?: string;
   /** Height of standing water; ground below it is drawn as water on the map. */
   waterLevel?: number;
+  /** Sky palette; the blood-red storm when left out. */
+  sky?: 'ashen';
+  /** Tint of the drifting ground mist; the blood-red default when left out. */
+  mistColor?: THREE.Color;
+  /** Called every frame with the hero's position, for scenery that reacts to them. */
+  trackHero?(p: THREE.Vector3): void;
   update(dt: number, t: number): void;
 }
 

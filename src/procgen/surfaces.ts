@@ -514,5 +514,103 @@ export function swampMud(seed = 19): SurfaceFn {
   };
 }
 
-export const SURFACES = { swampMud, flesh, skin, hair, flagstones, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
+/** Matted, wind-flattened turf gone grey with the blight: tussocks, bare scuffs and dead stems. */
+export function turf(seed = 23): SurfaceFn {
+  return (u, v) => {
+    const large = fbm2(u * 3, v * 3, 4, seed, 3) * 0.5 + 0.5;
+    // Blades: fine grain over a mid-scale clump pattern (real tufts are geometry).
+    const blade = (fbm2(u * 110, v * 110, 2, seed + 4, 110) * 0.5 + 0.5) * 0.6 + (fbm2(u * 30, v * 30, 2, seed + 5, 30) * 0.5 + 0.5) * 0.4;
+    const tuss = voronoi2(u * 14, v * 14, seed + 6, 14, 1);
+    const tussock = 1 - smoothstep(0.1, 0.5, tuss.f1);
+    const bare = smoothstep(0.6, 0.75, fbm2(u * 5 + 7, v * 5, 4, seed + 8, 5) * 0.5 + 0.5);
+    const grain = fbm2(u * 64, v * 64, 3, seed + 10, 64) * 0.5 + 0.5;
+    const dead = smoothstep(0.55, 0.8, fbm2(u * 20, v * 20, 3, seed + 12, 20) * 0.5 + 0.5);
+    const height = clamp01(0.35 + tussock * 0.3 * (1 - bare) + blade * 0.25 * (1 - bare) + grain * 0.06 - bare * 0.15);
+    // Grey-green, darker in the hollows between tussocks, straw-coloured where it died.
+    const lit = 0.75 + blade * 0.45 + tussock * 0.2;
+    let r = mix(0.035, 0.05, large) * lit;
+    let g = mix(0.045, 0.062, large) * lit;
+    let b = mix(0.04, 0.052, large) * lit;
+    r = mix(r, 0.085 * lit, dead * 0.6);
+    g = mix(g, 0.075 * lit, dead * 0.6);
+    b = mix(b, 0.05 * lit, dead * 0.6);
+    // Scuffed bare earth, red-brown like the soil by the road.
+    r = mix(r, 0.07 * (0.8 + grain * 0.4), bare);
+    g = mix(g, 0.04 * (0.8 + grain * 0.4), bare);
+    b = mix(b, 0.03 * (0.8 + grain * 0.4), bare);
+    return { height, r, g, b, rough: 0.9, ao: mix(0.55, 1, height) };
+  };
+}
+
+/** Rust-red trodden soil with grit, pebbles and black leaf litter: the verges of the pilgrim road. */
+export function redSoil(seed = 29): SurfaceFn {
+  return (u, v) => {
+    const large = fbm2(u * 3, v * 3, 4, seed, 3) * 0.5 + 0.5;
+    const grain = fbm2(u * 72, v * 72, 3, seed + 3, 72) * 0.5 + 0.5;
+    const peb = voronoi2(u * 26, v * 26, seed + 5, 26, 1);
+    const pebble = (1 - smoothstep(0.1, 0.22, peb.f1)) * smoothstep(0.45, 0.7, fbm2(u * 7, v * 7, 2, seed + 7, 7) * 0.5 + 0.5);
+    const litter = smoothstep(0.64, 0.78, fbm2(u * 36, v * 36, 3, seed + 9, 36) * 0.5 + 0.5);
+    const rut = smoothstep(0.55, 0.85, fbm2(u * 4, v * 4, 3, seed + 11, 4) * 0.5 + 0.5);
+    const height = clamp01(0.32 + large * 0.12 + grain * 0.08 + pebble * 0.42 + litter * 0.08 - rut * 0.08);
+    let r = mix(0.05, 0.08, large) * (0.8 + grain * 0.35);
+    let g = mix(0.028, 0.04, large) * (0.8 + grain * 0.3);
+    let b = mix(0.022, 0.03, large) * (0.8 + grain * 0.3);
+    r = mix(r, 0.025, litter * 0.8);
+    g = mix(g, 0.02, litter * 0.8);
+    b = mix(b, 0.018, litter * 0.8);
+    r = mix(r, 0.09 * (0.7 + peb.id * 0.6), pebble);
+    g = mix(g, 0.085 * (0.7 + peb.id * 0.6), pebble);
+    b = mix(b, 0.085 * (0.7 + peb.id * 0.6), pebble);
+    return { height, r, g, b, rough: mix(0.88, 0.6, pebble), ao: mix(0.55, 1, height) };
+  };
+}
+
+/**
+ * Blue-grey granite setts laid in running bond, like a brick path: long
+ * rounded blocks in rows, each a slightly different shade, worn smooth on
+ * top, with dark grit in the joints. The pilgrim road.
+ */
+export function setts(seed = 31): SurfaceFn {
+  const ROWS = 12;
+  const COLS = 6;
+  const hash = (i: number, j: number) => {
+    const x = Math.sin(i * 127.1 + j * 311.7 + seed * 74.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  return (u, v) => {
+    const rv = v * ROWS;
+    const row = Math.floor(rv);
+    const fy = rv - row;
+    // Every other row is shifted by half a block, and each row wobbles a little.
+    const shift = (row % 2) * 0.5 + (hash(row, 7) - 0.5) * 0.2;
+    const cu = u * COLS + shift;
+    const col = ((Math.floor(cu) % COLS) + COLS) % COLS;
+    const fx = cu - Math.floor(cu);
+    const id = hash(col, row);
+    // Rounded-rectangle profile: distance from the block's edge in block units (x is twice as long).
+    const ex = Math.min(fx, 1 - fx) * 2;
+    const ey = Math.min(fy, 1 - fy);
+    const jitter = fbm2(u * 40, v * 40, 2, seed + 3, 40) * 0.03;
+    const edge = Math.min(ex * 1.05, ey) + jitter;
+    const dome = smoothstep(0.02, 0.2, edge);
+    const chips = smoothstep(0.62, 0.8, fbm2(u * 90, v * 90, 3, seed + 5, 90) * 0.5 + 0.5);
+    const grain = fbm2(u * 160, v * 160, 2, seed + 9, 160) * 0.5 + 0.5;
+    const height = clamp01(dome * (0.62 + id * 0.12) + grain * 0.06 - chips * 0.08 * dome);
+    const tone = mix(0.07, 0.13, id) * (0.85 + grain * 0.3) * (1 - chips * 0.25);
+    const grit = 1 - dome;
+    const moss = smoothstep(0.55, 0.8, fbm2(u * 9, v * 9, 3, seed + 11, 9) * 0.5 + 0.5) * grit;
+    let r = tone * 0.8;
+    let g = tone * 0.93;
+    let b = tone * 1.1;
+    r = mix(r, 0.018, grit * 0.9);
+    g = mix(g, 0.018, grit * 0.9);
+    b = mix(b, 0.016, grit * 0.9);
+    r = mix(r, 0.03, moss);
+    g = mix(g, 0.045, moss);
+    b = mix(b, 0.03, moss);
+    return { height, r, g, b, rough: mix(0.95, 0.55, dome * (0.5 + grain * 0.5)), ao: mix(0.35, 1, dome) };
+  };
+}
+
+export const SURFACES = { setts, turf, redSoil, swampMud, flesh, skin, hair, flagstones, chitin, cobblestone, crackedEarth, stoneBricks, woodPlanks, deadBark, roughStone, wornMetal, chainmail, cloth, linen, slate, plaster } as const;
 export type SurfaceKind = keyof typeof SURFACES;

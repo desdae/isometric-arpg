@@ -70,7 +70,7 @@ interface FormPart {
   /** Near-silent bars after the phrase: only the last note dying away. */
   tail?: number;
 }
-export type ScoreKind = 'mire' | 'gaol1' | 'gaol2';
+export type ScoreKind = 'mire' | 'gaol1' | 'gaol2' | 'road' | 'ossuary';
 interface Score {
   bpm: number;
   phrases: string[][];
@@ -90,6 +90,15 @@ const LAMENT: string[][] = [
   ['i', 'i7', 'iv6', 'V', 'i', 'i7', 'iv6', 'V'],
   ['VI', 'iv', 'N6', 'V', 'i', 'ii7', 'V7', 'i'],
   ['i', 'iv', 'i', 'V', 'VI', 'iv6', 'Vsus', 'V'],
+];
+// The pilgrim road's hymn: a processional the pilgrims once sang toward the
+// convent, now in A minor with nobody left to sing it. The ossuary keeps the
+// same hymn underground, slower, with the sisters' choir and no solo at all
+// for long stretches.
+const HYMN: string[][] = [
+  ['i', 'iv', 'VI', 'V', 'i', 'iv6', 'Vsus', 'V'],
+  ['VI', 'iv', 'i', 'V', 'VI', 'ii7', 'V7', 'i'],
+  ['i', 'i7', 'iv6', 'V', 'iv', 'N6', 'V', 'i'],
 ];
 const SCORES: Record<ScoreKind, Score> = {
   mire: { bpm: 46, phrases: PHRASES, form: FORM, shapes: ['sigh', 'sigh', 'sigh2', 'long', 'rise', 'rest'], solo: [57, 77], weep: false, key: 0 },
@@ -121,6 +130,34 @@ const SCORES: Record<ScoreKind, Score> = {
     solo: [58, 77],
     weep: true,
     key: -3,
+  },
+  road: {
+    bpm: 42,
+    phrases: HYMN,
+    form: [
+      { p: 0, solo: false, bell: true, roll: false, strings: 'thin', tail: 1 },
+      { p: 0, solo: true, bell: false, roll: false, strings: 'thin', tail: 1 },
+      { p: 1, solo: true, bell: false, roll: false, strings: 'full', choir: true, tail: 2 },
+      { p: 2, solo: true, bell: true, roll: false, strings: 'thin', tail: 2 },
+    ],
+    shapes: ['long', 'sigh', 'rise', 'sigh2', 'rest', 'long'],
+    solo: [57, 76],
+    weep: false,
+    key: -5,
+  },
+  ossuary: {
+    bpm: 33,
+    phrases: HYMN,
+    form: [
+      { p: 0, solo: false, bell: true, roll: false, strings: 'none', choir: true, tail: 2 },
+      { p: 1, solo: false, bell: false, roll: false, strings: 'thin', choir: true, tail: 1 },
+      { p: 2, solo: true, bell: false, roll: true, strings: 'thin', choir: true, tail: 2 },
+      { p: 0, solo: true, bell: true, roll: false, strings: 'full', choir: true, tail: 2 },
+    ],
+    shapes: ['sigh', 'long', 'long', 'rest', 'rest', 'sigh2'],
+    solo: [55, 74],
+    weep: true,
+    key: -5,
   },
 };
 
