@@ -29,6 +29,7 @@ import type { Rig } from './actors/Rig';
 import { Game } from './game/Game';
 import { settings, SHADOW_SIZE } from './game/Settings';
 import { chooseCharacter } from './game/CharacterSelect';
+import { titleScreen } from './game/TitleScreen';
 import { classDef, tabard } from './game/Classes';
 import type { CharacterSave } from './game/Save';
 import { MOON_OFFSET, type World } from './world/World';
@@ -141,13 +142,17 @@ if (sceneName === 'test' || sceneName === 'character') {
     cam.target.copy(world.spawn).add(new THREE.Vector3(0, 1, 0));
   }
 } else {
-  // Normal play starts at the character roster. Views opened straight to an
-  // area (?scene=, #zone, the benchmark) skip it and play an unsaved hero.
+  // Normal play starts at the title screen, then the hero roster. Views opened
+  // straight to an area (?scene=, #zone, the benchmark) skip both and play an
+  // unsaved hero.
   const direct = !!bench || params.has('scene') || hash.length > 0;
   let character: CharacterSave | null = null;
   if (!direct) {
     document.getElementById('boot')?.remove();
-    character = await chooseCharacter();
+    while (!character) {
+      const pick = await titleScreen();
+      character = pick.kind === 'continue' ? pick.save : await chooseCharacter();
+    }
   }
   // Saved heroes always wake in town.
   const startArea = character ? 'town' : sceneName === 'zone' || sceneName === 'dungeon' || sceneName === 'swamp' || sceneName === 'gaol1' || sceneName === 'gaol2' ? sceneName : 'town';

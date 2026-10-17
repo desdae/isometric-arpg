@@ -19,9 +19,9 @@ the save folder:
 
 | System | Folder |
 | --- | --- |
-| Windows | `%APPDATA%\Isometric ARPG\saves` |
-| Linux, Steam Deck | `~/.config/Isometric ARPG/saves` |
-| macOS | `~/Library/Application Support/Isometric ARPG/saves` |
+| Windows | `%APPDATA%\The Silent Bells\saves` |
+| Linux, Steam Deck | `~/.config/The Silent Bells/saves` |
+| macOS | `~/Library/Application Support/The Silent Bells/saves` |
 
 Each hero is `orsolya.hero.<id>.json`; options are `arpg.settings.json`.
 Writes go to a temporary file first and are then swapped in, and the previous
@@ -33,13 +33,13 @@ Use Steam Auto-Cloud (Steamworks, App Admin, Cloud), with one root per system:
 
 | Root | Subdirectory | Pattern |
 | --- | --- | --- |
-| `WinAppDataRoaming` | `Isometric ARPG/saves` | `*.json` |
-| `LinuxXdgConfigHome` | `Isometric ARPG/saves` | `*.json` |
+| `WinAppDataRoaming` | `The Silent Bells/saves` | `*.json` |
+| `LinuxXdgConfigHome` | `The Silent Bells/saves` | `*.json` |
 
 Add a root override so Linux and Steam Deck share Windows saves. The game
 needs no Steamworks SDK for this.
 
 ## Still to do before release
 
-- A real product name and icon (both are placeholders: "Isometric ARPG").
+- A real app icon (the default Electron icon is a placeholder).
 - A macOS build needs signing and notarising on a Mac.

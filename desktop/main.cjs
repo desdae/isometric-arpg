@@ -1,8 +1,8 @@
 // The desktop build: Electron opens the release build of the game in its own
 // window and keeps its saves as files, one per storage key, in
-//   Windows  %APPDATA%\Isometric ARPG\saves
-//   Linux    ~/.config/Isometric ARPG/saves (Steam Deck included)
-//   macOS    ~/Library/Application Support/Isometric ARPG/saves
+//   Windows  %APPDATA%\The Silent Bells\saves
+//   Linux    ~/.config/The Silent Bells/saves (Steam Deck included)
+//   macOS    ~/Library/Application Support/The Silent Bells/saves
 // Steam Cloud's Auto-Cloud is pointed at that folder (see desktop/README.md).
 
 const { app, BrowserWindow, Menu, ipcMain, net, protocol, shell } = require('electron');
@@ -78,7 +78,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: '#0a0405',
-    title: 'Isometric ARPG',
+    title: 'The Silent Bells',
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

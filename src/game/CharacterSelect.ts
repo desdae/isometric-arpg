@@ -59,6 +59,10 @@ const CSS = `
   .csel-confirm { color: #f0b090; font-style: italic; }
   .csel-opts { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); right: 16px; }
   @media (max-width: 720px) { .csel-opts { position: static; display: flex; justify-content: center; margin-top: 22px; } }
+  .csel-back { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 16px; background: rgba(0,0,0,.35); border-color: #3a1a14; color: #c8a888; }
+  .csel-back::before { content: '‹ '; }
+  .csel-back:hover { border-color: #c0703a; color: #f0d8b8; }
+  @media (max-width: 720px) { .csel-back { position: static; margin-bottom: 14px; } }
   .csel-opts .csel-btn { background: rgba(0,0,0,.35); border-color: #3a1a14; color: #c8a888; }
   .csel-opts .csel-btn:hover { border-color: #c0703a; color: #f0d8b8; }
 `;
@@ -78,8 +82,8 @@ const swatchCss = (id: string) => {
 const colourWord = (classId: string) => (classDef(classId).id === 'mage' ? 'Mantle' : 'Tabard');
 const NAME_OK = /^[\p{L}][\p{L}' -]*$/u;
 
-/** Shows the roster until the player picks or creates a hero. */
-export function chooseCharacter(): Promise<CharacterSave> {
+/** Shows the roster until the player picks or creates a hero; null means back to the title. */
+export function chooseCharacter(): Promise<CharacterSave | null> {
   const style = document.createElement('style');
   style.textContent = CSS;
   document.head.appendChild(style);
@@ -94,7 +98,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
     let confirming = false;
     let draft = { name: '', classId: CLASSES[0].id, tabard: TABARDS[0].id };
 
-    const finish = (save: CharacterSave) => {
+    const finish = (save: CharacterSave | null) => {
       root.remove();
       style.remove();
       window.removeEventListener('keydown', onKey);
@@ -103,6 +107,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
     const entry = (i: number) => slots.find((s) => s.slot === i);
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return finish(null);
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         selected = (selected + (e.key === 'ArrowDown' ? 1 : MAX_SLOTS - 1)) % MAX_SLOTS;
@@ -136,6 +141,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
         <p class="csel-sub">${used} of ${MAX_SLOTS} slots taken</p>
         ${canStore ? '' : '<div class="csel-warn">This browser is blocking site storage, so heroes made now will be lost when the page closes.</div>'}
         <div class="csel-cols"><div class="csel-list">${list}</div><div class="csel-panel">${panel()}</div></div>
+        <button type="button" class="csel-btn csel-back" data-back>Title</button>
         <div class="csel-opts"><button type="button" class="csel-btn" data-options>Options</button>${desktop ? ' <button type="button" class="csel-btn" data-exit>Quit</button>' : ''}</div>
       </div>`;
       root.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) =>
@@ -146,6 +152,7 @@ export function chooseCharacter(): Promise<CharacterSave> {
         }),
       );
       root.querySelector('[data-options]')!.addEventListener('click', () => options().show());
+      root.querySelector('[data-back]')!.addEventListener('click', () => finish(null));
       root.querySelector('[data-exit]')?.addEventListener('click', () => desktop?.quit());
       wire();
     };

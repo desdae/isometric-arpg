@@ -24,8 +24,8 @@
   "description": "A gothic isometric action RPG",
   "main": "desktop/main.cjs",
   "build": {
-    "appId": "com.desdae.isometricarpg",
-    "productName": "Isometric ARPG",
+    "appId": "com.desdae.thesilentbells",
+    "productName": "The Silent Bells",
     "directories": {
       "output": "release"
     },

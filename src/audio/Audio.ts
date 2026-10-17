@@ -354,6 +354,14 @@ class AudioEngine {
     return buf;
   }
 
+  /** One deep, distant toll of the cathedral bell (the title screen). */
+  toll() {
+    if (!this.ready()) return;
+    const t = this.ctx!.currentTime + 0.05;
+    this.bell(t, 55, 0.11, 10);
+    this.burst(this.out({ gain: 1, pan: 0 }, 0.6, 0.8), t, { type: 'lowpass', f0: 220, f1: 60, q: 1, gain: 0.25, attack: 0.005, decay: 1.4 });
+  }
+
   private bell(t: number, f: number, gain: number, decay: number) {
     const o = this.out({ gain: 1, pan: (Math.random() - 0.5) * 0.6 }, 1, 0.9);
     // Inharmonic partials of a cast bell.
