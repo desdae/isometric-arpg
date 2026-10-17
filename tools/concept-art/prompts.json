@@ -103,6 +103,66 @@
     {
       "id": "fx-grave-frost-r2",
       "prompt": "Spell effect concept sheet on a pure black background, several separate pale blue grave-frost novas: radiating ice-shard starbursts, wispy spectral frost tendrils, cold mist"
+    },
+    {
+      "id": "class-plague-doctor",
+      "prompt": "Full-body character concept, front and back view on a plain dark grey background, a gothic plague doctor hero: long curved leather beak mask with round glass eyes, wide-brimmed black hat, long waxed black coat with brass buckles, bandolier of glowing green alchemical vials, a smoking brass censer on a cane, a rat on the shoulder"
+    },
+    {
+      "id": "class-plague-doctor-skills",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris: a thrown glass vial bursting into green alchemical fire, a creeping cloud of sickly green miasma with skull shapes in the smoke, a swarm of black rats pouring out of a crack in the ground"
+    },
+    {
+      "id": "class-plague-doctor-action",
+      "prompt": "Isometric action RPG gameplay scene, a plague doctor in a beak mask and black coat hurling a glowing green vial at a pack of ghouls on wet cobblestones, green poison cloud spreading, rats swarming the ghouls, candlelit ruined street at night"
+    },
+    {
+      "id": "class-hunter",
+      "prompt": "Full-body character concept, front and back view on a plain dark grey background, a gothic witch hunter hero: wide-brimmed leather hat, high collar, long weathered brown greatcoat, heavy repeating crossbow, silver stakes and bolts on the belt, iron bear traps hanging at the hip, a scarf over the lower face"
+    },
+    {
+      "id": "class-hunter-skills",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris: a volley of silver crossbow bolts leaving bright trails, a sprung iron bear trap crackling with holy light, a burst of blessed silver shrapnel from an exploding bolt"
+    },
+    {
+      "id": "class-hunter-action",
+      "prompt": "Isometric action RPG gameplay scene, a witch hunter in a wide-brimmed hat and greatcoat firing a repeating crossbow at a charging pack of ghouls, glowing bolt trails, a bear trap snapping shut on one ghoul, fog and lanterns in a dead orchard at night"
+    },
+    {
+      "id": "class-necromancer",
+      "prompt": "Full-body character concept, front and back view on a plain dark grey background, a gothic necromancer hero: gaunt pale figure in a tattered black and bone-white robe, armour of ribs and vertebrae, a tall staff topped with a cracked bronze bell and a skull, faint green soul light in the eyes"
+    },
+    {
+      "id": "class-necromancer-skills",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris: a spear of jagged bone erupting from the ground, a corpse exploding into a burst of bone shards and green soul fire, three skeletal warriors clawing up out of the earth"
+    },
+    {
+      "id": "class-necromancer-action",
+      "prompt": "Isometric action RPG gameplay scene, a necromancer with a bell-topped staff commanding skeleton warriors against a pack of ghouls in a graveyard, bone spears erupting from the ground, green soul fire, mist and candles at night"
+    },
+    {
+      "id": "spells-knight-blade",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a knight's sword skills: a forward ground-splitting sword slash leaving a glowing orange fissure, a spinning flurry of spectral steel blades, a rending strike spraying sparks and leaving bleeding red wounds"
+    },
+    {
+      "id": "spells-knight-bulwark",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a holy knight's defensive skills: a shield bash shockwave of golden light, a giant hammer of holy light slamming down from above, a protective golden dome shaped like a church bell"
+    },
+    {
+      "id": "spells-knight-blood",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a knight's dark blood magic: crimson blood tendrils lashing out from the ground, a boiling geyser of blood erupting in a circle, the knight dissolving into a swirling red blood mist"
+    },
+    {
+      "id": "spells-mage-fire",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a mage's fire spells: a fireball splitting into three smaller fireballs, a ring wall of roaring flame on the ground, a pillar of burning cinders falling from the sky"
+    },
+    {
+      "id": "spells-mage-frost",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a mage's frost spells: a long glacial ice lance shattering on impact, frozen ground spreading outward in cracked ice, a hovering frost orb shedding ice shards in all directions"
+    },
+    {
+      "id": "spells-mage-arcane",
+      "prompt": "Spell effect concept sheet on a pure black background, seen from a high isometric game camera angle, three separate effects side by side with depth, volumetric glow, particles and debris, for a mage's arcane spells: violet chain lightning jumping between targets, a rotating circle of glowing arcane runes on the ground, a dark violet gravity singularity pulling in debris"
     }
   ]
 }
