@@ -27,6 +27,7 @@ import { addSilhouette } from './actors/silhouette';
 import { KINDS, type MonsterKind } from './actors/Monster';
 import { monsterMaterials } from './actors/monsters/materials';
 import type { Rig } from './actors/Rig';
+import type { BossBody } from './actors/Boss';
 import { Game } from './game/Game';
 import { settings, SHADOW_SIZE } from './game/Settings';
 import { chooseCharacter } from './game/CharacterSelect';
@@ -116,6 +117,7 @@ let game: Game | null = null;
 let world: World;
 let preview: Rig | null = null;
 let previewAttack: (() => void) | null = null;
+let previewEvery = 2;
 
 if (sceneName === 'test' || sceneName === 'character') {
   // Inspection stages: the test scene, or one model animating in place
@@ -134,6 +136,17 @@ if (sceneName === 'test' || sceneName === 'character') {
       const anim = params.get('anim');
       if (anim === 'attack') previewAttack = () => body.attack(() => {});
       if (anim === 'die') setTimeout(() => body.die(), 300);
+      if (anim === 'emerge') {
+        previewEvery = 2.5;
+        previewAttack = () => body.emerge?.(1.5);
+      }
+      // Boss poses: ?anim=move:NAME[:secs] replays body.move(NAME) on a loop.
+      if (anim?.startsWith('move:')) {
+        const [, name, secs] = anim.split(':');
+        const dur = Number(secs ?? 2);
+        previewEvery = dur + 0.6;
+        previewAttack = () => (body as BossBody).move(name, dur);
+      }
     } else {
       const c = await heroModel(model);
       preview = c;
@@ -247,9 +260,10 @@ function frame() {
     if (!freeCam) cam.target.copy(game.player.position);
   } else {
     // Fixed step keeps preview poses deterministic even on slow machines.
-    if (preview) preview.update(1 / 30, Number(params.get('speed') ?? 0));
+    if (preview) preview.update(Number(params.get('tscale') ?? 1) / 30, Number(params.get('speed') ?? 0));
+    (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames?: number }).__frames ?? 0) + 1;
     if (previewAttack && (attackTimer -= 1 / 30) <= 0) {
-      attackTimer = 2;
+      attackTimer = previewEvery;
       previewAttack();
     }
     world.update(dt, t);
