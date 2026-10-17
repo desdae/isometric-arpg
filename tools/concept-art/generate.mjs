@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { model, style, steps, seeds, prompts } = JSON.parse(fs.readFileSync(path.join(here, 'prompts.json'), 'utf8'));
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-const token = process.env.CLOUDFLARE_API_TOKEN;
+const token = process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_AI_TOKEN;
 if (!account || !token) {
   console.error('Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.');
   process.exit(1);
@@ -31,7 +31,8 @@ for (const p of prompts) {
     const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run/${model}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: `${p.prompt}. ${style}`, steps, seed }),
+      // FLUX schnell takes no seed, so each run of the same prompt is a fresh variant.
+      body: JSON.stringify({ prompt: `${p.prompt}. ${style}`, steps }),
     });
     const body = await res.json().catch(() => null);
     if (!res.ok || !body?.result?.image) {
