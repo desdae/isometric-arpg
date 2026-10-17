@@ -1137,10 +1137,8 @@ export class Monster implements Combatant {
       }
       case 'hallow':
         // A pillar of golden fire falls on the marked ground.
-        fx.pillar(at.clone(), new THREE.Color(2.6, 1.8, 0.6));
-        fx.shockwave(at, ext * 1.1, new THREE.Color(1.4, 0.9, 0.3));
-        fx.sparks(at.clone().setY(at.y + 0.4), 30, new THREE.Color(2.2, 1.5, 0.5), 4, 0.9);
-        fx.flash(at.clone().setY(at.y + 1.2), 0xffc050, 30, ext * 3, 0.45);
+        fx.hallowFire(at.clone(), ext);
+        fx.shockwave(at, ext * 1.1, new THREE.Color(1.4, 0.7, 0.2));
         audio.blast(at, 'soul', 1);
         fx.addShake(0.3);
         break;

@@ -18,6 +18,7 @@ const mats = {
   cork: new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.9 }),
   moss: new THREE.MeshStandardMaterial({ color: 0x2a3a1a, emissive: new THREE.Color(0.05, 0.12, 0.03), roughness: 1 }),
   ichor: new THREE.MeshStandardMaterial({ color: 0x3a0a20, emissive: new THREE.Color(0.35, 0.02, 0.12), roughness: 0.25 }),
+  wax: new THREE.MeshStandardMaterial({ color: 0x5a0a08, emissive: new THREE.Color(0.25, 0.03, 0.01), roughness: 0.35 }),
   scarf: new THREE.MeshStandardMaterial({ color: 0x8a1410, roughness: 0.9 }),
 };
 
@@ -50,6 +51,11 @@ function itemModel(item: Item): THREE.Object3D {
         for (let i = 0; i < 5; i++) add(new THREE.SphereGeometry(0.05 + Math.random() * 0.03, 7, 5).scale(1, 0.5, 1), mats.moss, (Math.random() - 0.5) * 0.14, 0.02, (Math.random() - 0.5) * 0.14);
       } else if (item.base === 'Ichor Sac') {
         add(new THREE.SphereGeometry(0.08, 12, 8).scale(1, 0.75, 1.2), mats.ichor, 0, 0.06, 0);
+      } else if (item.base === 'Hallowed Wax') {
+        // A lump of red candle wax with a stub of wick.
+        add(new THREE.CylinderGeometry(0.05, 0.075, 0.07, 10), mats.wax, 0, 0.035, 0, 0.15, 0, 0.1);
+        add(new THREE.SphereGeometry(0.05, 8, 6).scale(1.4, 0.4, 1.1), mats.wax, 0.05, 0.012, 0.03);
+        add(new THREE.CylinderGeometry(0.006, 0.006, 0.03, 4), mats.dark, 0, 0.085, 0);
       } else {
         add(new THREE.BoxGeometry(0.36, 0.02, 0.1), mats.scarf, 0, 0.012, 0, 0, 0.3, 0);
         add(new THREE.BoxGeometry(0.1, 0.022, 0.24), mats.scarf, 0.14, 0.014, 0.1, 0, -0.4, 0);

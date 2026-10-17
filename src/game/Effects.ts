@@ -381,6 +381,114 @@ export class Effects {
     this.freeLights.push(l);
   }
 
+  /**
+   * Hallowed fire falling on marked ground: a burning sigil spreads across the
+   * floor, rings of flame racing round it, and a tall twisting column of gold
+   * and orange fire roars up from its heart, shedding embers.
+   */
+  hallowFire(at: THREE.Vector3, radius = 2.2) {
+    const noise = /* glsl */ `
+      float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float nn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hh(i), hh(i + vec2(1, 0)), u.x), mix(hh(i + vec2(0, 1)), hh(i + vec2(1, 1)), u.x), u.y); }
+      float fb(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * nn(p); p *= 2.07; a *= 0.5; } return s; }
+      vec3 fireRamp(float t) { return mix(mix(vec3(0.5, 0.06, 0.01), vec3(1.3, 0.45, 0.06), smoothstep(0.1, 0.55, t)), vec3(1.8, 1.25, 0.45), smoothstep(0.6, 1.0, t)); }
+    `;
+    const vs = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+    const base = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false };
+    // The sigil: rings and radial tongues of flame, eating outward from the centre.
+    const discGeo = new THREE.CircleGeometry(radius * 1.25, 48).rotateX(-Math.PI / 2);
+    const discMat = new THREE.ShaderMaterial({
+      ...base,
+      uniforms: { k: { value: 0 }, time: { value: 0 } },
+      vertexShader: vs,
+      fragmentShader: /* glsl */ `
+        uniform float k, time; varying vec2 vUv;
+        ${noise}
+        void main() {
+          vec2 p = (vUv - 0.5) * 2.0;
+          float r = length(p);
+          float a = atan(p.y, p.x);
+          float spread = smoothstep(0.0, 0.25, k);
+          float n = fb(vec2(a * 3.0, r * 4.0 - time * 3.0)) ;
+          float ring = (exp(-pow((r - 0.78) * 18.0, 2.0)) + 0.7 * exp(-pow((r - 0.42) * 20.0, 2.0))) * (0.5 + 0.5 * smoothstep(0.3, 0.7, nn(vec2(a * 6.0, time))));
+          float tongues = pow(max(0.0, sin(a * 9.0 + n * 4.0 - time * 2.0)), 6.0) * smoothstep(0.85, 0.3, r) * smoothstep(0.05, 0.3, r);
+          float core = smoothstep(0.45, 0.0, r);
+          float heat = (ring * (0.6 + n) + tongues * 0.8 + core * (0.5 + n * 0.8)) * smoothstep(1.0, 0.75, r);
+          heat *= step(r, spread * 1.05) * (1.0 - smoothstep(0.55, 1.0, k));
+          heat = clamp(heat, 0.0, 1.0);
+          gl_FragColor = vec4(fireRamp(heat * 0.85) * heat * 0.5, heat);
+        }
+      `,
+    });
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.position.copy(at).setY(at.y + 0.05);
+    disc.renderOrder = 11;
+    this.group.add(disc);
+    // The column: a twisting sheet of flame, wide at the foot and licking up to a point.
+    const colGeo = new THREE.CylinderGeometry(0.12, radius * 0.36, 6.5, 32, 24, true).translate(0, 3.25, 0);
+    const colMat = new THREE.ShaderMaterial({
+      ...base,
+      uniforms: { k: { value: 0 }, time: { value: 0 } },
+      vertexShader: /* glsl */ `
+        uniform float time; varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec3 p = position;
+          // Twist the column and let it sway as it climbs.
+          float t = uv.y;
+          float ang = t * 2.6 + time * 1.5;
+          p.xz = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p.xz;
+          p.x += sin(t * 5.0 - time * 4.0) * 0.25 * t;
+          p.z += cos(t * 4.0 - time * 3.3) * 0.2 * t;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float k, time; varying vec2 vUv;
+        ${noise}
+        void main() {
+          float y = vUv.y;
+          float n = fb(vec2(vUv.x * 6.0 + y * 2.0, y * 3.0 - time * 2.6));
+          float n2 = fb(vec2(vUv.x * 11.0 - y * 3.0, y * 5.0 - time * 4.0));
+          float rise = smoothstep(0.0, 0.2, k);
+          float top = rise * 1.05 - y;
+          float body = smoothstep(0.0, 0.25, top) * (1.0 - smoothstep(0.6, 1.0, k));
+          float heat = clamp((n * 1.25 + n2 * 0.45 - y * 0.75) * body, 0.0, 1.0);
+          heat = smoothstep(0.3, 0.95, heat);
+          // Bright licks with dark gaps between them, not a solid glow.
+          float licks = smoothstep(0.35, 0.65, fb(vec2(vUv.x * 9.0, y * 2.0 - time * 3.2)));
+          heat *= 0.35 + 0.65 * licks;
+          gl_FragColor = vec4(fireRamp(heat) * heat * 0.6, heat);
+        }
+      `,
+    });
+    const col = new THREE.Mesh(colGeo, colMat);
+    col.position.copy(at);
+    col.renderOrder = 12;
+    this.group.add(col);
+    const life = 1.5;
+    this.after(life, disc, (k, dt) => {
+      discMat.uniforms.k.value = k;
+      discMat.uniforms.time.value += dt;
+    }, () => {
+      discGeo.dispose();
+      discMat.dispose();
+    });
+    this.after(life, col, (k, dt) => {
+      colMat.uniforms.k.value = k;
+      colMat.uniforms.time.value += dt;
+      col.scale.set(1 + k * 0.15, 0.85 + Math.min(k * 4, 1) * 0.15, 1 + k * 0.15);
+    }, () => {
+      colGeo.dispose();
+      colMat.dispose();
+    });
+    this.spell.decal('scorch', at.x, at.z, radius * 1.1, 4);
+    this.sparks(at.clone().setY(at.y + 0.4), 36, new THREE.Color(2.6, 1.4, 0.35), 4.5, 1.3);
+    this.sparks(at.clone().setY(at.y + 2.2), 18, new THREE.Color(2.4, 1.0, 0.2), 2.5, 1.6);
+    this.flash(at.clone().setY(at.y + 1.6), 0xff9030, 10, radius * 2.5, 0.8);
+  }
+
   /** Column of light for a level up. */
   pillar(at: THREE.Vector3, color = new THREE.Color(2.0, 1.4, 0.6)) {
     const geo = new THREE.CylinderGeometry(0.7, 0.9, 8, 24, 1, true).translate(0, 4, 0);
@@ -457,6 +565,7 @@ export class Effects {
       this.group.add(o);
       this.after(0.2, o, () => {});
     }
+    this.hallowFire(p.clone(), 1);
     this.slash(up, 0, 1.5, c, true);
     this.slash(up, 0, 1.5, c, false);
     this.shockwave(p, 2, c);
