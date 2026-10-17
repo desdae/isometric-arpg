@@ -411,15 +411,16 @@ export class Effects {
   }
 
   /** Glowing blood bolt flying from `from` along `dir` until `test` says it hit. */
-  bolt(from: THREE.Vector3, dir: THREE.Vector3, test: (p: THREE.Vector3) => boolean, onHit: (p: THREE.Vector3) => void, speed = 10) {
+  bolt(from: THREE.Vector3, dir: THREE.Vector3, test: (p: THREE.Vector3) => boolean, onHit: (p: THREE.Vector3) => void, speed = 10, tint: 'blood' | 'gold' = 'blood') {
+    const gold = tint === 'gold';
     const obj = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.4, 0.25), fog: false }));
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: gold ? new THREE.Color(4, 2.6, 0.8) : new THREE.Color(4, 0.4, 0.25), fog: false }));
     const halo = new THREE.Mesh(
       new THREE.SphereGeometry(0.34, 12, 8),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.05, 0.03), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
+      new THREE.MeshBasicMaterial({ color: gold ? new THREE.Color(1.2, 0.7, 0.15) : new THREE.Color(1.2, 0.05, 0.03), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
     );
     obj.add(core, halo);
-    const light = this.borrowLight(0xff2a14, 18, 7);
+    const light = this.borrowLight(gold ? 0xffa030 : 0xff2a14, 18, 7);
     obj.position.copy(from);
     this.group.add(obj);
     const b: Bolt = { pos: obj.position, dir: dir.clone().normalize(), speed, age: 0, life: 2.4, obj, light, test };

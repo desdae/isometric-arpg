@@ -536,7 +536,7 @@ interface SignatureDef {
   /** Metres the body travels as it lands (a lunge). */
   lunge?: number;
   color: number;
-  look: 'slam' | 'chop' | 'lunge' | 'wail' | 'roots' | 'mire';
+  look: 'slam' | 'chop' | 'lunge' | 'wail' | 'roots' | 'mire' | 'chain' | 'hallow';
 }
 
 export const SIGNATURES: Partial<Record<MonsterKind, SignatureDef>> = {
@@ -547,6 +547,9 @@ export const SIGNATURES: Partial<Record<MonsterKind, SignatureDef>> = {
   gaolCroc: { name: 'Death Lunge', shape: (k) => ({ kind: 'rect', len: 6.5 * k, w: 1.6 * k }), at: 'self', ahead: 0, windup: 0.95, swingLead: 0.4, recover: 0.5, cooldown: 7, range: [2.5, 6.5], factor: 0.9, knock: 1.4, lunge: 5, color: 0xff6a20, look: 'lunge' },
   weeper: { name: 'Keening Wail', shape: (k) => ({ kind: 'cone', r: 7 * k, half: 0.55 }), at: 'self', ahead: 0, windup: 1.35, swingLead: 0.9, recover: 0.6, cooldown: 9, range: [0, 6.5], factor: 0.9, knock: 1.5, color: 0x7f8cff, look: 'wail' },
   rootHorror: { name: 'Grasping Roots', shape: (k) => ({ kind: 'circle', r: 2.3 * k }), at: 'target', ahead: 0, windup: 1.4, swingLead: 0.6, recover: 0.6, cooldown: 8, range: [0, 10], factor: 1, knock: 1, color: 0x9ac02a, look: 'roots' },
+  bellringer: { name: 'Chain Lash', shape: (k) => ({ kind: 'rect', len: 3.8 * k, w: 1.2 * k }), at: 'self', ahead: 0.2, windup: 1.1, swingLead: 0.75, recover: 0.6, cooldown: 8, range: [0, 3.6], factor: 1.1, knock: 1.4, color: 0xff4a1a, look: 'chain' },
+  carrion: { name: 'Pounce', shape: (k) => ({ kind: 'rect', len: 6.5 * k, w: 2.0 * k }), at: 'self', ahead: 0, windup: 1.0, swingLead: 0.5, recover: 0.6, cooldown: 7, range: [2.5, 6.5], factor: 0.95, knock: 1.8, lunge: 5, color: 0xff6a20, look: 'lunge' },
+  penitent: { name: 'Hallowed Fire', shape: (k) => ({ kind: 'circle', r: 2.2 * k }), at: 'target', ahead: 0, windup: 1.6, swingLead: 1.6, recover: 0.6, cooldown: 9, range: [2, 12], factor: 1.05, knock: 0.6, color: 0xffb030, look: 'hallow' },
   mireWraith: { name: 'Drowning Mire', shape: (k) => ({ kind: 'circle', r: 2.4 * k }), at: 'target', ahead: 0, windup: 1.5, swingLead: 0.7, recover: 0.5, cooldown: 9, range: [3, 13], factor: 0.8, knock: 0, color: 0x5cd04a, look: 'mire' },
 };
 
@@ -903,9 +906,10 @@ export class Monster implements Combatant {
               ctx.onPlayerHit(roll.amount, roll.crit, this.position);
             },
             ranged.boltSpeed,
+            this.kind === 'penitent' ? 'gold' : 'blood',
           );
         }
-        ctx.effects.flash(from, 0xff2010, 30, 6, 0.3);
+        ctx.effects.flash(from, this.kind === 'penitent' ? 0xffa030 : 0xff2010, 30, 6, 0.3);
         audio.cast(from);
         if (this.kind === 'bonePriest') this.mendAlly(ctx);
         return;
@@ -1032,7 +1036,11 @@ export class Monster implements Combatant {
     // Hold still through the wind-up; swing so the blow falls as the mark fills.
     if (!s.swung && s.t >= Math.max(0, s.def.windup - s.def.swingLead)) {
       s.swung = true;
-      this.body.attack(() => undefined);
+      // Casters with a long invocation raise it for the whole wind-up.
+      const invoke = (this.body as { invoke?: (dur: number) => void }).invoke;
+      if (invoke) invoke.call(this.body, s.def.swingLead + 0.3);
+      else this.body.attack(() => undefined);
+      if (s.def.look === 'hallow') audio.charge(s.at, s.def.swingLead, 'soul');
     }
     if (!s.landed && s.t >= s.def.windup) {
       s.landed = true;
@@ -1114,6 +1122,27 @@ export class Monster implements Combatant {
         fx.shockwave(at, ext * 1.1, new THREE.Color(0.35, 0.4, 0.12));
         audio.slam(at, 1.2 * size);
         fx.addShake(0.35);
+        break;
+      case 'chain': {
+        // The chain cracks down along the lane: sparks and grit where the links strike.
+        for (let i = 1; i <= 4; i++) {
+          const q = at.clone().addScaledVector(fwd, (ext * i) / 4.2);
+          fx.sparks(q.clone().setY(q.y + 0.15), 8, new THREE.Color(1.5, 0.7, 0.3), 3, 0.45);
+        }
+        fx.shockwave(at.clone().addScaledVector(fwd, ext * 0.8), 1.4, new THREE.Color(0.5, 0.3, 0.2));
+        fx.slash(this.position.clone().setY(this.position.y + 0.6), s.yaw, ext, new THREE.Color(1.0, 0.5, 0.25));
+        audio.slam(at.clone().addScaledVector(fwd, ext * 0.8), 0.7);
+        fx.addShake(0.25);
+        break;
+      }
+      case 'hallow':
+        // A pillar of golden fire falls on the marked ground.
+        fx.pillar(at.clone(), new THREE.Color(2.6, 1.8, 0.6));
+        fx.shockwave(at, ext * 1.1, new THREE.Color(1.4, 0.9, 0.3));
+        fx.sparks(at.clone().setY(at.y + 0.4), 30, new THREE.Color(2.2, 1.5, 0.5), 4, 0.9);
+        fx.flash(at.clone().setY(at.y + 1.2), 0xffc050, 30, ext * 3, 0.45);
+        audio.blast(at, 'soul', 1);
+        fx.addShake(0.3);
         break;
       case 'mire':
         fx.shockwave(at, ext * 1.1, new THREE.Color(0.25, 0.45, 0.2));
