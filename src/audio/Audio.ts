@@ -10,7 +10,7 @@ import { store } from '../engine/store';
 // Browsers only allow audio after a user gesture, so the context is created
 // on the first click or key press.
 
-export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith' | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor';
+export type Voice = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith' | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor' | 'bellringer' | 'carrion' | 'penitent' | 'mourner' | 'abbess';
 
 interface At {
   gain: number;

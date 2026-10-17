@@ -10,6 +10,7 @@ import { ABOMINATION } from './bosses/abomination';
 import { LICH } from './bosses/lich';
 import { NIGHTWING } from './bosses/nightwing';
 import { INQUISITOR } from './bosses/inquisitor';
+import { ABBESS } from './bosses/abbess';
 import { telemetry } from '../game/Telemetry';
 
 // Crypt bosses: a monster with a playbook. Between abilities it hunts and
@@ -56,7 +57,7 @@ export interface BossDef {
   death(b: Boss, ctx: MonsterContext): void;
 }
 
-export const BOSS_DEFS: Partial<Record<MonsterKind, BossDef>> = { abomination: ABOMINATION, lich: LICH, nightwing: NIGHTWING, inquisitor: INQUISITOR };
+export const BOSS_DEFS: Partial<Record<MonsterKind, BossDef>> = { abomination: ABOMINATION, lich: LICH, nightwing: NIGHTWING, inquisitor: INQUISITOR, abbess: ABBESS };
 
 export class Boss extends Monster {
   readonly brain: BossDef;

@@ -25,6 +25,11 @@ import { buildLeech } from './monsters/leech';
 import { buildHanged } from './monsters/hanged';
 import { buildWeeper } from './monsters/weeper';
 import { buildMaiden } from './monsters/maiden';
+import { buildBellringer } from './monsters/bellringer';
+import { buildCarrion } from './monsters/carrion';
+import { buildPenitent } from './monsters/penitent';
+import { buildMourner } from './monsters/mourner';
+import { buildAbbess } from './bosses/abbess';
 import { buildInquisitor } from './bosses/inquisitor';
 import { buildAbomination } from './bosses/abomination';
 import { buildLich } from './bosses/lich';
@@ -38,7 +43,9 @@ import { mulberry32 } from '../procgen/noise';
 
 export type MonsterKind = 'ghoul' | 'brute' | 'crawler' | 'cultist' | 'spider' | 'horror' | 'wraith' | 'abomination' | 'lich' | 'nightwing' | 'toad' | 'croc' | 'rootHorror' | 'mireWraith'
   // The Drowned Gaol beneath the mire.
-  | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor';
+  | 'butcher' | 'chainWraith' | 'gaunt' | 'bonePriest' | 'gaolCroc' | 'leech' | 'hanged' | 'weeper' | 'maiden' | 'inquisitor'
+  // The Pilgrim Road and the Ossuary beneath it.
+  | 'bellringer' | 'carrion' | 'penitent' | 'mourner' | 'abbess';
 
 interface KindDef {
   name: string;
@@ -365,6 +372,68 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     blood: new THREE.Color(0.22, 0.01, 0.008),
     build: (m, seed, elite) => buildMaiden(m, mulberry32(seed), elite ? 1.3 : 1),
   },
+  // The Pilgrim Road and the Ossuary.
+  bellringer: {
+    name: 'Bellringer Ghoul',
+    hp: 40,
+    dmg: [5, 9],
+    armor: 6,
+    speed: 3.7,
+    radius: 0.45,
+    height: 1.8,
+    reach: 1.7,
+    cooldown: 0.9,
+    aggro: 12,
+    xp: 18,
+    blood: new THREE.Color(0.12, 0.05, 0.02),
+    build: (m, seed, elite) => buildBellringer(m, mulberry32(seed), elite ? 1.3 : 1),
+  },
+  carrion: {
+    name: 'Carrion Crawler',
+    hp: 125,
+    dmg: [9, 15],
+    armor: 22,
+    speed: 4.4,
+    radius: 1.0,
+    height: 1.4,
+    reach: 1.8,
+    cooldown: 1.2,
+    aggro: 12,
+    xp: 60,
+    blood: new THREE.Color(0.22, 0.02, 0.01),
+    build: (m, seed, elite) => buildCarrion(m, mulberry32(seed), elite ? 1.35 : 1),
+  },
+  penitent: {
+    name: 'Penitent Elder',
+    hp: 58,
+    dmg: [8, 13],
+    armor: 5,
+    speed: 2.8,
+    radius: 0.45,
+    height: 1.9,
+    reach: 13,
+    cooldown: 1.8,
+    aggro: 14,
+    xp: 42,
+    blood: new THREE.Color(0.22, 0.01, 0.008),
+    ranged: { min: 6, max: 12, boltSpeed: 10 },
+    build: (m, seed, elite) => buildPenitent(m, mulberry32(seed), elite ? 1.25 : 1),
+  },
+  mourner: {
+    name: 'Kneeling Mourner',
+    hp: 28,
+    dmg: [4, 8],
+    armor: 4,
+    speed: 3.3,
+    radius: 0.42,
+    height: 1.7,
+    reach: 1.3,
+    cooldown: 1.0,
+    aggro: 14,
+    xp: 10,
+    blood: new THREE.Color(0.06, 0.05, 0.08),
+    build: (m, seed, elite) => buildMourner(m, mulberry32(seed), elite ? 1.25 : 1),
+  },
   // Vault bosses (see Boss.ts). Radius and height here are before the boss multipliers.
   abomination: {
     name: 'Gorrath',
@@ -425,6 +494,21 @@ export const KINDS: Record<MonsterKind, KindDef> = {
     xp: 480,
     blood: new THREE.Color(0.1, 0.08, 0.06),
     build: (m, seed) => buildInquisitor(m, mulberry32(seed)),
+  },
+  abbess: {
+    name: 'The Silent Abbess',
+    hp: 104,
+    dmg: [6, 10],
+    armor: 16,
+    speed: 3.0,
+    radius: 0.6,
+    height: 2.0,
+    reach: 2.6,
+    cooldown: 1.5,
+    aggro: 14,
+    xp: 600,
+    blood: new THREE.Color(0.05, 0.05, 0.09),
+    build: (m, seed) => buildAbbess(m, mulberry32(seed)),
   },
 };
 
@@ -556,7 +640,7 @@ export class Monster implements Combatant {
     this.body.rig.root.add(this.hit);
     scene.add(this.body.rig.root);
     this.sync();
-    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2, toad: 1.1, croc: 0.9, rootHorror: 2.4, mireWraith: 0, butcher: 2.3, chainWraith: 0, gaunt: 0.5, bonePriest: 0.6, gaolCroc: 1, leech: 0, hanged: 0, weeper: 0.5, maiden: 2.6, inquisitor: 1.4 }[this.kind] * (this.elite ? 1.3 : 1);
+    const weight = { ghoul: 0.7, brute: 2.2, crawler: 0.5, cultist: 0.8, spider: 1.2, horror: 2, wraith: 0, abomination: 3, lich: 1.6, nightwing: 1.2, toad: 1.1, croc: 0.9, rootHorror: 2.4, mireWraith: 0, butcher: 2.3, chainWraith: 0, gaunt: 0.5, bonePriest: 0.6, gaolCroc: 1, leech: 0, hanged: 0, weeper: 0.5, maiden: 2.6, inquisitor: 1.4, bellringer: 0.7, carrion: 1.4, penitent: 0.7, mourner: 0.5, abbess: 0 }[this.kind] * (this.elite ? 1.3 : 1);
     if (weight > 0) this.body.rig.onStep = () => audio.step(this.position, weight);
   }
 
