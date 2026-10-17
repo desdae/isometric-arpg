@@ -1,0 +1,20 @@
+{
+  "model": "@cf/black-forest-labs/flux-1-schnell",
+  "steps": 8,
+  "seeds": [11, 23, 47],
+  "style": "Dark gothic fantasy concept art for an isometric action RPG, painterly, muted desaturated palette with candlelight amber and blood red accents, heavy fog, dramatic rim light, high detail, no text, no watermark",
+  "prompts": [
+    { "id": "zone-drowned-parish", "prompt": "Isometric view of a flooded medieval parish at dusk, half-sunken chapels and gravestones in black water, rotting boardwalks, lanterns on poles, a cracked bell tower leaning over the marsh" },
+    { "id": "zone-bell-foundry", "prompt": "Isometric view of a ruined bell foundry carved into a hillside, cold furnaces, giant cracked bronze bells lying in the ash, chains and scaffolding, embers drifting" },
+    { "id": "zone-pilgrim-road", "prompt": "Isometric view of a pilgrims' road through dead orchards, gibbets and wayside shrines, abandoned carts, crows, distant cathedral silhouette under a blood moon" },
+    { "id": "dungeon-ossuary", "prompt": "Isometric dungeon interior, an ossuary crypt with walls of stacked skulls, narrow vaulted corridors, candle niches, a sunken sarcophagus chamber, green grave light" },
+    { "id": "dungeon-belfry-catacomb", "prompt": "Isometric dungeon interior, catacombs beneath a cathedral, rope-hung bells in the ceiling, collapsed pews, flooded sections, iron cages" },
+    { "id": "mob-bellringer-ghoul", "prompt": "Character concept sheet, front and side view, a gaunt ghoul in a torn bell-ringer's cassock dragging a bronze handbell on a chain, hollow eyes, grey skin" },
+    { "id": "mob-drowned-penitent", "prompt": "Character concept sheet, front and side view, a drowned penitent monk, bloated, wrapped in wet sackcloth and chains, waterweed in the hair, holding a rusted censer" },
+    { "id": "mob-carrion-crawler", "prompt": "Creature concept sheet, side and top view, a many-legged carrion crawler made of fused corpses and spider limbs, bone plates, dripping ichor" },
+    { "id": "boss-the-silent-abbess", "prompt": "Boss concept art, a towering undead abbess in a tattered black habit, her face hidden by a cracked bronze bell worn like a veil, ribbons of shadow, a crowd of kneeling dead around her" },
+    { "id": "boss-foundry-colossus", "prompt": "Boss concept art, a hulking colossus forged from melted church bells and slag, molten cracks glowing, a bell clapper for a fist, chains trailing" },
+    { "id": "fx-hallowed-fire", "prompt": "Spell effect concept sheet on a black background, a burst of holy golden fire with embers and smoke trails, several stages from ignition to fade" },
+    { "id": "fx-grave-frost", "prompt": "Spell effect concept sheet on a black background, a nova of pale blue grave frost with ice shards and ghostly mist, several stages from cast to fade" }
+  ]
+}
